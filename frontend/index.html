@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>frontend</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+    INDEX HTML EDITING ROCKS!
+
+    <!-- BASIC FASTAPI TEST -->
+    <script>
+      async function testApi() {
+        try {
+          const res = await fetch("http://127.0.0.1:8000/api/hello");
+          const data = await res.json();
+
+          const el = document.createElement("pre");
+          el.style.padding = "1rem";
+          el.style.background = "#f0f0f0";
+          el.style.border = "1px solid #ccc";
+          el.textContent = "FastAPI Response:\n" + JSON.stringify(data, null, 2);
+
+          document.body.appendChild(el);
+        } catch (err) {
+          console.error("API error:", err);
+        }
+      }
+
+      testApi();
+    </script>
+  </body>
+</html>
