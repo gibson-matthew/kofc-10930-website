@@ -1,0 +1,285 @@
+============================================================
+1. LOGGING OBJECTIVES
+============================================================
+- Capture all relevant application events
+- Provide traceability for admin actions
+- Detect errors, anomalies, and performance issues
+- Support debugging and incident response
+- Maintain auditability for sensitive operations
+- Enable centralized log aggregation and analysis
+
+
+============================================================
+2. LOGGING STANDARDS
+============================================================
+
+FORMAT
+------
+- All logs use structured JSON
+- Required fields:
+  - timestamp (ISO 8601)
+  - level (INFO, WARN, ERROR)
+  - message
+  - request_id (if applicable)
+  - user_id (if authenticated)
+  - service (api, worker, db, ingress)
+  - module/function name
+
+LEVELS
+------
+INFO: Normal operations (startup, shutdown, successful actions)
+WARN: Recoverable issues, unexpected states
+ERROR: Failed operations, exceptions
+CRITICAL: System-wide failures
+
+NOISE CONTROL
+-------------
+- No logging of sensitive data (passwords, tokens)
+- No logging of full SQL queries containing PII
+- No logging of large payloads
+
+
+============================================================
+3. BACKEND LOGGING (FASTAPI)
+============================================================
+
+REQUEST LOGGING
+---------------
+- Log every request:
+  - method
+  - path
+  - status code
+  - duration
+  - request_id
+  - user_id (if available)
+
+ERROR LOGGING
+-------------
+- Log stack traces for unhandled exceptions
+- Include request_id and user_id
+- Include endpoint name
+
+AUDIT LOGGING
+-------------
+- All admin actions logged to audit_log table:
+  - user_id
+  - action
+  - details
+  - timestamp
+
+DATABASE LOGGING
+----------------
+- Log slow queries (>200ms)
+- Log connection failures
+- Log migration events
+
+SECURITY LOGGING
+----------------
+- Log failed logins
+- Log role changes
+- Log permission denials
+
+
+============================================================
+4. FRONTEND LOGGING (REACT)
+============================================================
+
+CLIENT-SIDE LOGGING
+-------------------
+- Only log non-sensitive events
+- Log:
+  - UI errors
+  - API failures
+  - Performance metrics (optional)
+  - User interactions for debugging (optional)
+
+ERROR BOUNDARIES
+----------------
+- Capture React component errors
+- Send to backend error endpoint (optional)
+- Display user-friendly fallback UI
+
+NO SENSITIVE LOGGING
+--------------------
+- Never log JWTs
+- Never log user passwords
+- Never log PII
+
+
+============================================================
+5. CELERY WORKER LOGGING
+============================================================
+
+TASK LOGGING
+------------
+- Log task start/end
+- Log task arguments (excluding sensitive data)
+- Log retries
+- Log failures with stack traces
+
+QUEUE LOGGING
+-------------
+- Log queue delays
+- Log worker health
+- Log task throughput
+
+TASK TYPES
+----------
+email_queue: email sends, newsletter distribution  
+media_queue: image processing, thumbnail generation  
+voting_queue: vote tallying, report generation  
+audit_queue: admin audit events
+
+
+============================================================
+6. SYSTEM LOGGING (K3s + HELM)
+============================================================
+
+INGRESS LOGGING
+---------------
+- Log all incoming HTTP requests
+- Log TLS handshake failures
+- Log rate-limited requests
+
+POD LOGGING
+-----------
+- Capture stdout/stderr for all pods
+- Include pod name, namespace, container
+
+NODE LOGGING
+------------
+- Log node health
+- Log disk usage
+- Log memory pressure
+- Log network errors
+
+CLUSTER EVENTS
+--------------
+- Log pod restarts
+- Log failed deployments
+- Log scaling events
+
+
+============================================================
+7. LOG AGGREGATION & STORAGE
+============================================================
+
+LOG AGGREGATION
+---------------
+- Use centralized logging (e.g., Loki, ELK, or similar)
+- All services forward logs to aggregator
+- Logs tagged by service and environment
+
+RETENTION
+---------
+- Application logs: 30–90 days
+- Audit logs: 1–3 years
+- Error logs: 180 days
+- Security logs: 1 year
+
+ACCESS CONTROL
+--------------
+- Only admins and developers can access logs
+- Audit logs restricted to GK, FS, Treasurer, Admin
+
+
+============================================================
+8. MONITORING & ALERTING
+============================================================
+
+METRICS
+-------
+- API latency
+- API error rate
+- Worker queue length
+- Worker failure rate
+- DB query performance
+- DB connection pool usage
+- Redis memory usage
+- Pod restarts
+- Node resource usage
+
+HEALTH CHECKS
+-------------
+- FastAPI: /health endpoint
+- Celery: worker heartbeat
+- Postgres: connection test
+- Redis: ping
+- K3s: node health
+
+ALERTS
+------
+Trigger alerts for:
+- High error rate (>5% in 5 minutes)
+- Slow API response (>500ms average)
+- Worker queue backlog
+- Pod crash loops
+- DB connection failures
+- Unauthorized access attempts
+- Voting anomalies (duplicate votes)
+- Media upload failures
+
+ALERT CHANNELS
+--------------
+- Email
+- Slack/Teams
+- PagerDuty (optional)
+
+
+============================================================
+9. DASHBOARDS
+============================================================
+
+RECOMMENDED DASHBOARDS
+----------------------
+- API performance dashboard
+- Error rate dashboard
+- Worker queue dashboard
+- Voting activity dashboard
+- Member activity dashboard
+- Admin action audit dashboard
+- System health dashboard (nodes, pods, ingress)
+
+VISUALIZATIONS
+--------------
+- Time-series graphs
+- Heatmaps for errors
+- Pie charts for role distribution
+- Bar charts for event participation
+
+
+============================================================
+10. INCIDENT RESPONSE
+============================================================
+
+INCIDENT WORKFLOW
+-----------------
+1. Alert triggers
+2. Developer reviews logs
+3. Identify root cause
+4. Patch or rollback
+5. Document incident
+6. Add new alert or log rule if needed
+
+POST-INCIDENT REVIEW
+--------------------
+- Review audit logs
+- Review cluster events
+- Review worker logs
+- Update monitoring thresholds
+
+
+============================================================
+11. LOGGING & MONITORING VERSIONING
+============================================================
+
+VERSION CONTROL
+---------------
+- All logging/monitoring configs stored in Git
+- Changes reviewed via pull requests
+- Environments use versioned Helm charts
+
+ENVIRONMENT SEPARATION
+----------------------
+- Separate dashboards for staging and production
+- No production logs in staging

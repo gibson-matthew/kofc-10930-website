@@ -1,0 +1,148 @@
+/
+├── Public
+│   ├── Home
+│   │   └── /
+│   ├── About
+│   │   ├── /about
+│   │   ├── /assemblies
+│   │   └── /why-join
+│   ├── News & Recognition
+│   │   ├── /news
+│   │   ├── /recognition
+│   │   └── /in-memoriam
+│   ├── Events
+│   │   ├── /events
+│   │   ├── /events/:id
+│   │   └── /calendar
+│   ├── Leadership
+│   │   ├── /officers
+│   │   ├── /officers/past-grand-knights
+│   │   ├── /directors
+│   │   └── /directors/:id
+│   ├── Programs
+│   │   ├── /programs
+│   │   ├── /programs/faith
+│   │   ├── /programs/family
+│   │   ├── /programs/community
+│   │   ├── /programs/youth
+│   │   └── /programs/fraternal
+│   ├── Prayer & Spiritual
+│   │   ├── /prayers
+│   │   ├── /prayers/print
+│   │   ├── /prayer-request
+│   │   └── /prayer-request/guest
+│   ├── Media
+│   │   ├── /photos
+│   │   ├── /photos/:albumId
+│   │   └── /newsletters
+│   ├── Market Center
+│   │   ├── /market
+│   │   └── /market/category/:id
+│   ├── Job Center
+│   │   └── /jobs
+│   └── Degree Schedule
+│       └── /degree-schedule
+│
+├── Member Portal
+│   ├── Dashboard
+│   │   └── /member
+│   ├── Profile
+│   │   └── /member/profile
+│   ├── Documents
+│   │   └── /member/documents
+│   ├── Announcements
+│   │   └── /member/announcements
+│   ├── Calendar
+│   │   └── /member/calendar
+│   ├── Events
+│   │   ├── /member/events
+│   │   ├── /member/events/:id
+│   │   ├── /member/events/volunteer
+│   │   └── /member/events/hours
+│   ├── Programs & Committees
+│   │   ├── /member/programs
+│   │   ├── /member/programs/:committeeId
+│   │   ├── /member/programs/:committeeId/:programId
+│   │   └── /member/programs/volunteer/:programId
+│   ├── Leadership Resources
+│   │   ├── /member/officers
+│   │   ├── /member/directors
+│   │   └── /member/assemblies
+│   ├── Market Center (Member)
+│   │   ├── /member/market
+│   │   ├── /member/market/category/:id
+│   │   ├── /member/market/login
+│   │   └── /member/market/reports
+│   └── Voting
+│       ├── /member/voting
+│       └── /member/voting/:year/:month
+│
+├── Admin Portal
+│   ├── Dashboard
+│   │   ├── /admin
+│   │   ├── /admin/system-status
+│   │   └── /admin/audit-log
+│   ├── Content Management
+│   │   ├── /admin/homepage
+│   │   ├── /admin/about
+│   │   ├── /admin/news
+│   │   ├── /admin/recognition
+│   │   ├── /admin/in-memoriam
+│   │   └── /admin/links
+│   ├── Events & Calendar
+│   │   ├── /admin/events
+│   │   ├── /admin/events/create
+│   │   ├── /admin/events/:id/edit
+│   │   └── /admin/calendar
+│   ├── Leadership Management
+│   │   ├── /admin/officers
+│   │   ├── /admin/directors
+│   │   └── /admin/assemblies
+│   ├── Programs
+│   │   ├── /admin/programs
+│   │   ├── /admin/programs/:committeeId
+│   │   ├── /admin/programs/:committeeId/:programId
+│   │   └── /admin/programs/volunteers
+│   ├── Media Management
+│   │   ├── /admin/photos
+│   │   ├── /admin/photos/upload
+│   │   ├── /admin/photos/:albumId/edit
+│   │   ├── /admin/newsletters
+│   │   ├── /admin/videos
+│   │   └── /admin/slideshow
+│   ├── Member Administration
+│   │   ├── /admin/members
+│   │   ├── /admin/members/import
+│   │   ├── /admin/members/dues
+│   │   ├── /admin/members/overdue
+│   │   ├── /admin/members/voting-totals
+│   │   └── /admin/members/reports
+│   ├── Documents & Library
+│   │   ├── /admin/documents
+│   │   ├── /admin/documents/public
+│   │   └── /admin/documents/member
+│   ├── Communications
+│   │   ├── /admin/email
+│   │   ├── /admin/email/templates
+│   │   ├── /admin/email/remove
+│   │   └── /admin/qr-codes
+│   ├── Market Center (Admin)
+│   │   ├── /admin/market
+│   │   ├── /admin/market/reports
+│   │   └── /admin/market/password-reset
+│   ├── Webmaster Tools
+│   │   ├── /admin/webmaster
+│   │   ├── /admin/webmaster/seo
+│   │   ├── /admin/webmaster/uploads
+│   │   └── /admin/webmaster/settings
+│   └── Council Governance
+│       ├── /admin/bylaws
+│       ├── /admin/minutes
+│       ├── /admin/meeting-schedule
+│       ├── /admin/budget
+│       └── /admin/roundtable
+│
+└── Auth
+    ├── /login
+    ├── /logout
+    └── /reset-password

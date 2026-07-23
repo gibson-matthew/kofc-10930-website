@@ -1,0 +1,290 @@
+-- ============================================================
+--  AUTH & ROLES
+-- ============================================================
+
+CREATE TABLE roles (
+    id SERIAL PRIMARY KEY,
+    name TEXT UNIQUE NOT NULL  -- member, admin, grand_knight, fs, treasurer, webmaster, etc.
+);
+
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    phone TEXT,
+    address TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE user_roles (
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    role_id INT REFERENCES roles(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, role_id)
+);
+
+-- ============================================================
+--  PUBLIC CONTENT
+-- ============================================================
+
+CREATE TABLE news (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    published_at TIMESTAMP DEFAULT NOW(),
+    author_id INT REFERENCES users(id)
+);
+
+CREATE TABLE recognition (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    awarded_to TEXT,
+    awarded_at DATE
+);
+
+CREATE TABLE memoriam (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    biography TEXT,
+    date_of_passing DATE
+);
+
+CREATE TABLE links (
+    id SERIAL PRIMARY KEY,
+    label TEXT NOT NULL,
+    url TEXT NOT NULL
+);
+
+-- ============================================================
+--  EVENTS & CALENDAR
+-- ============================================================
+
+CREATE TABLE events (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    location TEXT,
+    start_time TIMESTAMP NOT NULL,
+    end_time TIMESTAMP,
+    is_public BOOLEAN DEFAULT TRUE,
+    created_by INT REFERENCES users(id)
+);
+
+CREATE TABLE event_volunteers (
+    id SERIAL PRIMARY KEY,
+    event_id INT REFERENCES events(id) ON DELETE CASCADE,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    hours NUMERIC(5,2),
+    notes TEXT
+);
+
+-- ============================================================
+--  LEADERSHIP
+-- ============================================================
+
+CREATE TABLE officers (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    position TEXT NOT NULL,   -- GK, DGK, Chancellor, FS, Treasurer, etc.
+    term_start DATE,
+    term_end DATE
+);
+
+CREATE TABLE directors (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    email TEXT,
+    phone TEXT
+);
+
+-- ============================================================
+--  PROGRAMS & COMMITTEES
+-- ============================================================
+
+CREATE TABLE committees (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT
+);
+
+CREATE TABLE programs (
+    id SERIAL PRIMARY KEY,
+    committee_id INT REFERENCES committees(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    category TEXT NOT NULL  -- faith, family, community, youth, fraternal
+);
+
+CREATE TABLE program_volunteers (
+    id SERIAL PRIMARY KEY,
+    program_id INT REFERENCES programs(id) ON DELETE CASCADE,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    notes TEXT
+);
+
+-- ============================================================
+--  PRAYER REQUESTS
+-- ============================================================
+
+CREATE TABLE prayer_requests (
+    id SERIAL PRIMARY KEY,
+    requester_name TEXT,
+    requester_email TEXT,
+    is_member BOOLEAN DEFAULT FALSE,
+    request_text TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
+--  MEDIA (PHOTOS, VIDEOS, NEWSLETTERS)
+-- ============================================================
+
+CREATE TABLE media_albums (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE media_items (
+    id SERIAL PRIMARY KEY,
+    album_id INT REFERENCES media_albums(id) ON DELETE CASCADE,
+    file_path TEXT NOT NULL,
+    caption TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE newsletters (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    published_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
+--  MARKET CENTER
+-- ============================================================
+
+CREATE TABLE market_categories (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT
+);
+
+CREATE TABLE market_items (
+    id SERIAL PRIMARY KEY,
+    category_id INT REFERENCES market_categories(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT,
+    price NUMERIC(10,2),
+    image_path TEXT
+);
+
+CREATE TABLE merchants (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    business_name TEXT NOT NULL,
+    contact_email TEXT,
+    contact_phone TEXT
+);
+
+CREATE TABLE merchant_reports (
+    id SERIAL PRIMARY KEY,
+    merchant_id INT REFERENCES merchants(id) ON DELETE CASCADE,
+    report_path TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
+--  JOB CENTER
+-- ============================================================
+
+CREATE TABLE jobs (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    job_type TEXT NOT NULL,  -- commissioned, hourly, salaried
+    posted_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
+--  DEGREE SCHEDULE
+-- ============================================================
+
+CREATE TABLE degree_schedule (
+    id SERIAL PRIMARY KEY,
+    degree_level TEXT NOT NULL,
+    location TEXT,
+    date TIMESTAMP NOT NULL
+);
+
+-- ============================================================
+--  MEMBER DOCUMENTS
+-- ============================================================
+
+CREATE TABLE documents (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    is_public BOOLEAN DEFAULT FALSE,
+    uploaded_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
+--  VOTING
+-- ============================================================
+
+CREATE TABLE votes (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    vote_month INT,
+    vote_year INT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE vote_options (
+    id SERIAL PRIMARY KEY,
+    vote_id INT REFERENCES votes(id) ON DELETE CASCADE,
+    label TEXT NOT NULL
+);
+
+CREATE TABLE vote_cast (
+    id SERIAL PRIMARY KEY,
+    vote_id INT REFERENCES votes(id) ON DELETE CASCADE,
+    option_id INT REFERENCES vote_options(id),
+    user_id INT REFERENCES users(id),
+    cast_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE (vote_id, user_id)
+);
+
+-- ============================================================
+--  ADMIN / WEBMASTER
+-- ============================================================
+
+CREATE TABLE seo_settings (
+    id SERIAL PRIMARY KEY,
+    page TEXT UNIQUE NOT NULL,
+    meta_title TEXT,
+    meta_description TEXT,
+    meta_keywords TEXT
+);
+
+CREATE TABLE uploads (
+    id SERIAL PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    uploaded_by INT REFERENCES users(id),
+    uploaded_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE audit_log (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    action TEXT NOT NULL,
+    details TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);

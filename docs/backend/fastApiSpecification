@@ -1,0 +1,153 @@
+/api
+├── auth
+│   ├── POST /auth/login
+│   ├── POST /auth/logout
+│   ├── POST /auth/reset-password
+│   ├── GET  /auth/me
+│   └── GET  /auth/roles
+│
+├── public
+│   ├── GET /public/news
+│   ├── GET /public/news/{id}
+│   ├── GET /public/recognition
+│   ├── GET /public/memoriam
+│   ├── GET /public/links
+│   ├── GET /public/events
+│   ├── GET /public/events/{id}
+│   ├── GET /public/officers
+│   ├── GET /public/officers/past-grand-knights
+│   ├── GET /public/directors
+│   ├── GET /public/directors/{id}
+│   ├── GET /public/programs
+│   ├── GET /public/programs/{category}
+│   ├── GET /public/prayers
+│   ├── GET /public/newsletters
+│   ├── GET /public/photos
+│   ├── GET /public/photos/{albumId}
+│   ├── GET /public/market
+│   ├── GET /public/market/category/{id}
+│   ├── GET /public/jobs
+│   └── GET /public/degree-schedule
+│
+├── prayer
+│   ├── POST /prayer/request
+│   └── POST /prayer/request/guest
+│
+├── member
+│   ├── GET /member/profile
+│   ├── PUT /member/profile
+│   ├── GET /member/documents
+│   ├── GET /member/announcements
+│   ├── GET /member/calendar
+│   ├── GET /member/events
+│   ├── GET /member/events/{id}
+│   ├── POST /member/events/{id}/volunteer
+│   ├── POST /member/events/{id}/hours
+│   ├── GET /member/programs
+│   ├── GET /member/programs/{committeeId}
+│   ├── GET /member/programs/{committeeId}/{programId}
+│   ├── POST /member/programs/{programId}/volunteer
+│   ├── GET /member/officers
+│   ├── GET /member/directors
+│   ├── GET /member/assemblies
+│   ├── GET /member/market
+│   ├── GET /member/market/category/{id}
+│   ├── POST /member/market/login
+│   ├── GET /member/market/reports
+│   ├── GET /member/voting
+│   └── GET /member/voting/{year}/{month}
+│
+├── admin
+│   ├── GET /admin/dashboard
+│   ├── GET /admin/system-status
+│   ├── GET /admin/audit-log
+│
+│   ├── Content Management
+│   │   ├── PUT /admin/homepage
+│   │   ├── PUT /admin/about
+│   │   ├── GET /admin/news
+│   │   ├── POST /admin/news
+│   │   ├── PUT /admin/news/{id}
+│   │   ├── DELETE /admin/news/{id}
+│   │   ├── PUT /admin/recognition
+│   │   ├── PUT /admin/memoriam
+│   │   └── PUT /admin/links
+│
+│   ├── Events
+│   │   ├── GET /admin/events
+│   │   ├── POST /admin/events
+│   │   ├── GET /admin/events/{id}
+│   │   ├── PUT /admin/events/{id}
+│   │   └── DELETE /admin/events/{id}
+│
+│   ├── Leadership
+│   │   ├── GET /admin/officers
+│   │   ├── POST /admin/officers
+│   │   ├── PUT /admin/officers/{id}
+│   │   ├── DELETE /admin/officers/{id}
+│   │   ├── GET /admin/directors
+│   │   ├── POST /admin/directors
+│   │   ├── PUT /admin/directors/{id}
+│   │   └── DELETE /admin/directors/{id}
+│
+│   ├── Programs
+│   │   ├── GET /admin/programs
+│   │   ├── POST /admin/programs
+│   │   ├── GET /admin/programs/{committeeId}
+│   │   ├── PUT /admin/programs/{committeeId}
+│   │   ├── GET /admin/programs/{committeeId}/{programId}
+│   │   ├── PUT /admin/programs/{committeeId}/{programId}
+│   │   └── DELETE /admin/programs/{committeeId}/{programId}
+│
+│   ├── Media
+│   │   ├── GET /admin/photos
+│   │   ├── POST /admin/photos/upload
+│   │   ├── PUT /admin/photos/{albumId}
+│   │   ├── DELETE /admin/photos/{albumId}
+│   │   ├── POST /admin/newsletters
+│   │   ├── POST /admin/videos
+│   │   └── PUT /admin/slideshow
+│
+│   ├── Members
+│   │   ├── GET /admin/members
+│   │   ├── POST /admin/members/import
+│   │   ├── PUT /admin/members/dues
+│   │   ├── GET /admin/members/overdue
+│   │   ├── GET /admin/members/voting-totals
+│   │   └── GET /admin/members/reports
+│
+│   ├── Documents
+│   │   ├── GET /admin/documents
+│   │   ├── POST /admin/documents
+│   │   ├── PUT /admin/documents/{id}
+│   │   └── DELETE /admin/documents/{id}
+│
+│   ├── Communications
+│   │   ├── POST /admin/email/send
+│   │   ├── GET /admin/email/templates
+│   │   ├── POST /admin/email/templates
+│   │   ├── DELETE /admin/email/templates/{id}
+│   │   ├── GET /admin/email/remove
+│   │   └── POST /admin/qr-codes
+│
+│   ├── Market
+│   │   ├── GET /admin/market
+│   │   ├── GET /admin/market/reports
+│   │   └── POST /admin/market/password-reset
+│
+│   ├── Webmaster
+│   │   ├── GET /admin/webmaster
+│   │   ├── PUT /admin/webmaster/seo
+│   │   ├── POST /admin/webmaster/uploads
+│   │   └── PUT /admin/webmaster/settings
+│
+│   └── Governance
+│       ├── PUT /admin/bylaws
+│       ├── PUT /admin/minutes
+│       ├── PUT /admin/meeting-schedule
+│       ├── PUT /admin/budget
+│       └── PUT /admin/roundtable
+│
+└── media
+    ├── GET /media/{file_path}
+    └── GET /media/thumbnails/{file_path}
