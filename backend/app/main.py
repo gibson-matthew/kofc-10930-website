@@ -5,24 +5,25 @@ from app.core.config import settings
 from app.core.logging import setup_logging
 
 from app.routers.auth_router import router as auth_router
+from app.routers.officer_router import router as officer_router
 from app.routers.public_router import router as public_router
-from app.routers.prayer_router import router as prayer_router
-from app.routers.member_router import router as member_router
-from app.routers.media_router import router as media_router
+# from app.routers.prayer_router import router as prayer_router
+# from app.routers.member_router import router as member_router
+# from app.routers.media_router import router as media_router
 
 # Admin routers
-from app.routers.admin.admin_router import router as admin_router
-from app.routers.admin.admin_content_router import router as admin_content_router
-from app.routers.admin.admin_events_router import router as admin_events_router
-from app.routers.admin.admin_leadership_router import router as admin_leadership_router
-from app.routers.admin.admin_programs_router import router as admin_programs_router
-from app.routers.admin.admin_media_router import router as admin_media_router
-from app.routers.admin.admin_members_router import router as admin_members_router
-from app.routers.admin.admin_documents_router import router as admin_documents_router
-from app.routers.admin.admin_communications_router import router as admin_communications_router
-from app.routers.admin.admin_market_router import router as admin_market_router
-from app.routers.admin.admin_webmaster_router import router as admin_webmaster_router
-from app.routers.admin.admin_governance_router import router as admin_governance_router
+# from app.routers.admin.admin_router import router as admin_router
+# from app.routers.admin.admin_content_router import router as admin_content_router
+# from app.routers.admin.admin_events_router import router as admin_events_router
+# from app.routers.admin.admin_leadership_router import router as admin_leadership_router
+# from app.routers.admin.admin_programs_router import router as admin_programs_router
+# from app.routers.admin.admin_media_router import router as admin_media_router
+# from app.routers.admin.admin_members_router import router as admin_members_router
+# from app.routers.admin.admin_documents_router import router as admin_documents_router
+# from app.routers.admin.admin_communications_router import router as admin_communications_router
+# from app.routers.admin.admin_market_router import router as admin_market_router
+# from app.routers.admin.admin_webmaster_router import router as admin_webmaster_router
+# from app.routers.admin.admin_governance_router import router as admin_governance_router
 
 
 def create_app() -> FastAPI:
@@ -34,8 +35,10 @@ def create_app() -> FastAPI:
         description="Backend API for public, member, and admin features."
     )
 
-    # Define allowed origins (can be specific domains or "*")
-    # For production, avoid "*" and list only trusted domains
+    # Logging middleware
+    app.middleware("http")(logging_middleware)
+
+    # Defined Origins
     origins = [
         "http://localhost",
         "http://localhost:5173"
@@ -51,25 +54,26 @@ def create_app() -> FastAPI:
     )
 
     # Public routes
-    app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
+    # app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(public_router, prefix="/api/public", tags=["Public"])
-    app.include_router(prayer_router, prefix="/api/prayer", tags=["Prayer"])
-    app.include_router(member_router, prefix="/api/member", tags=["Member"])
-    app.include_router(media_router, prefix="/api/media", tags=["Media"])
+    app.include_router(officer_router, prefix="/api/officer", tags=["Officer"])
+    # app.include_router(prayer_router, prefix="/api/prayer", tags=["Prayer"])
+    # app.include_router(member_router, prefix="/api/member", tags=["Member"])
+    # app.include_router(media_router, prefix="/api/media", tags=["Media"])
 
     # Admin routes
-    app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
-    app.include_router(admin_content_router, prefix="/api/admin", tags=["Admin - Content"])
-    app.include_router(admin_events_router, prefix="/api/admin", tags=["Admin - Events"])
-    app.include_router(admin_leadership_router, prefix="/api/admin", tags=["Admin - Leadership"])
-    app.include_router(admin_programs_router, prefix="/api/admin", tags=["Admin - Programs"])
-    app.include_router(admin_media_router, prefix="/api/admin", tags=["Admin - Media"])
-    app.include_router(admin_members_router, prefix="/api/admin", tags=["Admin - Members"])
-    app.include_router(admin_documents_router, prefix="/api/admin", tags=["Admin - Documents"])
-    app.include_router(admin_communications_router, prefix="/api/admin", tags=["Admin - Communications"])
-    app.include_router(admin_market_router, prefix="/api/admin", tags=["Admin - Market"])
-    app.include_router(admin_webmaster_router, prefix="/api/admin", tags=["Admin - Webmaster"])
-    app.include_router(admin_governance_router, prefix="/api/admin", tags=["Admin - Governance"])
+    # app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
+    # app.include_router(admin_content_router, prefix="/api/admin", tags=["Admin - Content"])
+    # app.include_router(admin_events_router, prefix="/api/admin", tags=["Admin - Events"])
+    # app.include_router(admin_leadership_router, prefix="/api/admin", tags=["Admin - Leadership"])
+    # app.include_router(admin_programs_router, prefix="/api/admin", tags=["Admin - Programs"])
+    # app.include_router(admin_media_router, prefix="/api/admin", tags=["Admin - Media"])
+    # app.include_router(admin_members_router, prefix="/api/admin", tags=["Admin - Members"])
+    # app.include_router(admin_documents_router, prefix="/api/admin", tags=["Admin - Documents"])
+    # app.include_router(admin_communications_router, prefix="/api/admin", tags=["Admin - Communications"])
+    # app.include_router(admin_market_router, prefix="/api/admin", tags=["Admin - Market"])
+    # app.include_router(admin_webmaster_router, prefix="/api/admin", tags=["Admin - Webmaster"])
+    # app.include_router(admin_governance_router, prefix="/api/admin", tags=["Admin - Governance"])
 
     return app
 

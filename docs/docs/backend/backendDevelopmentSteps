@@ -1,0 +1,72 @@
+** A practical build order you can follow **
+If you want a concrete sequence:
+
+Core & skeleton:
+
+main.py, core/config.py, core/logging.py, db/session.py, Alembic.
+
+Auth & RBAC:
+
+models/user.py, models/role.py, auth/jwt.py, core/security.py, core/rbac.py, services/auth_service.py, routers/auth_router.py.
+
+Core domain models & schemas:
+
+News, events, officers, directors, programs, documents, photos, prayers, voting, market, etc.
+
+Public router:
+
+All /public/* endpoints (read-only).
+
+Member router:
+
+Profile, events, programs, documents, voting, market.
+
+Admin routers (priority first):
+
+Content, events, members, governance; then media, communications, market, webmaster.
+
+Media router:
+
+File serving and thumbnails.
+
+Background tasks & audit:
+
+Celery app, email/media/voting/audit tasks, audit log integration.
+
+You can absolutely iterate feature-by-feature, but try to keep each feature slice vertical: models → schemas → services → router. That way, every slice is testable in isolation (even if you’re skipping formal tests for now).
+
+
+
+
+
+
+
+
+
+
+
+
+
+Reusable CRUD service template
+
+It gives you a predictable pattern:
+
+>  router → service → model → db
+
+Once you adopt this pattern, every feature becomes easy to implement.
+
+
+From here, the rest of the backend is feature implementation, not architecture.
+
+Each feature follows the same pattern:
+
+1. Model
+2. Schema (Pydantic)
+3. Service (using BaseCRUDService)
+4. Router (using CRUD router template)
+5. Optional custom endpoints
+6. Optional admin-only routes
+
+You already have the templates for #2–#4.
+
+So building each feature becomes a repeatable, predictable workflow.

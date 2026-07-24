@@ -29,6 +29,8 @@ class User(Base):
     phone = Column(String, nullable=True)
     address = Column(String, nullable=True)
 
+    profile_photo = Column(String, nullable=True)
+
     is_active = Column(Boolean, default=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -41,10 +43,11 @@ class User(Base):
         lazy="joined",
     )
 
+    officer_positions = relationship("Officer", back_populates="user")
+
     # Example relationships (optional, but helpful)
     news_posts = relationship("News", back_populates="author")
     events_created = relationship("Event", back_populates="creator")
-    officer_positions = relationship("Officer", back_populates="user")
     merchant_profile = relationship("Merchant", back_populates="user")
 
     def full_name(self) -> str:

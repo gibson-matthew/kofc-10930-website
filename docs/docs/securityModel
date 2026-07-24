@@ -1,0 +1,280 @@
+============================================================
+1. SECURITY GOALS
+============================================================
+- Protect member and officer data
+- Enforce role-based access control (RBAC)
+- Prevent unauthorized changes to council content
+- Ensure integrity of voting and financial data
+- Secure authentication and session handling
+- Provide auditability for all admin actions
+
+
+============================================================
+2. AUTHENTICATION MODEL
+============================================================
+
+AUTH METHOD
+-----------
+- Email + password
+- Passwords hashed with strong algorithm (e.g., bcrypt/argon2)
+- No plaintext passwords stored
+
+SESSION / TOKENS
+----------------
+- JWT access tokens
+- Stored in httpOnly, secure cookies
+- Short-lived access tokens (e.g., 15–30 minutes)
+- Optional refresh tokens with rotation
+
+LOGIN FLOW
+----------
+1. User submits email + password to /auth/login
+2. Backend verifies credentials
+3. Backend issues JWT with:
+   - user_id
+   - roles (e.g., ["member", "grand_knight"])
+   - expiry
+4. JWT stored in httpOnly cookie
+5. Frontend reads auth state via /auth/me
+
+
+============================================================
+3. AUTHORIZATION MODEL (RBAC)
+============================================================
+
+ROLE STORAGE
+------------
+- roles table
+- user_roles join table
+- Roles embedded in JWT
+
+ROLE ENFORCEMENT (BACKEND)
+--------------------------
+- FastAPI dependency checks JWT
+- Extract roles from token
+- Route-level decorators enforce required roles
+  - @requires_roles("admin")
+  - @requires_roles("grand_knight", "webmaster")
+
+ROLE ENFORCEMENT (FRONTEND)
+---------------------------
+- AuthContext stores user + roles
+- <AuthGuard> ensures user is logged in
+- <RoleGuard roles={['admin', 'grand_knight']}> wraps admin pages
+- Menus and buttons hidden if role not present
+
+DATA-LEVEL AUTHORIZATION
+------------------------
+- Member-specific data filtered by user_id
+- Admin actions restricted by role:
+  - FS/Treasurer: finance
+  - GK/DGK: governance
+  - Webmaster: technical settings
+- Voting: one vote per user per vote_id (enforced by UNIQUE constraint)
+
+
+============================================================
+4. INPUT VALIDATION & SANITIZATION
+============================================================
+
+BACKEND VALIDATION
+------------------
+- All request bodies validated via Pydantic schemas
+- Type checking, length limits, enum validation
+- Reject malformed or unexpected fields
+
+FRONTEND VALIDATION
+-------------------
+- Basic validation for UX (required fields, formats)
+- Never rely solely on frontend validation
+
+SANITIZATION
+------------
+- HTML inputs sanitized server-side
+- Prevent XSS in:
+  - News content
+  - Recognition descriptions
+  - Program descriptions
+  - Prayer requests
+
+FILE UPLOADS
+------------
+- Limit file size (e.g., 10–50 MB)
+- Restrict file types (images, PDFs)
+- Store files outside web root or behind authenticated endpoints
+- Generate safe filenames
+
+
+============================================================
+5. TRANSPORT & STORAGE SECURITY
+============================================================
+
+TRANSPORT
+---------
+- All traffic over HTTPS
+- TLS termination at ingress (K3s)
+- HSTS enabled
+
+STORAGE
+-------
+- Passwords hashed (bcrypt/argon2)
+- Secrets (DB passwords, JWT keys) stored in:
+  - Kubernetes secrets
+  - Sealed-secrets for GitOps
+- No secrets in source control
+
+DATABASE
+--------
+- Principle of least privilege for DB user
+- Separate DB users for app, migrations, and reporting
+- Regular backups with encrypted storage
+
+
+============================================================
+6. VOTING & FINANCIAL DATA INTEGRITY
+============================================================
+
+VOTING
+------
+- vote_cast table enforces UNIQUE (vote_id, user_id)
+- All voting actions logged in audit_log
+- Voting endpoints require member/admin roles
+- No client-side only enforcement; backend always checks
+
+FINANCIAL
+---------
+- Dues and budget changes restricted to FS/Treasurer/GK
+- All financial changes logged in audit_log
+- No direct SQL from frontend; only via validated APIs
+
+
+============================================================
+7. AUDIT LOGGING & MONITORING
+============================================================
+
+AUDIT LOG
+---------
+- audit_log table:
+  - user_id
+  - action
+  - details
+  - created_at
+- Log all admin actions:
+  - Content changes
+  - Member updates
+  - Financial changes
+  - Voting configuration changes
+  - Role changes
+
+APPLICATION LOGGING
+-------------------
+- Structured JSON logs
+- Include request_id and user_id when available
+- Log errors with stack traces (internal only)
+
+MONITORING
+----------
+- Health checks for API, workers, DB
+- Metrics for:
+  - Login failures
+  - 4xx/5xx rates
+  - Task failures (Celery)
+- Alerts for unusual activity
+
+
+============================================================
+8. FRONTEND SECURITY
+============================================================
+
+XSS PROTECTION
+--------------
+- Escape all dynamic content in React
+- Use dangerouslySetInnerHTML only with sanitized content
+- No inline event handlers with untrusted data
+
+CSRF PROTECTION
+---------------
+- Use same-site cookies (LAX/STRICT) for JWT
+- For sensitive endpoints, consider CSRF tokens if needed
+
+CLICKJACKING
+------------
+- Set X-Frame-Options: DENY
+- Or Content-Security-Policy frame-ancestors 'none'
+
+
+============================================================
+9. CELERY & BACKGROUND TASK SECURITY
+============================================================
+
+TASK SECURITY
+-------------
+- Tasks must validate inputs
+- Tasks must not trust client-provided IDs blindly
+- Tasks must run under least-privilege DB user
+
+QUEUE ISOLATION
+---------------
+- Separate queues for:
+  - email_queue
+  - media_queue
+  - voting_queue
+  - audit_queue
+
+RETRY & FAILURE
+---------------
+- Retry with backoff for transient errors
+- Log failures with context
+- No silent failures
+
+
+============================================================
+10. DEPLOYMENT & ENVIRONMENT SECURITY
+============================================================
+
+K3s CLUSTER
+-----------
+- Namespaces per environment (prod, staging)
+- Network policies to restrict pod communication
+- Ingress only for public-facing services
+
+HELM & CONFIG
+-------------
+- values.yaml for non-secret config
+- Secrets via Kubernetes secrets / sealed-secrets
+- No hardcoded secrets in charts
+
+ENVIRONMENTS
+------------
+- Separate staging and production
+- No test data in production
+- No production data in staging
+
+
+============================================================
+11. SECURITY REVIEW & MAINTENANCE
+============================================================
+
+REGULAR REVIEWS
+---------------
+- Review roles & permissions annually
+- Review audit logs regularly
+- Review DB indexes and constraints
+
+PATCHING
+--------
+- Keep dependencies updated:
+  - React
+  - FastAPI
+  - Postgres
+  - Redis
+  - Celery
+- Apply security patches promptly
+
+INCIDENT RESPONSE
+-----------------
+- Define process for:
+  - Breach detection
+  - Containment
+  - Notification
+  - Recovery

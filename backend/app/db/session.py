@@ -1,16 +1,17 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 
 from app.core.config import settings
 
+# Base model class for all ORM models
+Base = declarative_base()
 
 # Create async engine
 engine = create_async_engine(
     settings.DATABASE_URL,
     future=True,
-    echo=settings.DEBUG,  # optional SQL echoing
+    echo=settings.DEBUG,
 )
-
 
 # Create session factory
 AsyncSessionLocal = sessionmaker(
@@ -20,7 +21,6 @@ AsyncSessionLocal = sessionmaker(
     autoflush=False,
     autocommit=False,
 )
-
 
 # Dependency for FastAPI routes
 async def get_db():

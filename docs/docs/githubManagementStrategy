@@ -1,0 +1,247 @@
+============================================================
+1. REPOSITORY STRUCTURE
+============================================================
+
+Use a multi-repo architecture:
+
+github.com/koc-council/
+  ├── frontend        (React SPA)
+  ├── backend         (FastAPI + Celery)
+  ├── infra           (K3s manifests + Helm charts)
+  ├── docs            (Architecture, ERD, API spec, RBAC)
+  └── ops             (CI/CD workflows, scripts)
+
+Reason:
+- Clear separation of concerns
+- Independent versioning
+- Independent deployments
+- Easier onboarding
+
+
+============================================================
+2. BRANCHING STRATEGY
+============================================================
+
+Use GitHub Flow with environment branches:
+
+main            → production
+staging         → staging environment
+dev             → shared development
+
+Feature branches:
+feature/<name>  → new features
+bugfix/<name>   → fixes
+hotfix/<name>   → urgent production fixes
+
+Rules:
+- Only staging merges into main
+- Only dev merges into staging
+- Feature branches merge into dev
+
+
+============================================================
+3. PULL REQUEST WORKFLOW
+============================================================
+
+Every change must go through a PR.
+
+PR Requirements:
+- Clear description
+- Screenshots for UI changes
+- Linked issue number
+- Passing CI checks
+- At least one reviewer approval
+- No failing tests
+- No merge conflicts
+
+Labels:
+- enhancement
+- bug
+- documentation
+- infra
+- security
+- breaking-change
+
+
+============================================================
+4. ISSUE TRACKING & PROJECT BOARDS
+============================================================
+
+Use GitHub Projects for Kanban-style tracking:
+
+Columns:
+- Backlog
+- Ready
+- In Progress
+- In Review
+- Testing
+- Done
+
+Issue Types:
+- Feature request
+- Bug report
+- Task
+- Epic (multi-feature)
+- Spike (research)
+
+Every issue must include:
+- Description
+- Acceptance criteria
+- Priority
+- Assigned owner
+- Estimated effort
+
+
+============================================================
+5. VERSIONING & RELEASES
+============================================================
+
+Use semantic versioning:
+
+MAJOR.MINOR.PATCH
+
+Examples:
+1.0.0 → first production release  
+1.1.0 → new features  
+1.1.1 → bug fixes  
+
+Release Process:
+1. Merge staging → main
+2. Tag release (v1.0.0)
+3. GitHub Actions builds release artifacts
+4. Helm charts updated with new image tags
+5. Production deployment triggered
+
+
+============================================================
+6. CI/CD WITH GITHUB ACTIONS
+============================================================
+
+Workflows:
+- frontend-ci.yml
+- backend-ci.yml
+- infra-ci.yml
+- deploy-staging.yml
+- deploy-production.yml
+
+CI Tasks:
+- Install dependencies
+- Run linters (ESLint, Black, Ruff)
+- Run tests (frontend + backend)
+- Build Docker images
+- Push images to registry
+- Validate Helm charts
+
+CD Tasks:
+- Deploy to staging on merge to staging
+- Deploy to production on tagged release
+
+
+============================================================
+7. CODE REVIEWS & QUALITY RULES
+============================================================
+
+Review Checklist:
+- Code follows standards
+- No secrets committed
+- No console.log or debug prints
+- Tests included for new logic
+- API changes documented
+- RBAC rules enforced
+- No large PRs (>500 lines) without discussion
+
+Review Roles:
+- Frontend devs review frontend PRs
+- Backend devs review backend PRs
+- Infra devs review Helm/K3s PRs
+- Lead dev reviews all critical PRs
+
+
+============================================================
+8. SECURITY PRACTICES
+============================================================
+
+Rules:
+- No secrets in repos
+- Use GitHub Secret Scanning
+- Use Dependabot for dependency updates
+- Use branch protection rules
+- Require signed commits (optional)
+- Require PR reviews for main/staging
+
+Protected Branches:
+- main
+- staging
+
+Allowed Actions:
+- Only approved GitHub Actions
+- No third-party actions without review
+
+
+============================================================
+9. DOCUMENTATION MANAGEMENT
+============================================================
+
+docs repo contains:
+- System architecture overview
+- ERD
+- API specification
+- RBAC matrix
+- Coding standards
+- Deployment architecture
+- Logging & monitoring strategy
+- Celery task architecture
+
+Rules:
+- Every major feature requires documentation
+- Docs updated before merging PR
+- Architecture diagrams stored in /docs/diagrams
+
+
+============================================================
+10. COLLABORATION & COMMUNICATION
+============================================================
+
+Use:
+- GitHub Discussions for design debates
+- GitHub Issues for tasks
+- GitHub Projects for planning
+- GitHub Wiki for onboarding guides
+
+Weekly Workflow:
+- Monday: Sprint planning
+- Daily: Standup updates via GitHub comments
+- Friday: Review PRs + merge to dev
+
+
+============================================================
+11. RELEASE & DEPLOYMENT PIPELINE
+============================================================
+
+dev → staging → production
+
+Staging Deployment:
+- Automatic on merge to staging
+- Used for QA, council review
+
+Production Deployment:
+- Manual approval required
+- Triggered by release tag
+- Helm upgrade executed via GitHub Actions
+
+
+============================================================
+12. BACKUP & RECOVERY
+============================================================
+
+Store:
+- Helm chart versions
+- K3s manifests
+- Database migration scripts
+- Release artifacts
+
+Recovery Steps:
+1. Checkout last stable release
+2. Helm rollback
+3. Restore DB backup
+4. Redeploy workers

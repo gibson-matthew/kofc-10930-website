@@ -1,0 +1,174 @@
+npm run dev
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+============================================================
+PHASE 1 — PROJECT KICKOFF & FINAL PLANNING
+July 2026 (Weeks 1–2)
+============================================================
+• Review all architecture documents
+• Confirm sitemap, ERD, API spec, RBAC matrix
+• Finalize deployment plan (K3s + Helm)
+• Create sprint schedule for July–Nov
+• Assign responsibilities (frontend, backend, infra)
+• Prepare staging environment
+
+Deliverables:
+- Final project plan
+- Staging cluster ready
+- All documentation approved
+
+
+============================================================
+PHASE 2 — BACKEND IMPLEMENTATION (FASTAPI)
+July 2026 (Weeks 3–4) → August 2026 (Weeks 1–3)
+============================================================
+• Implement core backend modules:
+  - Auth + RBAC
+  - Users & roles
+  - Public content APIs
+  - Events & volunteers
+  - Programs & committees
+  - Media endpoints
+  - Voting system
+  - Market center
+  - Documents
+  - Audit logging
+
+• Implement SQLAlchemy models + Alembic migrations
+• Implement Celery workers + Redis integration
+
+Deliverables:
+- Fully functional backend API
+- Database schema deployed
+- Celery workers operational
+
+
+============================================================
+PHASE 3 — FRONTEND IMPLEMENTATION (REACT)
+August 2026 (Weeks 4–5) → September 2026 (Weeks 1–4)
+============================================================
+• Build React SPA:
+  - Public pages
+  - Member portal
+  - Admin portal
+  - Role-aware routing
+  - AuthGuard + RoleGuard
+  - UI component library
+  - Feature modules (events, programs, media, voting)
+
+• Integrate frontend with backend API
+• Implement global state (Auth, roles)
+• Implement media viewer + upload UI
+
+Deliverables:
+- Fully functional frontend
+- All major pages implemented
+- Member & admin portals operational
+
+
+============================================================
+PHASE 4 — DEPLOYMENT & INFRASTRUCTURE
+September 2026 (Weeks 4–5) → October 2026 (Weeks 1–2)
+============================================================
+• Create Helm charts for all services
+• Deploy staging environment
+• Deploy production environment
+• Implement HTTPS + Ingress routing
+• Implement backup & restore procedures
+• Implement monitoring + alerting
+
+Deliverables:
+- Production-ready K3s cluster
+- Full deployment pipeline
+- Monitoring dashboards online
+
+
+============================================================
+PHASE 5 — CONTENT & MEMBER DATA MIGRATION
+October 2026 (Weeks 3–4)
+============================================================
+• Migrate:
+  - News
+  - Recognition
+  - Memoriam
+  - Events
+  - Programs
+  - Photos & albums
+  - Newsletters
+  - Documents
+  - Market center items
+
+• Import member directory
+• Validate dues data
+• Validate voting history
+
+Deliverables:
+- All legacy content migrated
+- Member directory imported
+- Media library fully populated
+
+
+============================================================
+PHASE 6 — TESTING & QUALITY ASSURANCE
+November 2026 (Weeks 1–3)
+============================================================
+• Unit tests (frontend + backend)
+• Integration tests (API + DB)
+• E2E tests (routing + workflows)
+• Load testing (events, voting, media)
+• Security testing:
+  - RBAC enforcement
+  - JWT handling
+  - SQL injection prevention
+  - XSS sanitization
+
+Deliverables:
+- Full test suite passed
+- Security audit passed
+- Performance benchmarks completed
+
+
+============================================================
+PHASE 7 — FINAL COUNCIL REVIEW & APPROVAL
+November 2026 (Week 4)
+============================================================
+• Demonstrations to council leadership
+• Collect final feedback
+• Implement final revisions
+• Prepare launch communications
+
+Deliverables:
+- Council approval
+- Final revisions completed
+
+
+============================================================
+PHASE 8 — PUBLIC LAUNCH
+December 2026 (Week 1)
+============================================================
+• Switch DNS to new platform
+• Monitor logs & metrics
+• Hotfix any launch issues
+• Validate:
+  - Member login
+  - Admin tools
+  - Voting system
+  - Media uploads
+  - Email sending
+
+Deliverables:
+- Successful public launch
+- System stable
+
+
+============================================================
+PHASE 9 — POST-LAUNCH STABILIZATION
+December 2026 (Week 2–3)
+============================================================
+• Bug fixes
+• Performance improvements
+• Documentation updates
+• Long-term maintenance plan
+
+Deliverables:
+- Fully stable system
+- Project officially completed before December 2026

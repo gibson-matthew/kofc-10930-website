@@ -1,4 +1,5 @@
-from pydantic import BaseSettings, AnyHttpUrl
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AnyHttpUrl
 from typing import List, Optional
 
 
@@ -35,9 +36,11 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: Optional[str] = None
     CELERY_RESULT_BACKEND: Optional[str] = None
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    # Pydantic v2 config
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8"
+    )
 
 
 settings = Settings()
