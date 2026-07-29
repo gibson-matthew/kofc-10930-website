@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.services.news_service import news_service
-from app.services.events_service import events_service
-from app.services.media_service import media_service
+# from app.services.news_service import news_service
+# from app.services.events_service import events_service
+from app.services.officers_service import officers_service
+# from app.services.media_service import media_service
 
 
 router = APIRouter()
@@ -63,6 +64,31 @@ async def get_public_event(event_id: int, db: AsyncSession = Depends(get_db)):
     if not event or not event.is_public:
         return {"error": "Event not found"}
     return event
+
+# ============================================================
+#  CURRENT OFFICERS & PAST GRAND KNIGHTS
+# ============================================================
+# │   ├── GET /public/officers
+# │   ├── GET /public/officers/past-grand-knights
+
+@router.get("/officers")
+async def get_public_officer(db: AsyncSession = Depends(get_db)):
+    """
+    Returns all public officers.
+    """
+    return await officers_service.list(db)
+    # return await officers_service.list(db, filters={"is_public": True})
+
+
+# @router.get("/events/{event_id}")
+# async def get_public_event(event_id: int, db: AsyncSession = Depends(get_db)):
+#     """
+#     Returns a single public event.
+#     """
+#     event = await events_service.get(db, event_id)
+#     if not event or not event.is_public:
+#         return {"error": "Event not found"}
+#     return event
 
 
 # ============================================================

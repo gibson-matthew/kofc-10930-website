@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.logging import setup_logging
+from app.core.logging import logging_middleware
 
 from app.routers.auth_router import router as auth_router
 from app.routers.officer_router import router as officer_router
@@ -39,15 +40,16 @@ def create_app() -> FastAPI:
     app.middleware("http")(logging_middleware)
 
     # Defined Origins
-    origins = [
-        "http://localhost",
-        "http://localhost:5173"
-    ]
+    # origins = [
+    #     "http://localhost",
+    #     "http://localhost:5173"
+    # ]
 
     # CORS
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
+        # allow_origins=origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

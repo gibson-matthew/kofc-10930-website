@@ -1,6 +1,8 @@
 from datetime import datetime
 from typing import List
 
+from app.models.user_roles import user_roles
+
 from sqlalchemy import (
     Column,
     Integer,
@@ -46,9 +48,9 @@ class User(Base):
     officer_positions = relationship("Officer", back_populates="user")
 
     # Example relationships (optional, but helpful)
-    news_posts = relationship("News", back_populates="author")
-    events_created = relationship("Event", back_populates="creator")
-    merchant_profile = relationship("Merchant", back_populates="user")
+    # news_posts = relationship("News", back_populates="author")
+    # events_created = relationship("Event", back_populates="creator")
+    # merchant_profile = relationship("Merchant", back_populates="user")
 
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}"

@@ -10,10 +10,7 @@ from app.schemas.officers_schemas import OfficerRead, OfficerCreate, OfficerUpda
 from app.services.officers_service import officers_service
 
 
-# ============================================================
-#  ADMIN ROUTER (CRUD)
-# ============================================================
-
+# Admin/Webmaster CRUD
 router = create_crud_router(
     model=Officer,
     schema_read=OfficerRead,
@@ -26,12 +23,12 @@ router = create_crud_router(
 )
 
 
-# ============================================================
-#  PUBLIC ROUTER
-# ============================================================
-
+# Public endpoint
 public_router = APIRouter(prefix="/officers", tags=["Officers"])
 
+@public_router.get("/status")
+async def public_status():
+    return {"status": "ok", "message": "Officer API is running"}
 
 @public_router.get("/current", response_model=list[OfficerRead])
 async def get_current_officers(

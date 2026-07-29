@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     # CORS
-    CORS_ORIGINS: List[AnyHttpUrl] = []
+    # CORS_ORIGINS: List[AnyHttpUrl] = []
+    CORS_ORIGINS: List[str] = ["*"]
 
     # Email
     EMAIL_FROM: str
@@ -44,3 +45,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+

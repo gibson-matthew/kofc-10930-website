@@ -1,5 +1,5 @@
 import pytest
-from tests.factories import create_role, create_user
+from app.tests.factories import create_role, create_user
 from app.models.officers import OfficerPosition
 
 # Test 1 — Admin/Webmaster can create an officer
