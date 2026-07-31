@@ -1,11 +1,14 @@
-from sqlalchemy import Column, Integer, Text, TIMESTAMP, ForeignKey
-from backend.app.db.session import Base
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Integer, Text, TIMESTAMP
+from app.db.session import Base
+
 
 class AuditLog(Base):
     __tablename__ = "audit_log"
 
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    action = Column(Text, nullable=False)
-    details = Column(Text)
-    created_at = Column(TIMESTAMP)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    details: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP, server_default="NOW()"
+    )

@@ -7,26 +7,27 @@ from app.models.user import User
 
 
 class OfficersService(BaseCRUDService):
+    def __init__(self):
+        super().__init__(Officer)
+
     async def get_current_officers(self, db: AsyncSession):
         """
         Return officers with name + photo for public display.
         """
-
         result = await db.execute(
             select(Officer).join(Officer.user)
         )
         officers = result.scalars().all()
 
-        output = []
-        for officer in officers:
-            output.append({
+        return [
+            {
                 "id": officer.id,
                 "position": officer.position,
                 "name": f"{officer.user.first_name} {officer.user.last_name}",
                 "photo": officer.user.profile_photo,
-            })
+            }
+            for officer in officers
+        ]
 
-        return output
 
-
-officers_service = OfficersService(Officer)
+officers_service = OfficersService()

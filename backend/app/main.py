@@ -1,10 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Config & Logging
 from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.logging import logging_middleware
 
+# Models
+import app.models
+# from app.models import events
+# from app.models import event_volunteers
+
+# Public Routers
 from app.routers.auth_router import router as auth_router
 from app.routers.officer_router import router as officer_router
 from app.routers.public_router import router as public_router
@@ -12,7 +19,7 @@ from app.routers.public_router import router as public_router
 # from app.routers.member_router import router as member_router
 # from app.routers.media_router import router as media_router
 
-# Admin routers
+# Admin Routers
 # from app.routers.admin.admin_router import router as admin_router
 # from app.routers.admin.admin_content_router import router as admin_content_router
 # from app.routers.admin.admin_events_router import router as admin_events_router
@@ -25,7 +32,6 @@ from app.routers.public_router import router as public_router
 # from app.routers.admin.admin_market_router import router as admin_market_router
 # from app.routers.admin.admin_webmaster_router import router as admin_webmaster_router
 # from app.routers.admin.admin_governance_router import router as admin_governance_router
-
 
 def create_app() -> FastAPI:
     setup_logging()

@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 
 from app.db.session import Base
 
-from app.models.user_roles import user_roles
+from app.models.user_roles import UserRole
 
 
 

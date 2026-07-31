@@ -1,8 +1,7 @@
 from datetime import datetime
 from typing import List
 
-from app.models.user_roles import user_roles
-
+from app.models.user_roles import UserRole
 from sqlalchemy import (
     Column,
     Integer,

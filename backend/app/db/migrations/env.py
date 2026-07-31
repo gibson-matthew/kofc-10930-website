@@ -2,6 +2,7 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
+from backend.app.models import prayer_requests
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -11,8 +12,7 @@ from app.db.session import engine
 # Import all models so Alembic can autogenerate migrations
 from app.models import (
     user, role, news, recognition, memoriam, links, events,
-    officers, directors, programs, committees, prayers,
-    newsletters, photos, market, jobs, degree_schedule,
+    officers, directors, programs, committees, newsletters, photos, market, jobs, degree_schedule,
     documents, voting, audit_log, assemblies
 )
 
@@ -35,7 +35,7 @@ target_metadata = [
     directors.Base.metadata,
     programs.Base.metadata,
     committees.Base.metadata,
-    prayers.Base.metadata,
+    prayer_requests.Base.metadata,
     newsletters.Base.metadata,
     photos.Base.metadata,
     market.Base.metadata,

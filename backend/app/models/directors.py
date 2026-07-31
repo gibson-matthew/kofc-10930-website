@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, Text
-from backend.app.db.session import Base
+from app.db.session import Base
 
 class Director(Base):
     __tablename__ = "directors"

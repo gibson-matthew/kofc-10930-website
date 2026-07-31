@@ -1,11 +1,8 @@
-from sqlalchemy import Column, Integer, ForeignKey, Table
-
+from sqlalchemy import Column, Integer, ForeignKey
 from app.db.session import Base
 
+class UserRole(Base):
+    __tablename__ = "user_roles"
 
-user_roles = Table(
-    "user_roles",
-    Base.metadata,
-    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-    Column("role_id", Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
-)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
