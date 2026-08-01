@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+SQLAlchemy
+mysql-connector-python
+httpx
+pydantic
+orjson
+watchfiles
+pydantic_settings
+python-json-logger
+asyncpg
+passlib
+python-jose
+email-validator

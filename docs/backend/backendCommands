@@ -37,3 +37,6 @@ pip install httpx
 # pip install fastapi uvicorn # I ran this command later to fix this command from not running in \backend folder:
 # uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
+# For Testing
+pip install pytest pytest-asyncio httpx
+pip install pydantic-settings (This is version 2, not version 1)
