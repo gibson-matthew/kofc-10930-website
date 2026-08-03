@@ -36,13 +36,23 @@ class User(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # REQUIRED for mapped association table
+    # user_roles = relationship("UserRole", back_populates="user")
+
     # Many-to-many relationship with roles
+    # roles = relationship(
+    #     "Role",
+    #     secondary="user_roles",
+    #     back_populates="users",
+    #     lazy="raise",
+    # )
     roles = relationship(
         "Role",
-        secondary="user_roles",
+        secondary=UserRole,        # <-- Use the Table, not a string
         back_populates="users",
         lazy="raise",
     )
+            
 
     officer_positions = relationship("Officer", back_populates="user")
 
@@ -50,6 +60,11 @@ class User(Base):
     # news_posts = relationship("News", back_populates="author")
     # events_created = relationship("Event", back_populates="creator")
     # merchant_profile = relationship("Merchant", back_populates="user")
+
+    # Convenience property to access roles cleanly
+    # @property
+    # def roles(self):
+    #     return [ur.role for ur in self.user_roles]
 
     def full_name(self) -> str:
         return f"{self.first_name} {self.last_name}"

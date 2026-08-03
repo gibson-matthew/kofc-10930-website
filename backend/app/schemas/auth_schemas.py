@@ -29,7 +29,7 @@ class MeResponse(BaseModel):
     phone: str | None
     address: str | None
     is_active: bool
-    roles: list[str]
+    # roles: list[str]
 
 
 class RolesResponse(BaseModel):

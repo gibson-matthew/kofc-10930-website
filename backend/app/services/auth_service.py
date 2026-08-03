@@ -13,6 +13,7 @@ from app.auth.jwt import (
 )
 from app.models.user import User
 from app.models.role import Role
+from app.models.user_roles import UserRole
 
 
 MAX_PASSWORD_LENGTH = 72
@@ -168,7 +169,10 @@ class AuthService:
             )
             roles = result.scalars().all()
             # Avoid lazy load on user.roles
-            set_committed_value(user, "roles", roles)
+            # set_committed_value(user, "roles", roles)
+            for role in roles:
+                db.add(UserRole(user=user, role=role))
+
 
         await db.commit()
         await db.refresh(user)

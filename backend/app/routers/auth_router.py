@@ -146,7 +146,8 @@ async def get_me(
         phone=user.phone,
         address=user.address,
         is_active=user.is_active,
-        roles=[role.name for role in user.roles],
+        # roles=[role.name for role in user.roles],
+        # roles=[ur.role.name for ur in user.user_roles],
     )
 
 

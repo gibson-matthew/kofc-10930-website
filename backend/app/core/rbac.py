@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sqlalchemy import select
 
 from app.auth.jwt import decode_access_token
@@ -22,9 +23,6 @@ async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """
-    Extract user from JWT token and load from database.
-    """
     payload = decode_access_token(token)
     if payload is None:
         raise HTTPException(
@@ -34,7 +32,13 @@ async def get_current_user(
 
     user_id = int(payload.get("sub"))
 
-    result = await db.execute(select(User).where(User.id == user_id))
+    stmt = (
+        select(User)
+        .where(User.id == user_id)
+        .options(selectinload(User.roles))  # <-- THIS FIXES THE ERROR
+    )
+
+    result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
     if not user:
@@ -43,7 +47,6 @@ async def get_current_user(
             detail="User not found",
         )
 
-    # You said inactive users *can* log in, so no check here.
     return user
 
 
