@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.db.session import get_db
 from app.services.auth_service import AuthService
@@ -79,9 +80,10 @@ async def request_password_reset(
 
     # Lookup user by email
     result = await db.execute(
-        User.__table__.select().where(User.email == payload.email)
+        select(User).where(User.email == payload.email)
     )
     user = result.scalar_one_or_none()
+
 
     if not user:
         raise HTTPException(
