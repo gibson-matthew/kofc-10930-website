@@ -41,7 +41,7 @@ class User(Base):
         "Role",
         secondary="user_roles",
         back_populates="users",
-        lazy="joined",
+        lazy="raise",
     )
 
     officer_positions = relationship("Officer", back_populates="user")

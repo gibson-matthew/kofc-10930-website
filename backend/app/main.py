@@ -62,7 +62,7 @@ def create_app() -> FastAPI:
     )
 
     # Public routes
-    # app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
+    app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
     app.include_router(public_router, prefix="/api/public", tags=["Public"])
     # app.include_router(officer_router, prefix="/api/officer", tags=["Officer"])
     app.include_router(prayer_router, prefix="/api/prayer", tags=["Prayer"])

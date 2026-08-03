@@ -1,6 +1,8 @@
 from typing import Optional, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import set_committed_value
+from sqlalchemy.orm import selectinload
 from sqlalchemy import select, update
 
 from app.core.security import hash_password, verify_password
@@ -11,6 +13,9 @@ from app.auth.jwt import (
 )
 from app.models.user import User
 from app.models.role import Role
+
+
+MAX_PASSWORD_LENGTH = 72
 
 
 class AuthService:
@@ -29,8 +34,19 @@ class AuthService:
         Validate membership_number + password.
         """
 
+        # Enforce bcrypt max length
+        if len(password) > MAX_PASSWORD_LENGTH:
+            return None
+
+        # result = await db.execute(
+        #     select(User).where(User.membership_number == membership_number)
+        # )
+        # user = result.unique().scalar_one_or_none()
+
         result = await db.execute(
-            select(User).where(User.membership_number == membership_number)
+            select(User)
+                .options(selectinload(User.roles))
+                .where(User.membership_number == membership_number)
         )
         user = result.scalar_one_or_none()
 
@@ -63,9 +79,6 @@ class AuthService:
 
     @staticmethod
     async def generate_password_reset_token(user_id: int) -> str:
-        """
-        Create a short-lived password reset token.
-        """
         return create_password_reset_token(user_id)
 
     @staticmethod
@@ -77,6 +90,10 @@ class AuthService:
         """
         Validate reset token and update password.
         """
+
+        # Enforce bcrypt max length
+        if len(new_password) > MAX_PASSWORD_LENGTH:
+            return False
 
         user_id = verify_password_reset_token(token)
         if not user_id:
@@ -99,21 +116,15 @@ class AuthService:
 
     @staticmethod
     async def get_user_roles(db: AsyncSession, user_id: int) -> List[str]:
-        """
-        Return list of role names for a user.
-        """
-
         result = await db.execute(
             select(Role.name)
             .join(Role.users)
             .where(User.id == user_id)
         )
-
-        roles = result.scalars().all()
-        return roles
+        return result.scalars().all()
 
     # ============================================================
-    #  CREATE USER (used by init_db or admin tools)
+    #  CREATE USER
     # ============================================================
 
     @staticmethod
@@ -131,6 +142,10 @@ class AuthService:
         """
         Create a new user with optional roles.
         """
+
+        # Enforce bcrypt max length
+        if len(password) > MAX_PASSWORD_LENGTH:
+            raise ValueError("Password cannot exceed 72 characters.")
 
         hashed = hash_password(password)
 
@@ -152,7 +167,8 @@ class AuthService:
                 select(Role).where(Role.name.in_(role_names))
             )
             roles = result.scalars().all()
-            user.roles.extend(roles)
+            # Avoid lazy load on user.roles
+            set_committed_value(user, "roles", roles)
 
         await db.commit()
         await db.refresh(user)

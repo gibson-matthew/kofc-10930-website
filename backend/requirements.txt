@@ -13,3 +13,4 @@ asyncpg
 passlib
 python-jose
 email-validator
+bcrypt==4.1.2

@@ -22,8 +22,10 @@ class BaseCRUDService:
     # ============================================================
 
     async def get(self, db: AsyncSession, id: int) -> Optional[ModelType]:
-        result = await db.execute(select(self.model).where(self.model.id == id))
-        return result.scalar_one_or_none()
+        result = await db.execute(
+            select(self.model).where(self.model.id == id)
+        )
+        return result.unique().scalar_one_or_none()   # FIXED
 
     # ============================================================
     #  LIST (OPTIONAL FILTERS)
@@ -50,7 +52,7 @@ class BaseCRUDService:
             query = query.offset(offset)
 
         result = await db.execute(query)
-        return result.scalars().all()
+        return result.unique().scalars().all()        # FIXED
 
     # ============================================================
     #  CREATE

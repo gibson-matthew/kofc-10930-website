@@ -17,4 +17,5 @@ class Role(Base):
         "User",
         secondary="user_roles",
         back_populates="roles",
+        lazy="raise",
     )

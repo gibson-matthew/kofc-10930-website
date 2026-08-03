@@ -41,12 +41,14 @@ CREATE TABLE roles (
 
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
+    membership_number TEXT UNIQUE NOT NULL,
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     first_name TEXT NOT NULL,
     last_name TEXT NOT NULL,
     phone TEXT,
     address TEXT,
+    profile_photo TEXT,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT NOW()
 );

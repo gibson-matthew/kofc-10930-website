@@ -6,7 +6,7 @@ from typing import List, Optional
 class Settings(BaseSettings):
     # App
     APP_NAME: str = "Council Management API"
-    APP_VERSION: str = "0.1.0"
+    APP_VERSION: str = "0.2.0"
     DEBUG: bool = False
 
     # Database
@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+    LOGIN_ENDPOINT: str = "/auth/login"
 
     # CORS
     # CORS_ORIGINS: List[AnyHttpUrl] = []

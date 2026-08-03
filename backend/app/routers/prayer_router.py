@@ -10,8 +10,8 @@ from app.services import prayer_service
 from app.schemas import prayers_schemas
 
 # Auth dependency for member submissions
-# from app.auth.dependencies import get_current_user
-# from app.models import user as user_model
+from app.auth.dependencies import get_current_user
+from app.models import user as user_model
 
 
 router = APIRouter(prefix="/prayer", tags=["Prayer Requests"])
