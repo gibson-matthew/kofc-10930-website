@@ -16,7 +16,7 @@ from app.routers.auth_router import router as auth_router
 # from app.routers.officer_router import router as officer_router
 from app.routers.public_router import router as public_router
 from app.routers.prayer_router import router as prayer_router
-# from app.routers.member_router import router as member_router
+from app.routers.member_router import router as member_router
 # from app.routers.media_router import router as media_router
 
 # Admin Routers
@@ -66,7 +66,7 @@ def create_app() -> FastAPI:
     app.include_router(public_router, prefix="/api/public", tags=["Public"])
     # app.include_router(officer_router, prefix="/api/officer", tags=["Officer"])
     app.include_router(prayer_router, prefix="/api/prayer", tags=["Prayer"])
-    # app.include_router(member_router, prefix="/api/member", tags=["Member"])
+    app.include_router(member_router, prefix="/api/member", tags=["Member"])
     # app.include_router(media_router, prefix="/api/media", tags=["Media"])
 
     # Admin routes

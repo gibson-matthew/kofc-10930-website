@@ -10,6 +10,13 @@ from app.models import user as user_model
 
 router = APIRouter(tags=["Prayer Requests"])
 
+# ============================================================
+#  PRAYER STATUS CHECK
+# ============================================================
+
+@router.get("/status")
+async def public_status():
+    return {"status": "ok", "message": "Prayer API is running"}
 
 # ============================================================
 #  MEMBER PRAYER REQUEST

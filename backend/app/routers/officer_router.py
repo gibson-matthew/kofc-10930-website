@@ -24,7 +24,7 @@ router = create_crud_router(
 
 
 # Public endpoint
-public_router = APIRouter(prefix="/officers", tags=["Officers"])
+public_router = APIRouter(tags=["Officers"])
 
 @public_router.get("/status")
 async def public_status():
