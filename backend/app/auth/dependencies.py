@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.db.session import get_db
@@ -16,12 +17,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl=settings.LOGIN_ENDPOINT)
 
 
 # ============================================================
-#  GET CURRENT USER
+#  GET CURRENT USER (ASYNC)
 # ============================================================
 
-def get_current_user(
+async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
 ) -> User:
     """
     Extract JWT from Authorization header, decode it,
@@ -44,7 +45,12 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    user = db.query(User).filter(User.id == int(user_id)).first()
+    # AsyncSession requires select() instead of db.query()
+    result = await db.execute(
+        select(User).where(User.id == int(user_id))
+    )
+    user = result.scalar_one_or_none()
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -64,10 +70,11 @@ def require_roles(required_roles: list[str]):
     at least one of the required roles.
     """
 
-    def role_checker(
+    async def role_checker(
         current_user: User = Depends(get_current_user),
     ):
-        user_roles = current_user.roles or []
+        # current_user.roles is now a proper many-to-many list of Role objects
+        user_roles = [role.name for role in current_user.roles]
 
         if not any(role in user_roles for role in required_roles):
             raise HTTPException(
