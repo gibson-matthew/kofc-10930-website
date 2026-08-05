@@ -1,0 +1,129 @@
+✅ 1. Finalize Layouts
+Implement PublicLayout, MemberLayout, AdminLayout
+
+Wire each route group to the correct layout
+
+Add role‑based guards for member/admin routes
+
+✅ 2. Build Public Homepage
+Hero section (photos + CTA)
+
+Upcoming events (GET /public/events)
+
+Latest news (GET /public/news)
+
+Programs overview (GET /public/programs)
+
+Leadership spotlight (GET /public/officers)
+
+Photo gallery preview (GET /public/photos)
+
+✅ 3. Connect All Public Pages
+News list/detail
+
+Events list/detail
+
+Programs categories
+
+Leadership pages
+
+Media galleries
+
+Prayer request forms
+
+Market categories
+
+All use /public/... endpoints.
+
+✅ 4. Finish Member Portal
+Dashboard widgets
+
+Profile edit
+
+Announcements
+
+Calendar
+
+Events + volunteer signup
+
+Programs + volunteer
+
+Documents
+
+Voting pages
+
+Market pages
+
+All use /member/... endpoints.
+
+✅ 5. Complete Admin Console
+For each admin section:
+
+List view
+
+Create/edit form
+
+Delete actions
+
+Media upload pages
+
+Slideshow editor
+
+Member management
+
+Governance document editors
+
+All use /admin/... endpoints.
+
+✅ 6. Add Content Editing Tools
+Form‑based editing for structured content
+
+WYSIWYG editor for news, memoriam, recognition
+
+Inline editing for homepage/about blocks
+
+Media manager for photos/newsletters/videos
+
+✅ 7. Implement Auth & Roles
+Login/logout/reset
+
+Store JWT
+
+Fetch roles (/auth/roles)
+
+Protect member/admin routes
+
+Show/hide admin UI based on role
+
+✅ 8. Polish UI
+Apply KOFC colors
+
+Add responsive layout
+
+Add loading/error states
+
+Add breadcrumbs
+
+Add consistent buttons/cards/tables
+
+✅ 9. Final Integration
+Connect all API calls via useApi()
+
+Add caching where helpful
+
+Validate forms
+
+Test all flows (public, member, admin)
+
+✅ 10. Deployment Prep
+Build Vite production bundle
+
+Configure environment variables
+
+Point frontend to FastAPI backend
+
+Test media paths
+
+Optimize images
+
+Ship it

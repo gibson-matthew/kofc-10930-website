@@ -1,6 +1,6 @@
 from datetime import datetime
-from pydantic import BaseModel
 from typing import Optional
+from pydantic import BaseModel
 
 
 # ============================================================
@@ -27,9 +27,6 @@ class MemberProfileResponse(BaseModel):
     last_name: str
     phone: Optional[str]
     address: Optional[str]
-    # city: Optional[str]
-    # state: Optional[str]
-    # zip_code: Optional[str]
 
     class Config:
         from_attributes = True
@@ -41,7 +38,6 @@ class MemberProfileResponse(BaseModel):
 
 class MemberDocumentResponse(BaseModel):
     id: int
-    # member_id: int
     title: str
     file_path: str
     uploaded_at: datetime
@@ -103,6 +99,80 @@ class ProgramResponse(BaseModel):
     committee_id: int
     name: str
     description: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+#  OFFICERS
+# ============================================================
+
+class OfficerResponse(BaseModel):
+    id: int
+    title: str
+    name: str
+    email: Optional[str]
+    phone: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+#  DIRECTORS
+# ============================================================
+
+class DirectorResponse(BaseModel):
+    id: int
+    name: str
+    position: Optional[str]
+    email: Optional[str]
+    phone: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+#  ASSEMBLIES
+# ============================================================
+
+class AssemblyResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+#  NEWS
+# ============================================================
+
+class NewsResponse(BaseModel):
+    id: int
+    title: str
+    body: str
+    published_at: Optional[datetime]
+    author_id: Optional[int]
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+#  VOTING
+# ============================================================
+
+class VotingResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str]
+    vote_month: Optional[int]
+    vote_year: Optional[int]
+    created_at: datetime
 
     class Config:
         from_attributes = True

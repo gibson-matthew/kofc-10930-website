@@ -11,13 +11,11 @@ from app.models.events import Event
 from app.models.event_volunteers import EventVolunteer
 from app.models.programs import Program
 from app.models.committees import Committee
-
-# New models required by API spec
 from app.models.officers import Officer
 from app.models.directors import Director
 from app.models.assemblies import Assembly
-from app.models.announcements import Announcement
-from app.models.voting import VotingRecord
+from app.models.news import News
+from app.models.votes import Vote
 
 from app.schemas.member_schemas import (
     MemberProfileUpdate,
@@ -31,10 +29,9 @@ from app.schemas.member_schemas import (
     OfficerResponse,
     DirectorResponse,
     AssemblyResponse,
-    AnnouncementResponse,
+    NewsResponse,
     VotingResponse,
 )
-
 
 router = APIRouter(prefix="/member", tags=["Member"])
 
@@ -86,17 +83,17 @@ async def get_member_documents(
 
 
 # ============================================================
-#  MEMBER ANNOUNCEMENTS
+#  MEMBER NEWS
 # ============================================================
 
-@router.get("/announcements", response_model=list[AnnouncementResponse])
-async def get_member_announcements(
+@router.get("/news", response_model=list[NewsResponse])
+async def get_member_news(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Announcement))
+    result = await db.execute(select(News))
     rows = result.scalars().all()
-    return [AnnouncementResponse.from_orm(a) for a in rows]
+    return [NewsResponse.from_orm(n) for n in rows]
 
 
 # ============================================================

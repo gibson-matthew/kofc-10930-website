@@ -44,7 +44,7 @@
 │   ├── POST /member/events/{id}/volunteer
 │   ├── POST /member/events/{id}/hours
 │   ├── GET /member/programs
-│   ├── GET /member/programs/{committeeId}
+│   ├── GET /member/programs/{committeeId Look at how crusty this thing probably wipe it down. Are you gonna break it down headset that was in MS two o'clock you can do it as ready stop by after lunch I told they have some old equipment in the in the ballroom they wanna see the trash I think I think that AV stuff that they used to be in that old area}
 │   ├── GET /member/programs/{committeeId}/{programId}
 │   ├── POST /member/programs/{programId}/volunteer
 │   ├── GET /member/officers

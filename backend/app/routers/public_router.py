@@ -1,5 +1,8 @@
+from http.client import HTTPException
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.db.session import get_db
 
@@ -13,11 +16,19 @@ from app.services import (
     prayer_service,
     recognition_service,
     memoriam_service,
+    media_album_service,
+    media_item_service,
     links_service,
     newsletter_service,
     market_service,
     jobs_service,
     degree_schedule_service,
+)
+
+from app.schemas.media_schemas import (
+    PhotoResponse,
+    AlbumResponse,
+    AlbumWithPhotosResponse,
 )
 
 router = APIRouter()
@@ -199,6 +210,65 @@ async def get_public_newsletters(db: AsyncSession = Depends(get_db)):
 #     if not album_data:
 #         return {"error": "Album not found"}
 #     return album_data
+
+# ============================================================
+#  PUBLIC PHOTOS (all photos)
+# ============================================================
+
+@router.get("/photos")
+async def get_public_photos(db: AsyncSession = Depends(get_db)):
+    """
+    Returns all public photos.
+    """
+    photos = await media_item_service.list(db)
+    return photos
+
+
+# ============================================================
+#  PUBLIC PHOTOS BY ALBUM
+# ============================================================
+
+@router.get("/photos/{album_id}")
+async def get_public_photos_by_album(album_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Returns all photos belonging to a specific album.
+    """
+    photos = await media_item_service.list(db, filters={"album_id": album_id})
+    return photos
+
+
+# ============================================================
+#  PUBLIC ALBUM LIST
+# ============================================================
+
+@router.get("/albums")
+async def get_public_albums(db: AsyncSession = Depends(get_db)):
+    """
+    Returns all public photo albums.
+    """
+    albums = await media_album_service.list(db)
+    return albums
+
+
+# ============================================================
+#  PUBLIC ALBUM DETAIL (album + photos)
+# ============================================================
+
+@router.get("/albums/{album_id}")
+async def get_public_album_detail(album_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Returns a single album and its associated photos.
+    """
+    album = await media_album_service.get(db, album_id)
+    if not album:
+        raise HTTPException(status_code=404, detail="Album not found")
+
+    photos = await media_item_service.list(db, filters={"album_id": album_id})
+
+    return {
+        "album": album,
+        "photos": photos,
+    }
 
 # ============================================================
 #  MARKET

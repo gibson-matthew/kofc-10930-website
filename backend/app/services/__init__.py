@@ -9,6 +9,8 @@ from .memoriam_service import MemoriamService
 from .links_service import LinkService
 from .newsletter_service import NewsletterService
 from .market_service import MarketService
+from .media_item_service import MediaItemService
+from .media_album_service import MediaAlbumService
 from .jobs_service import JobService
 from .degree_schedule_service import DegreeScheduleService
 
@@ -23,5 +25,7 @@ memoriam_service = MemoriamService()
 links_service = LinkService()
 newsletter_service = NewsletterService()
 market_service = MarketService()
+media_item_service = MediaItemService()
+media_album_service = MediaAlbumService()
 jobs_service = JobService()
 degree_schedule_service = DegreeScheduleService()
