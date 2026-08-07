@@ -6,19 +6,22 @@ from app.db.session import Base
 
 
 class OfficerPosition(str, Enum):
-    grand_knight = "grand_knight"
-    deputy_grand_knight = "deputy_grand_knight"
-    chancellor = "chancellor"
-    financial_secretary = "financial_secretary"
-    treasurer = "treasurer"
-    warden = "warden"
-    advocate = "advocate"
-    lecturer = "lecturer"
-    inside_guard = "inside_guard"
-    outside_guard = "outside_guard"
-    trustee_1_year = "trustee_1_year"
-    trustee_2_year = "trustee_2_year"
-    trustee_3_year = "trustee_3_year"
+    grand_knight = "Grand Knight"
+    deputy_grand_knight = "Deputy Grand Knight"
+    chancellor = "Chancellor"
+    recorder = "Recorder"
+    treasurer = "Treasurer"
+    advocate = "Advocate"
+    warden = "Warden"
+    inside_guard = "Inside Guard"
+    outside_guard = "Outside Guard"
+    trustee_1_year = "Trustee 1-Year"
+    trustee_2_year = "Trustee 2-Year"
+    trustee_3_year = "Trustee 3-Year"
+    chaplain = "Chaplain"
+    financial_secretary = "Financial Secretary"
+    lecturer = "Lecturer"
+    past_grand_knight = "Past Grand Knight"
 
 
 class Officer(Base):
@@ -26,6 +29,13 @@ class Officer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    position = Column(PgEnum(OfficerPosition, name="officer_position_enum"), nullable=False)
+    position = Column(
+        PgEnum(
+            OfficerPosition,
+            name="officer_position_enum",
+            values_callable=lambda enum: [e.value for e in enum]
+        ),
+        nullable=False
+    )
 
     user = relationship("User", back_populates="officer_positions")

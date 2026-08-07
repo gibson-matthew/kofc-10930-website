@@ -23,6 +23,7 @@ from app.services import (
     market_service,
     jobs_service,
     degree_schedule_service,
+    homepage_hero_image_service,
 )
 
 from app.schemas.media_schemas import (
@@ -30,6 +31,8 @@ from app.schemas.media_schemas import (
     AlbumResponse,
     AlbumWithPhotosResponse,
 )
+from app.schemas.homepage_hero_schemas import HomepageHeroImageResponse
+
 
 router = APIRouter()
 
@@ -306,3 +309,22 @@ async def get_public_degree_schedule(db: AsyncSession = Depends(get_db)):
     Returns all degree schedule entries.
     """
     return await degree_schedule_service.list(db)
+
+# ============================================================
+#  HOMEPAGE HERO IMAGES
+# ============================================================
+
+@router.get("/homepage/hero-images", response_model=list[HomepageHeroImageResponse])
+async def get_homepage_hero_images(db: AsyncSession = Depends(get_db)):
+    """
+    Returns active hero images for the homepage carousel.
+    """
+    images = await homepage_hero_image_service.list(
+        db,
+        filters={"is_active": True},
+    )
+
+    # Sort by "order"
+    images.sort(key=lambda x: x.order)
+
+    return images

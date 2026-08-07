@@ -3,7 +3,7 @@ from typing import Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select, update
+from sqlalchemy import select, update, insert
 
 from app.core.security import hash_password, verify_password
 from app.auth.jwt import (
@@ -168,11 +168,14 @@ class AuthService:
                 select(Role).where(Role.name.in_(role_names))
             )
             roles = result.scalars().all()
-            # Avoid lazy load on user.roles
-            # set_committed_value(user, "roles", roles)
-            for role in roles:
-                db.add(UserRole(user=user, role=role))
 
+            for role in roles:
+                await db.execute(
+                    insert(UserRole).values(
+                        user_id=user.id,
+                        role_id=role.id
+                    )
+                )
 
         await db.commit()
         await db.refresh(user)

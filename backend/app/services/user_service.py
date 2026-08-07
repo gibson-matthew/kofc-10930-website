@@ -1,5 +1,5 @@
 from app.services.base_crud_service import BaseCRUDService
-from app.models.users import User
+from app.models.user import User
 
 
 class UserService(BaseCRUDService):

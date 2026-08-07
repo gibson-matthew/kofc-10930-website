@@ -92,6 +92,15 @@ CREATE TABLE links (
     url TEXT NOT NULL
 );
 
+CREATE TABLE homepage_hero_images (
+    id SERIAL PRIMARY KEY,
+    url TEXT NOT NULL,
+    caption TEXT,
+    "order" INT DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
 -- ============================================================
 --  EVENTS & CALENDAR
 -- ============================================================

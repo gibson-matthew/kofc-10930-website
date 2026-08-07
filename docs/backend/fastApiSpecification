@@ -28,6 +28,7 @@
 │   ├── GET /public/market/category/{id}
 │   ├── GET /public/jobs
 │   └── GET /public/degree-schedule
+│   └── GET /public/homepage/hero-images
 │
 ├── prayer
 │   ├── POST /prayer/request
@@ -61,6 +62,9 @@
 │   ├── GET /admin/dashboard
 │   ├── GET /admin/system-status
 │   ├── GET /admin/audit-log
+│   ├── POST /admin/homepage/hero-images
+│   ├── PUT /admin/homepage/hero-images/{id}
+│   ├── DELETE /admin/homepage/hero-images/{id}
 │
 │   ├── Content Management
 │   │   ├── PUT /admin/homepage
