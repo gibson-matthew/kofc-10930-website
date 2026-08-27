@@ -1,0 +1,180 @@
+-- ============================================================
+--  ROLES
+-- ============================================================
+
+INSERT INTO roles (name) VALUES
+('member'),
+('admin'),
+('grand_knight'),
+('financial_secretary'),
+('treasurer'),
+('webmaster');
+
+-- ============================================================
+--  USERS
+-- ============================================================
+-- Removed: no users seeded
+
+-- ============================================================
+--  USER ROLES
+-- ============================================================
+-- Removed: no user-role assignments
+
+-- ============================================================
+--  OFFICERS (ENUM)
+-- ============================================================
+-- Removed: officers require user_id
+
+-- ============================================================
+--  DIRECTORS (ENUM)
+-- ============================================================
+
+INSERT INTO directors (name, description, email, phone)
+VALUES
+('Program Director', 'Oversees all programs', 'pd@example.com', '555-7777'),
+('Faith Director', 'Faith formation programs', 'faith@example.com', '555-8888'),
+('Family Director', 'Family activities', 'family@example.com', '555-9999'),
+('Community Director', 'Community service', 'community@example.com', '555-1212'),
+('Life Director', 'Pro-life activities', 'life@example.com', '555-3434'),
+('Membership Director', 'Recruitment and retention', 'membership@example.com', '555-5656');
+
+-- ============================================================
+--  COMMITTEES
+-- ============================================================
+
+INSERT INTO committees (name, description)
+VALUES
+('Faith Committee', 'Faith-based programs'),
+('Family Committee', 'Family-oriented programs'),
+('Community Committee', 'Community service'),
+('Life Committee', 'Pro-life initiatives');
+
+-- ============================================================
+--  PROGRAMS
+-- ============================================================
+
+INSERT INTO programs (committee_id, name, description, category)
+VALUES
+(1, 'Rosary Night', 'Weekly rosary prayer', 'faith'),
+(2, 'Family Picnic', 'Annual family picnic', 'family'),
+(3, 'Food Drive', 'Collect food for the needy', 'community'),
+(4, 'March for Life', 'Pro-life march', 'life');
+
+-- ============================================================
+--  PROGRAM VOLUNTEERS
+-- ============================================================
+-- Removed: requires user_id
+
+-- ============================================================
+--  EVENTS
+-- ============================================================
+
+INSERT INTO events (title, description, location, start_time, end_time, is_public, created_by)
+VALUES
+('Council Meeting', 'Monthly business meeting', 'Parish Hall', '2024-08-01 19:00', '2024-08-01 21:00', TRUE, NULL),
+('Charity Dinner', 'Fundraising dinner', 'Community Center', '2024-09-15 18:00', '2024-09-15 21:00', TRUE, NULL);
+
+-- ============================================================
+--  EVENT VOLUNTEERS
+-- ============================================================
+-- Removed: requires user_id
+
+-- ============================================================
+--  NEWS
+-- ============================================================
+
+INSERT INTO news (title, body, author_id)
+VALUES
+('New Council Year Begins', 'We welcome new officers for the 2024–2025 year.', NULL),
+('Food Drive Success', 'Over 500 pounds of food collected!', NULL);
+
+-- ============================================================
+--  LINKS
+-- ============================================================
+
+INSERT INTO links (label, url)
+VALUES
+('Supreme Council', 'https://www.kofc.org'),
+('Texas State Council', 'https://www.tkofc.org');
+
+-- ============================================================
+--  JOBS
+-- ============================================================
+
+INSERT INTO jobs (title, description, job_type)
+VALUES
+('Hall Setup Crew', 'Help set up chairs and tables', 'hourly'),
+('Event Photographer', 'Take photos during events', 'commissioned');
+
+-- ============================================================
+--  MARKET CATEGORIES & ITEMS
+-- ============================================================
+
+INSERT INTO market_categories (name, description)
+VALUES
+('Apparel', 'Shirts, hats, jackets'),
+('Accessories', 'Pins, patches, decals');
+
+INSERT INTO market_items (category_id, title, description, price, image_path)
+VALUES
+(1, 'Council Shirt', 'Blue polo shirt', 25.00, '/images/shirt.png'),
+(2, 'K of C Pin', 'Metal lapel pin', 5.00, '/images/pin.png');
+
+-- ============================================================
+--  DOCUMENTS
+-- ============================================================
+
+INSERT INTO documents (title, file_path, is_public)
+VALUES
+('Bylaws', '/docs/bylaws.pdf', TRUE),
+('Meeting Minutes - July', '/docs/minutes_july.pdf', FALSE);
+
+-- ============================================================
+--  DEGREE SCHEDULE
+-- ============================================================
+
+INSERT INTO degree_schedule (degree_level, location, date)
+VALUES
+('First Degree', 'Parish Hall', '2024-08-10 10:00'),
+('Second Degree', 'Community Center', '2024-09-20 14:00');
+
+-- ============================================================
+--  VOTING
+-- ============================================================
+
+INSERT INTO votes (title, description, vote_month, vote_year)
+VALUES
+('Budget Approval', 'Approve the annual budget', 8, 2024);
+
+INSERT INTO vote_options (vote_id, label)
+VALUES
+(1, 'Approve'),
+(1, 'Reject'),
+(1, 'Table');
+
+-- Removed vote_cast: requires user_id
+
+-- ============================================================
+--  SEO SETTINGS
+-- ============================================================
+
+INSERT INTO seo_settings (page, meta_title, meta_description, meta_keywords)
+VALUES
+('home', 'K of C Council 10930', 'Welcome to our council website', 'kofc, knights, council10930');
+
+-- ============================================================
+--  UPLOADS
+-- ============================================================
+
+INSERT INTO uploads (file_path, uploaded_by)
+VALUES
+('/uploads/banner.jpg', NULL),
+('/uploads/logo.png', NULL);
+
+-- ============================================================
+--  AUDIT LOG
+-- ============================================================
+
+INSERT INTO audit_log (user_id, action, details)
+VALUES
+(NULL, 'system_init', 'Initial system setup');

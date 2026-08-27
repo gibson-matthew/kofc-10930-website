@@ -1,0 +1,250 @@
+============================================================
+1. SYSTEM SUMMARY
+============================================================
+The KOC Council platform is a full‑stack web application providing
+public content, member services, and administrative tools. It uses:
+
+- React SPA (frontend)
+- FastAPI (backend)
+- Postgres (database)
+- Redis (cache + Celery broker)
+- Celery (background workers)
+- K3s (self‑hosted Kubernetes cluster)
+- Helm (deployment packaging)
+- Ingress controller (routing + TLS)
+- Persistent storage (PV/PVC)
+
+The system is role‑aware, secure, and horizontally scalable.
+
+
+============================================================
+2. HIGH‑LEVEL ARCHITECTURE
+============================================================
+
+                +---------------------------+
+                |        Frontend (SPA)     |
+                |        React / Nginx      |
+                +-------------+-------------+
+                              |
+                              | HTTPS
+                              v
+                +---------------------------+
+                |     Ingress Controller    |
+                |   (Routing + TLS Term.)   |
+                +-------------+-------------+
+                              |
+                +-------------+-------------+
+                |                           |
+                v                           v
++---------------------------+     +---------------------------+
+|     FastAPI Backend       |     |     Static Media Service  |
+|  (Auth, API, RBAC, Logic) |     |  (Images, PDFs, Uploads)  |
++-------------+-------------+     +-------------+-------------+
+              |                                 |
+              | Internal Cluster Networking      |
+              v                                 v
++---------------------------+     +---------------------------+
+|         Postgres          |     |          Redis            |
+|  (Primary Data Storage)   |     | (Cache + Celery Broker)   |
++-------------+-------------+     +-------------+-------------+
+              |                                 |
+              |                                 |
+              v                                 v
+                +---------------------------+
+                |       Celery Workers      |
+                | (Email, Media, Voting,    |
+                |  Audit, Background Jobs)  |
+                +---------------------------+
+
+
+============================================================
+3. FRONTEND ARCHITECTURE (REACT)
+============================================================
+- Single‑page application
+- Feature‑based folder structure
+- React Router v6 for routing
+- Role‑aware route guards
+- API communication via Axios/fetch
+- Global state: Auth, roles, theme
+- Feature state via custom hooks
+- Deployed as static assets in K3s
+
+
+============================================================
+4. BACKEND ARCHITECTURE (FASTAPI)
+============================================================
+- Modular routers per domain (events, programs, admin, etc.)
+- Pydantic schemas for validation
+- SQLAlchemy ORM for database access
+- RBAC middleware for role enforcement
+- JWT authentication (httpOnly cookies)
+- Background tasks delegated to Celery
+- Logging middleware for request tracing
+- Deployed as containerized service in K3s
+
+
+============================================================
+5. DATABASE ARCHITECTURE (POSTGRES)
+============================================================
+- Fully normalized schema
+- Tables for:
+  - users, roles, user_roles
+  - events, volunteers
+  - programs, committees
+  - media albums/items
+  - documents
+  - voting (votes, options, cast)
+  - market center
+  - audit logs
+- Foreign keys with ON DELETE rules
+- Indexed for performance
+- StatefulSet deployment with persistent storage
+- Nightly backups
+
+
+============================================================
+6. CACHE & QUEUE ARCHITECTURE (REDIS)
+============================================================
+Redis is used for:
+- Celery broker
+- Celery result backend
+- Caching frequently accessed data
+- Rate limiting (optional)
+- Session storage (optional)
+
+Deployed as:
+- Single instance or small cluster
+- Internal‑only service (not exposed publicly)
+
+
+============================================================
+7. BACKGROUND PROCESSING (CELERY)
+============================================================
+Celery workers handle:
+- Email sending
+- Media processing (thumbnails, resizing)
+- Voting tally jobs
+- Audit log processing
+- Scheduled tasks (via Celery Beat)
+
+Worker groups:
+- email_worker
+- media_worker
+- voting_worker
+- audit_worker
+
+Each worker binds to specific queues.
+
+
+============================================================
+8. K3s CLUSTER ARCHITECTURE
+============================================================
+Namespaces:
+- koc-frontend
+- koc-backend
+- koc-workers
+- koc-database
+- koc-monitoring
+
+Components:
+- Deployments for frontend, backend, workers
+- StatefulSets for Postgres
+- Services for internal networking
+- Ingress for external routing
+- PV/PVC for persistent storage
+- Secrets + ConfigMaps for configuration
+
+
+============================================================
+9. INGRESS & NETWORKING
+============================================================
+Ingress Controller:
+- TLS termination
+- HTTP → HTTPS redirect
+- Path‑based routing:
+  - / → frontend
+  - /api → backend
+  - /media → media service
+
+Network Policies:
+- Restrict DB access to backend/workers
+- Restrict Redis access to backend/workers
+- Prevent cross‑namespace traffic
+
+
+============================================================
+10. SECURITY ARCHITECTURE
+============================================================
+- JWT authentication (httpOnly cookies)
+- RBAC enforced at backend and frontend
+- Audit logging for all admin actions
+- Sanitization of user inputs
+- HTTPS everywhere
+- Secrets stored in Kubernetes secrets
+- No direct DB access from frontend
+- Voting integrity enforced by DB constraints
+
+
+============================================================
+11. LOGGING & MONITORING ARCHITECTURE
+============================================================
+Logging:
+- Structured JSON logs
+- Centralized log aggregation (Loki/ELK)
+- Audit logs stored in Postgres
+
+Monitoring:
+- Prometheus metrics
+- Grafana dashboards
+- Alerts for:
+  - pod restarts
+  - high error rates
+  - slow API responses
+  - worker backlog
+
+Health checks:
+- API: /health
+- Workers: heartbeat
+- DB: connection test
+- Redis: ping
+
+
+============================================================
+12. CI/CD PIPELINE
+============================================================
+Pipeline stages:
+1. Build (React, FastAPI, workers)
+2. Test (unit + integration)
+3. Package (Docker + Helm)
+4. Deploy to staging
+5. Manual approval
+6. Deploy to production
+
+Rollback:
+- Helm rollback
+- Alembic migration rollback
+
+
+============================================================
+13. DATA FLOW SUMMARY
+============================================================
+
+USER → Frontend → Backend → DB  
+USER → Frontend → Backend → Redis → Celery → DB  
+Admin → Frontend → Backend → Audit Log → DB  
+Frontend → Backend → Media Service → Storage  
+Backend → Redis → Celery → Email/Media/Voting Tasks
+
+All communication inside the cluster uses internal services.
+
+
+============================================================
+14. SYSTEM CHARACTERISTICS
+============================================================
+- Modular
+- Scalable
+- Secure
+- Role‑aware
+- Auditable
+- Cloud‑native
+- Easy to maintain

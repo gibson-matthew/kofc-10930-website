@@ -1,0 +1,283 @@
+-- ============================================================
+-- USERS
+-- ============================================================
+
+INSERT INTO users (email, password_hash, first_name, last_name, phone, address)
+VALUES
+    ('gk@example.com', '$2b$12$abcdefghijklmnopqrstuv', 'John', 'Smith', '555-1111', '123 Main St'),
+    ('dgk@example.com', '$2b$12$abcdefghijklmnopqrstuv', 'Michael', 'Johnson', '555-2222', '456 Oak Ave'),
+    ('chancellor@example.com', '$2b$12$abcdefghijklmnopqrstuv', 'David', 'Williams', '555-3333', '789 Pine Rd'),
+    ('member1@example.com', '$2b$12$abcdefghijklmnopqrstuv', 'Sarah', 'Brown', '555-4444', '101 Elm St'),
+    ('member2@example.com', '$2b$12$abcdefghijklmnopqrstuv', 'Chris', 'Davis', '555-5555', '202 Maple St');
+
+-- ============================================================
+-- ROLES
+-- ============================================================
+
+INSERT INTO roles (name)
+VALUES
+    ('member'),
+    ('admin'),
+    ('grand_knight'),
+    ('deputy_grand_knight'),
+    ('chancellor'),
+    ('webmaster');
+
+-- ============================================================
+-- USER ROLES
+-- ============================================================
+
+INSERT INTO user_roles (user_id, role_id)
+VALUES
+    (1, 3), -- GK
+    (2, 4), -- DGK
+    (3, 5), -- Chancellor
+    (4, 1), -- Member
+    (5, 1); -- Member
+
+-- ============================================================
+-- OFFICERS
+-- ============================================================
+
+INSERT INTO officers (user_id, position, term_start, term_end)
+VALUES
+    (1, 'grand_knight', '2024-07-01', '2025-06-30'),
+    (2, 'deputy_grand_knight', '2024-07-01', '2025-06-30'),
+    (3, 'chancellor', '2024-07-01', '2025-06-30');
+
+-- ============================================================
+-- NEWS
+-- ============================================================
+
+INSERT INTO news (title, body, author_id)
+VALUES
+    ('Council Wins Award', 'Our council received recognition for community service.', 1),
+    ('Upcoming Fish Fry', 'Join us Friday for our annual fish fry!', 2);
+
+-- ============================================================
+-- RECOGNITION
+-- ============================================================
+
+INSERT INTO recognition (title, description, awarded_to, awarded_at)
+VALUES
+    ('Knight of the Month', 'Outstanding service to the parish.', 'John Smith', '2024-06-01'),
+    ('Family of the Month', 'Dedication to community.', 'The Johnson Family', '2024-05-01');
+
+-- ============================================================
+-- MEMORIAM
+-- ============================================================
+
+INSERT INTO memoriam (name, biography, date_of_passing)
+VALUES
+    ('Robert Miller', 'Longtime member and volunteer.', '2024-03-15');
+
+-- ============================================================
+-- LINKS
+-- ============================================================
+
+INSERT INTO links (label, url)
+VALUES
+    ('Supreme Council', 'https://www.kofc.org'),
+    ('State Council', 'https://www.texaskofc.org');
+
+-- ============================================================
+-- EVENTS
+-- ============================================================
+
+INSERT INTO events (title, description, location, start_time, end_time, created_by)
+VALUES
+    ('Parish Breakfast', 'Monthly pancake breakfast.', 'Parish Hall', '2024-08-10 08:00', '2024-08-10 11:00', 1),
+    ('Blood Drive', 'Community blood donation event.', 'Community Center', '2024-09-05 09:00', '2024-09-05 15:00', 2);
+
+-- ============================================================
+-- EVENT VOLUNTEERS
+-- ============================================================
+
+INSERT INTO event_volunteers (event_id, user_id, hours, notes)
+VALUES
+    (1, 4, 3.5, 'Setup and cleanup'),
+    (2, 5, 4.0, 'Registration desk');
+
+-- ============================================================
+-- DIRECTORS
+-- ============================================================
+
+INSERT INTO directors (name, description, email, phone)
+VALUES
+    ('Faith Director', 'Oversees faith programs.', 'faith@example.com', '555-6666'),
+    ('Family Director', 'Coordinates family events.', 'family@example.com', '555-7777');
+
+-- ============================================================
+-- COMMITTEES
+-- ============================================================
+
+INSERT INTO committees (name, description)
+VALUES
+    ('Faith Committee', 'Promotes spiritual growth.'),
+    ('Community Committee', 'Supports community outreach.');
+
+-- ============================================================
+-- PROGRAMS
+-- ============================================================
+
+INSERT INTO programs (committee_id, name, description, category)
+VALUES
+    (1, 'Rosary Night', 'Weekly rosary prayer.', 'faith'),
+    (2, 'Food Pantry Support', 'Assist local food pantry.', 'community');
+
+-- ============================================================
+-- PROGRAM VOLUNTEERS
+-- ============================================================
+
+INSERT INTO program_volunteers (program_id, user_id, notes)
+VALUES
+    (1, 4, 'Led prayer'),
+    (2, 5, 'Sorted donations');
+
+-- ============================================================
+-- PRAYER REQUESTS
+-- ============================================================
+
+INSERT INTO prayer_requests (requester_name, requester_email, is_member, request_text)
+VALUES
+    ('Alice Green', 'alice@example.com', FALSE, 'Please pray for my family.'),
+    ('Chris Davis', 'member2@example.com', TRUE, 'Prayers for my upcoming surgery.');
+
+-- ============================================================
+-- MEDIA ALBUMS
+-- ============================================================
+
+INSERT INTO media_albums (title, description)
+VALUES
+    ('Parish Events 2024', 'Photos from parish activities.');
+
+-- ============================================================
+-- MEDIA ITEMS
+-- ============================================================
+
+INSERT INTO media_items (album_id, file_path, caption)
+VALUES
+    (1, '/uploads/event1.jpg', 'Breakfast volunteers'),
+    (1, '/uploads/event2.jpg', 'Blood drive setup');
+
+-- ============================================================
+-- NEWSLETTERS
+-- ============================================================
+
+INSERT INTO newsletters (title, file_path)
+VALUES
+    ('July Newsletter', '/newsletters/july.pdf'),
+    ('August Newsletter', '/newsletters/august.pdf');
+
+-- ============================================================
+-- MARKET CATEGORIES
+-- ============================================================
+
+INSERT INTO market_categories (name, description)
+VALUES
+    ('Apparel', 'Council-branded clothing'),
+    ('Accessories', 'Pins, hats, and more');
+
+-- ============================================================
+-- MARKET ITEMS
+-- ============================================================
+
+INSERT INTO market_items (category_id, title, description, price, image_path)
+VALUES
+    (1, 'Council T-Shirt', 'Blue cotton shirt.', 15.00, '/market/tshirt.jpg'),
+    (2, 'Council Pin', 'Metal lapel pin.', 5.00, '/market/pin.jpg');
+
+-- ============================================================
+-- MERCHANTS
+-- ============================================================
+
+INSERT INTO merchants (user_id, business_name, contact_email, contact_phone)
+VALUES
+    (4, 'Brown Crafts', 'browncrafts@example.com', '555-8888');
+
+-- ============================================================
+-- MERCHANT REPORTS
+-- ============================================================
+
+INSERT INTO merchant_reports (merchant_id, report_path)
+VALUES
+    (1, '/reports/merchant1.pdf');
+
+-- ============================================================
+-- JOBS
+-- ============================================================
+
+INSERT INTO jobs (title, description, job_type)
+VALUES
+    ('Hall Cleanup', 'Assist with cleaning after events.', 'hourly'),
+    ('Event Photographer', 'Take photos during events.', 'commissioned');
+
+-- ============================================================
+-- DEGREE SCHEDULE
+-- ============================================================
+
+INSERT INTO degree_schedule (degree_level, location, date)
+VALUES
+    ('1st Degree', 'Parish Hall', '2024-09-15 19:00'),
+    ('2nd Degree', 'Community Center', '2024-10-20 19:00');
+
+-- ============================================================
+-- DOCUMENTS
+-- ============================================================
+
+INSERT INTO documents (title, file_path, is_public)
+VALUES
+    ('Bylaws', '/docs/bylaws.pdf', TRUE),
+    ('Meeting Minutes', '/docs/minutes.pdf', FALSE);
+
+-- ============================================================
+-- VOTES
+-- ============================================================
+
+INSERT INTO votes (title, description, vote_month, vote_year)
+VALUES
+    ('Budget Approval', 'Approve annual budget.', 7, 2024);
+
+-- ============================================================
+-- VOTE OPTIONS
+-- ============================================================
+
+INSERT INTO vote_options (vote_id, label)
+VALUES
+    (1, 'Yes'),
+    (1, 'No'),
+    (1, 'Abstain');
+
+-- ============================================================
+-- VOTE CAST
+-- ============================================================
+
+INSERT INTO vote_cast (vote_id, option_id, user_id)
+VALUES
+    (1, 1, 1),
+    (1, 2, 2);
+
+-- ============================================================
+-- SEO SETTINGS
+-- ============================================================
+
+INSERT INTO seo_settings (page, meta_title, meta_description)
+VALUES
+    ('home', 'Welcome to Council 10930', 'Official website of Council 10930.');
+
+-- ============================================================
+-- UPLOADS
+-- ============================================================
+
+INSERT INTO uploads (file_path, uploaded_by)
+VALUES
+    ('/uploads/file1.jpg', 1);
+
+-- ============================================================
+-- AUDIT LOG
+-- ============================================================
+
+INSERT INTO audit_log (user_id, action, details)
+VALUES
+    (1, 'login', 'User logged in'),
+    (2, 'update_officer', 'Updated officer term dates');

@@ -1,0 +1,42 @@
+============================================================
+1. LOCAL ENVIRONMENT SETUP
+============================================================
+
+Requirements:
+- Python 3.11+
+- pip or uv
+- PostgreSQL client tools
+- Redis (local or container)
+- GitHub repo already created
+- Branch: dev
+
+Clone the repo:
+git clone https://github.com/koc-council/backend.git
+cd backend
+
+Checkout dev branch:
+git checkout dev
+
+============================================================
+2. INITIALIZE PYTHON ENVIRONMENT
+============================================================
+
+Create virtual environment:
+python -m venv venv
+source venv/bin/activate
+
+Install core dependencies:
+pip install fastapi uvicorn[standard] sqlalchemy psycopg2-binary
+pip install pydantic bcrypt python-jose
+pip install alembic
+pip install celery redis
+pip install python-multipart
+pip install loguru
+pip install httpx
+
+# pip install fastapi uvicorn # I ran this command later to fix this command from not running in \backend folder:
+# uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+# For Testing
+pip install pytest pytest-asyncio httpx
+pip install pydantic-settings (This is version 2, not version 1)
