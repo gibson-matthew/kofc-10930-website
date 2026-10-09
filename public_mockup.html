@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knights of Columbus — Council 10930 — Fort Worth, TX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/shared.css">
+<link rel="stylesheet" href="css/public.css">
+</head>
+<body class="page-public" data-page="public">
+
+<!-- Shared SVG symbols -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="cross-pattee" viewBox="0 0 100 100">
+      <g fill="currentColor">
+        <path d="M42,50 L42,30 L35,14 L65,14 L58,30 L58,50 Z"/>
+        <path d="M42,50 L42,30 L35,14 L65,14 L58,30 L58,50 Z" transform="rotate(90 50 50)"/>
+        <path d="M42,50 L42,30 L35,14 L65,14 L58,30 L58,50 Z" transform="rotate(180 50 50)"/>
+        <path d="M42,50 L42,30 L35,14 L65,14 L58,30 L58,50 Z" transform="rotate(270 50 50)"/>
+      </g>
+    </symbol>
+    <symbol id="medallion" viewBox="0 0 100 100">
+      <circle cx="50" cy="50" r="47" fill="none" stroke="currentColor" stroke-width="1.1" opacity="0.95"/>
+      <circle cx="50" cy="50" r="41.5" fill="none" stroke="currentColor" stroke-width="0.55" opacity="0.5"/>
+      <use href="#cross-pattee" width="100" height="100" x="0" y="0" transform="scale(0.58) translate(36,36)"/>
+    </symbol>
+    <symbol id="icon-rosary" viewBox="0 0 40 40">
+      <circle cx="20" cy="13" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M20 22 L20 34 M14 34 H26" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+      <circle cx="20" cy="27" r="1.5" fill="currentColor"/>
+    </symbol>
+    <symbol id="icon-family" viewBox="0 0 40 40">
+      <path d="M8 32 V20 L20 10 L32 20 V32 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M17 32 V23 H23 V32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-charity" viewBox="0 0 40 40">
+      <path d="M20 30 C10 23 6 17 10 12 C13 8.4 18 9 20 13 C22 9 27 8.4 30 12 C34 17 30 23 20 30 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="icon-youth" viewBox="0 0 40 40">
+      <path d="M20 10 L34 16 L20 22 L6 16 Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M13 19 V26 C13 28.5 16 30.5 20 30.5 C24 30.5 27 28.5 27 26 V19" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header id="siteHeader">
+  <a href="#top" class="brand">
+    <!-- <svg viewBox="0 0 100 100"><use href="#medallion"/></svg> -->
+    <img class="hero-medallion-navbar" viewBox="0 0 100 100" src="./images/kofc-logo.png" />
+    <span class="brand-text">
+      <span class="name">Council 10930</span><br>
+      <span class="sub">Knights of Columbus</span>
+    </span>
+  </a>
+  <nav class="primary-nav" id="primaryNav" aria-label="Primary">
+    <a href="#who">Who We Are</a>
+    <a href="#what">What We Do</a>
+    <a href="#why">Why Join</a>
+    <a href="#join">Join Us</a>
+    <button type="button" class="nav-signin" id="signInBtn">Sign in</button>
+  </nav>
+  <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+</header>
+
+<section id="top" class="hero">
+  <div class="hero-texture" aria-hidden="true"></div>
+  <div class="hero-glow" aria-hidden="true"></div>
+  <span class="corner tl" aria-hidden="true"></span>
+  <span class="corner tr" aria-hidden="true"></span>
+  <span class="corner bl" aria-hidden="true"></span>
+  <span class="corner br" aria-hidden="true"></span>
+
+  <div class="hero-inner">
+    <!-- <svg class="hero-medallion" viewBox="0 0 100 100" aria-hidden="true"><use href="#medallion"/></svg> -->
+    <img class="hero-medallion" viewBox="0 0 100 100" src="./images/kofc-logo.png" />
+    <div class="eyebrow">Knights of Columbus</div>
+    <h1>Council 10930</h1>
+    <div class="place">Fort Worth, Texas</div>
+
+    <div class="hero-carousel" id="heroCarousel" role="region" aria-roledescription="carousel" aria-label="Council photos">
+      <div class="carousel-track">
+        <div class="carousel-slide is-active">
+          <img src="./images/carousel1.jpg" alt="Council 10930 gathering" width="800" height="500">
+        </div>
+        <div class="carousel-slide">
+          <img src="./images/carousel2.jpg" alt="Knights of Columbus service" width="800" height="500">
+        </div>
+        <div class="carousel-slide">
+          <img src="./images/carousel3.jpg" alt="Council 10930 fellowship" width="800" height="500">
+        </div>
+        <div class="carousel-slide">
+          <img src="./images/carousel4.jpg" alt="Charity in action" width="800" height="500">
+        </div>
+      </div>
+      <button type="button" class="carousel-btn prev" aria-label="Previous photo">‹</button>
+      <button type="button" class="carousel-btn next" aria-label="Next photo">›</button>
+      <div class="carousel-dots" role="tablist" aria-label="Slide controls"></div>
+    </div>
+
+    <a href="#join" class="btn btn-lg">Become a Knight</a>
+  </div>
+
+  <div class="scroll-cue" aria-hidden="true">
+    <span class="line"></span>
+  </div>
+</section>
+
+<section id="who" class="section">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="eyebrow" style="justify-content:center">Our Brotherhood</div>
+      <h2>Who We Are</h2>
+      <p>We are a council of practicing Catholic men, bound together by faith and by a shared duty to our parish, our families, and our neighbors.</p>
+    </div>
+    <div class="grid">
+      <article class="panel reveal">
+        <h3>Our Mission</h3>
+        <p>We live out the Order’s founding principles — charity, unity, fraternity, and patriotism — through prayer, service, and fellowship rooted in the Catholic faith.</p>
+      </article>
+      <article class="panel reveal">
+        <h3>Our Parish</h3>
+        <p>We stand behind our parish in ways both visible and quiet: staffing ministries, funding needs, and showing up wherever the work is.</p>
+      </article>
+      <article class="panel reveal">
+        <h3>Our Members</h3>
+        <p>We are fathers, husbands, tradesmen, and professionals — ordinary men trying, together, to live our faith a little better each day.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="legacy">
+  <div class="container">
+    <div class="eyebrow left-only reveal" style="margin-bottom:1.4rem">A Legacy of Service</div>
+    <div class="timeline">
+      <div class="tl-item reveal">
+        <div class="yr">1882</div>
+        <p>Father Michael J. McGivney founds the Knights of Columbus in New Haven, Connecticut, to support Catholic families in need.</p>
+      </div>
+      <div class="tl-item reveal">
+        <div class="yr">1900s</div>
+        <p>The Order spreads across the country, chartering councils in parishes that needed a brotherhood of service.</p>
+      </div>
+      <div class="tl-item reveal">
+        <div class="yr">Today</div>
+        <p>Council 10930 carries that same charter forward here in Fort Worth, one meeting and one act of charity at a time.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="what" class="section on-navy">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="eyebrow" style="justify-content:center">In Practice</div>
+      <h2>What We Do</h2>
+      <p>Faith, family, community, and youth — the four pillars our council builds its year around.</p>
+    </div>
+    <div class="grid">
+      <article class="panel reveal">
+        <svg class="icon" viewBox="0 0 40 40" aria-hidden="true"><use href="#icon-rosary"/></svg>
+        <h3>Faith</h3>
+        <p>Rosary devotions, Holy Hours, and retreats that keep prayer at the center of our brotherhood.</p>
+      </article>
+      <article class="panel reveal">
+        <svg class="icon" viewBox="0 0 40 40" aria-hidden="true"><use href="#icon-family"/></svg>
+        <h3>Family</h3>
+        <p>Gatherings and ministries — from Christmas baskets to family rosary nights — that support our households.</p>
+      </article>
+      <article class="panel reveal">
+        <svg class="icon" viewBox="0 0 40 40" aria-hidden="true"><use href="#icon-charity"/></svg>
+        <h3>Community</h3>
+        <p>Food drives, Coats for Kids, and support for Special Olympics athletes across our community.</p>
+      </article>
+      <article class="panel reveal">
+        <svg class="icon" viewBox="0 0 40 40" aria-hidden="true"><use href="#icon-youth"/></svg>
+        <h3>Youth</h3>
+        <p>Scholarships, mentorship, and support for seminarians discerning a vocation to the priesthood.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<div class="banner-stripe">Charity &nbsp;·&nbsp; Unity &nbsp;·&nbsp; Fraternity &nbsp;·&nbsp; Patriotism</div>
+
+<section id="why" class="section">
+  <div class="container">
+    <div class="section-head reveal">
+      <div class="eyebrow" style="justify-content:center">The Case for Joining</div>
+      <h2>Why Join</h2>
+      <p>Membership asks something of you — and gives back more than most men expect.</p>
+    </div>
+    <div class="grid">
+      <article class="panel reveal">
+        <h3>Grow in Faith</h3>
+        <p>Deepen your relationship with Christ alongside men pursuing the same thing.</p>
+      </article>
+      <article class="panel reveal">
+        <h3>Serve Your Community</h3>
+        <p>Put your time toward charity that has a visible, lasting impact nearby.</p>
+      </article>
+      <article class="panel reveal">
+        <h3>Build Brotherhood</h3>
+        <p>Form the kind of friendships that hold up under real life.</p>
+      </article>
+      <article class="panel reveal">
+        <h3>Lead &amp; Inspire</h3>
+        <p>Take on leadership within the council — and carry it home to your family.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="join" class="join-section">
+  <div class="container">
+    <div class="join-frame reveal">
+      <span class="corner tl" aria-hidden="true"></span>
+      <span class="corner tr" aria-hidden="true"></span>
+      <span class="corner bl" aria-hidden="true"></span>
+      <span class="corner br" aria-hidden="true"></span>
+      <!-- <svg viewBox="0 0 100 100" aria-hidden="true"><use href="#medallion"/></svg> -->
+      <img class="hero-medallion-end" viewBox="0 0 100 100" src="./images/kofc-logo.png" />    
+      <h2>Ready to Join Council 10930?</h2>
+      <p>Take the first step toward becoming a Knight. We’ll walk you through it.</p>
+      <a href="#" class="btn btn-lg">Begin Your Journey</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <!-- <svg viewBox="0 0 100 100" aria-hidden="true"><use href="#medallion"/></svg> -->
+        <img class="hero-medallion-navbar" viewBox="0 0 100 100" src="./images/kofc-logo.png" />       
+        <span>
+          <span class="name">Council 10930</span>
+          <span class="sub">Knights of Columbus · Fort Worth, TX</span>
+        </span>
+      </div>
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="#who">Who We Are</a>
+        <a href="#what">What We Do</a>
+        <a href="#why">Why Join</a>
+        <a href="#join">Join Us</a>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; 2026 Knights of Columbus Council 10930 — Fort Worth, TX</span>
+      <span>Charity · Unity · Fraternity · Patriotism</span>
+    </div>
+  </div>
+</footer>
+
+<dialog class="signin-dialog" id="signInDialog" aria-labelledby="signInTitle">
+  <h2 id="signInTitle">Member sign in</h2>
+  <form id="signInForm" method="dialog" novalidate>
+    <label class="signin-field">
+      <span>Membership ID</span>
+      <input type="text" autocomplete="off" spellcheck="false">
+    </label>
+    <label class="signin-field">
+      <span>Password</span>
+      <input type="password" autocomplete="off">
+    </label>
+    <div class="signin-actions">
+      <button type="button" class="btn btn-quiet" id="signInCancel">Cancel</button>
+      <button type="submit" class="btn">Sign in</button>
+    </div>
+  </form>
+</dialog>
+<script>
+  const header = document.getElementById('siteHeader');
+  const onScroll = () => {
+    header.classList.toggle('is-scrolled', window.scrollY > 36);
+  };
+  document.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  const navToggle = document.getElementById('navToggle');
+  const primaryNav = document.getElementById('primaryNav');
+  navToggle.addEventListener('click', () => {
+    const open = primaryNav.classList.toggle('open');
+    navToggle.setAttribute('aria-expanded', open);
+  });
+  primaryNav.querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', () => {
+      primaryNav.classList.remove('open');
+      navToggle.setAttribute('aria-expanded', 'false');
+    });
+  });
+
+  const revealEls = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-visible');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -32px 0px' });
+    revealEls.forEach(el => io.observe(el));
+  } else {
+    revealEls.forEach(el => el.classList.add('is-visible'));
+  }
+
+  /* ---------- Hero carousel ---------- */
+  (function () {
+    const root = document.getElementById('heroCarousel');
+    if (!root) return;
+
+    const slides = Array.from(root.querySelectorAll('.carousel-slide'));
+    const prevBtn = root.querySelector('.carousel-btn.prev');
+    const nextBtn = root.querySelector('.carousel-btn.next');
+    const dotsWrap = root.querySelector('.carousel-dots');
+    const total = slides.length;
+    if (total === 0) return;
+
+    let index = 0;
+    let timer = null;
+    const INTERVAL = 5000;
+
+    // Build dots
+    slides.forEach((_, i) => {
+      const dot = document.createElement('button');
+      dot.type = 'button';
+      dot.className = 'carousel-dot' + (i === 0 ? ' is-active' : '');
+      dot.setAttribute('role', 'tab');
+      dot.setAttribute('aria-label', 'Go to photo ' + (i + 1));
+      dot.addEventListener('click', () => goTo(i, true));
+      dotsWrap.appendChild(dot);
+    });
+    const dots = Array.from(dotsWrap.querySelectorAll('.carousel-dot'));
+
+    function goTo(i, userInitiated) {
+      slides[index].classList.remove('is-active');
+      dots[index].classList.remove('is-active');
+      index = (i + total) % total;
+      slides[index].classList.add('is-active');
+      dots[index].classList.add('is-active');
+      if (userInitiated) restart();
+    }
+
+    function next(user) { goTo(index + 1, user); }
+    function prev(user) { goTo(index - 1, user); }
+
+    function start() {
+      stop();
+      timer = setInterval(() => next(false), INTERVAL);
+    }
+    function stop() {
+      if (timer) { clearInterval(timer); timer = null; }
+    }
+    function restart() {
+      stop();
+      start();
+    }
+
+    prevBtn.addEventListener('click', () => prev(true));
+    nextBtn.addEventListener('click', () => next(true));
+
+    // Pause while hovered / focused; resume when leaving
+    root.addEventListener('mouseenter', stop);
+    root.addEventListener('mouseleave', start);
+    root.addEventListener('focusin', stop);
+    root.addEventListener('focusout', (e) => {
+      if (!root.contains(e.relatedTarget)) start();
+    });
+
+    // Keyboard support when carousel is focused
+    root.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') { e.preventDefault(); prev(true); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); next(true); }
+    });
+
+    // Prefer reduced motion: no autoplay
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!prefersReduced) start();
+  })();
+</script>
+<script src="js/site.js"></script>
+</body>
+</html>
