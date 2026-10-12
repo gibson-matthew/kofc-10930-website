@@ -3,7 +3,7 @@ import { fetchMediaSlots, fetchRoster, imageFileError, replaceMedia, saveRoleAss
 import { useAuth } from "../auth/AuthContext";
 import { Block, Eyebrow } from "../components/Block";
 import CroppedPhoto from "../components/CroppedPhoto";
-import { Avatar, Emblem, Portrait, PortraitSm } from "../components/Marks";
+import { Avatar, Portrait, PortraitSm } from "../components/Marks";
 import { ContentProvider, useContent } from "../content/ContentContext";
 import { EVENT_COUNT, LOGO_SRC } from "../content/seed";
 import SettingsView from "./SettingsView";
@@ -195,7 +195,7 @@ function RecogCard({ index, editing, recognition, onReload }) {
             </>
           ) : null}{" "}
           {editing ? (
-            <Block id={`recog.${index}.more`} className="more" />
+            <span className="more">{text(`recog.${index}.more`) || "Read More..."}</span>
           ) : (
             <button
               type="button"
@@ -221,6 +221,32 @@ function RecogCard({ index, editing, recognition, onReload }) {
           </p>
         ) : null}
       </div>
+    </article>
+  );
+}
+
+function EventCard({ index, editing }) {
+  const { text } = useContent();
+  const [open, setOpen] = useState(false);
+  const showDetail = editing || open;
+  const label = text(`event.${index}.more`) || "Read More...";
+  return (
+    <article className="event">
+      <Block id={`event.${index}.when`} as="div" className="when" />
+      <Block id={`event.${index}.title`} as="strong" />
+      {showDetail ? <Block id={`event.${index}.detail`} as="p" /> : null}
+      {editing ? (
+        <span className="more">{label}</span>
+      ) : (
+        <button
+          type="button"
+          className="more"
+          aria-expanded={open ? "true" : "false"}
+          onClick={() => setOpen((value) => !value)}
+        >
+          {open ? "Show less" : label}
+        </button>
+      )}
     </article>
   );
 }
@@ -483,10 +509,10 @@ function MemberView() {
             navigate("/member");
           }}
         >
-          <img className="mark" src={logoSrc} alt="" onError={keepExampleLogo} />
+          <img className="hero-medallion-navbar" src={logoSrc} alt="" onError={keepExampleLogo} />
           <span>
-            <Block id="brand.name" className="name" />
-            <Block id="brand.sub" className="sub" />
+            <Block id="brand.name" className="name" locked />
+            <Block id="brand.sub" className="sub" locked />
           </span>
         </a>
         <div className="head-right">
@@ -543,9 +569,9 @@ function MemberView() {
       {onSettings ? null : (
       <section className="member-hero" id="top">
         <div className="container">
-          <Eyebrow id="hero.eyebrow" />
-          <Block id="hero.title" as="h1" />
-          <Block id="hero.place" as="div" className="place" />
+          <Eyebrow id="hero.eyebrow" locked />
+          <Block id="hero.title" as="h1" locked />
+          <Block id="hero.place" as="div" className="place" locked />
         </div>
       </section>
       )}
@@ -584,7 +610,7 @@ function MemberView() {
           <section className="block" id="officers" aria-labelledby="officersHeading">
             <div className="section-head">
               <Eyebrow id="officers.eyebrow" />
-              <Block id="officers.title" as="h2" htmlId="officersHeading" />
+              <Block id="officers.title" as="h2" htmlId="officersHeading" locked />
               <Block id="officers.intro" as="p" htmlId="headlineIntro" />
             </div>
             <div className="officer-grid" id="officerGrid">
@@ -601,7 +627,7 @@ function MemberView() {
           <section className="block" id="directors" aria-labelledby="directorsHeading">
             <div className="section-head">
               <Eyebrow id="directors.eyebrow" />
-              <Block id="directors.title" as="h2" htmlId="directorsHeading" />
+              <Block id="directors.title" as="h2" htmlId="directorsHeading" locked />
               <Block id="directors.intro" as="p" htmlId="directorIntro" />
             </div>
             <div className="officer-grid" id="directorGrid">
@@ -618,15 +644,11 @@ function MemberView() {
           <section className="block" id="events" aria-labelledby="eventsHeading">
             <div className="section-head">
               <Eyebrow id="events.eyebrow" />
-              <Block id="events.title" as="h2" htmlId="eventsHeading" />
+              <Block id="events.title" as="h2" htmlId="eventsHeading" locked />
             </div>
             <div className="card-grid" id="eventList">
               {range(EVENT_COUNT).map((index) => (
-                <article className="event" key={`event-${index}`}>
-                  <Block id={`event.${index}.when`} as="div" className="when" />
-                  <Block id={`event.${index}.title`} as="strong" />
-                  <Block id={`event.${index}.more`} className="more" href="#events" />
-                </article>
+                <EventCard key={`event-${index}`} index={index} editing={editing} />
               ))}
             </div>
           </section>
@@ -732,7 +754,7 @@ function MemberView() {
         <div className="container">
           <div className="footer-inner">
             <div className="footer-brand">
-              <Emblem />
+              <img className="hero-medallion-navbar" src={logoSrc} alt="" onError={keepExampleLogo} />
               <span>
                 <Block id="footer.name" className="name" />
                 <Block id="footer.sub" className="sub" />

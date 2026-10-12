@@ -162,18 +162,21 @@ export function ContentProvider({ slug, canEdit = false, children }) {
             : next[block.key];
           next[block.key] = normalizeValue(block.field_type, raw);
         }
+        try {
+          await saveMember(serialize(blocksRef.current, next));
+        } catch (err) {
+          setSaveError(err instanceof Error ? err.message : "Could not save.");
+          return;
+        }
         draftRef.current = next;
         savedRef.current = next;
         setSaved(next);
         setEpoch((value) => value + 1);
         writeLocal(next);
+        editingRef.current = false;
+        setEditing(false);
         setSavedFlash(true);
         setSaveCount((value) => value + 1);
-        try {
-          await saveMember(serialize(blocksRef.current, next));
-        } catch {
-          /* The text is already stored in memory and localStorage. */
-        }
       },
     };
   }

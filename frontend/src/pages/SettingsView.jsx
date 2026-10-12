@@ -12,12 +12,11 @@ import {
   imageFileError,
   replaceMedia,
   setMemberAdmin,
-  setMemberTitle,
   updateMyCrop,
   uploadMedia,
   uploadMyPhoto,
 } from "../api";
-import { memberLabel, OFFICER_TITLES } from "../titles";
+import { memberLabel } from "../titles";
 import { navigate } from "../router";
 
 const SLOTS = [
@@ -45,32 +44,33 @@ function Photo({ user, className }) {
   return <PortraitSm />;
 }
 
-function ViewingAngle({ src, initial, pending, onSave, onCancel }) {
+function PhotoEditor({ src, initial, pending, onSave, onCancel, onSwap }) {
   const [crop, setCrop] = useState(() => clampCrop(initial?.x, initial?.y, initial?.scale ?? 1));
-  const frameRef = useRef(null);
+  const stageRef = useRef(null);
+  const windowRef = useRef(null);
   const dragRef = useRef(null);
 
   useEffect(() => {
-    const frame = frameRef.current;
-    if (!frame) return undefined;
+    const stage = stageRef.current;
+    if (!stage || !src) return undefined;
     function onWheel(event) {
       event.preventDefault();
       const delta = event.deltaY > 0 ? -0.08 : 0.08;
       setCrop((current) => clampCrop(current.x, current.y, current.scale + delta));
     }
-    frame.addEventListener("wheel", onWheel, { passive: false });
-    return () => frame.removeEventListener("wheel", onWheel);
-  }, []);
+    stage.addEventListener("wheel", onWheel, { passive: false });
+    return () => stage.removeEventListener("wheel", onWheel);
+  }, [src]);
 
   function onPointerDown(event) {
-    if (event.button !== 0) return;
+    if (!src || event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { x: event.clientX, y: event.clientY, crop };
   }
 
   function onPointerMove(event) {
     const drag = dragRef.current;
-    const frame = frameRef.current;
+    const frame = windowRef.current;
     if (!drag || !frame || !frame.clientWidth || !frame.clientHeight) return;
     const dx = (event.clientX - drag.x) / frame.clientWidth;
     const dy = (event.clientY - drag.y) / frame.clientHeight;
@@ -82,22 +82,28 @@ function ViewingAngle({ src, initial, pending, onSave, onCancel }) {
   }
 
   return (
-    <div className="viewing-angle">
-      <div className="eyebrow left-only">Viewing Angle</div>
+    <div className="photo-editor">
       <div
-        className="settings-photo crop-frame viewing-stage"
-        ref={frameRef}
+        className={src ? "photo-editor-stage" : "photo-editor-stage is-empty"}
+        ref={stageRef}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
-        <img
-          src={src}
-          alt=""
-          draggable={false}
-          style={{ transform: `translate(${crop.x * 100}%, ${crop.y * 100}%) scale(${crop.scale})` }}
-        />
+        <div className="photo-editor-window" ref={windowRef}>
+          {src ? (
+            <img
+              src={src}
+              alt=""
+              draggable={false}
+              style={{ transform: `translate(${crop.x * 100}%, ${crop.y * 100}%) scale(${crop.scale})` }}
+            />
+          ) : (
+            <span className="photo-editor-empty">Choose an image</span>
+          )}
+        </div>
+        <div className="photo-editor-ring" aria-hidden="true" />
       </div>
       <label className="signin-field">
         <span>Zoom</span>
@@ -107,12 +113,16 @@ function ViewingAngle({ src, initial, pending, onSave, onCancel }) {
           max="3"
           step="0.01"
           value={crop.scale}
-          disabled={pending}
+          disabled={pending || !src}
           onChange={(event) => setCrop((current) => clampCrop(current.x, current.y, event.target.value))}
         />
       </label>
       <div className="signin-actions">
-        <button type="button" className="btn" disabled={pending} onClick={() => onSave(crop)}>
+        <label className="btn btn-quiet">
+          {src ? "Swap image" : "Choose image"}
+          <input type="file" accept={ACCEPT} hidden disabled={pending} onChange={onSwap} />
+        </label>
+        <button type="button" className="btn" disabled={pending || !src} onClick={() => onSave(crop)}>
           Save photo
         </button>
         <button type="button" className="btn btn-quiet" disabled={pending} onClick={onCancel}>
@@ -132,13 +142,13 @@ export default function SettingsView() {
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState(false);
   const [loadingAdmin, setLoadingAdmin] = useState(admin);
-  const [angle, setAngle] = useState(null);
-  const angleRef = useRef(null);
-  angleRef.current = angle;
+  const [editor, setEditor] = useState(null);
+  const editorRef = useRef(null);
+  editorRef.current = editor;
 
   useEffect(() => {
     return () => {
-      const current = angleRef.current;
+      const current = editorRef.current;
       if (current?.ownedUrl) URL.revokeObjectURL(current.src);
     };
   }, []);
@@ -178,16 +188,34 @@ export default function SettingsView() {
     }
   }
 
-  function closeAngle() {
-    setAngle((current) => {
+  function closeEditor() {
+    setEditor((current) => {
       if (current?.ownedUrl) URL.revokeObjectURL(current.src);
       return null;
     });
   }
 
-  function onPhoto(event) {
+  function openEditor() {
+    setError("");
+    setNotice("");
+    setEditor((current) => {
+      if (current?.ownedUrl) URL.revokeObjectURL(current.src);
+      if (user?.photo_url) {
+        return {
+          src: user.photo_url,
+          file: null,
+          ownedUrl: false,
+          crop: { x: user.crop_x || 0, y: user.crop_y || 0, scale: user.crop_scale || 1 },
+        };
+      }
+      return { src: "", file: null, ownedUrl: false, crop: { x: 0, y: 0, scale: 1 } };
+    });
+  }
+
+  function onSwap(event) {
     const file = event.target.files && event.target.files[0];
     event.target.value = "";
+    if (!file) return;
     const problem = imageFileError(file);
     if (problem) {
       setNotice("");
@@ -197,24 +225,9 @@ export default function SettingsView() {
     const url = URL.createObjectURL(file);
     setError("");
     setNotice("");
-    setAngle((current) => {
+    setEditor((current) => {
       if (current?.ownedUrl) URL.revokeObjectURL(current.src);
       return { src: url, file, ownedUrl: true, crop: { x: 0, y: 0, scale: 1 } };
-    });
-  }
-
-  function onAdjust() {
-    if (!user?.photo_url) return;
-    setError("");
-    setNotice("");
-    setAngle((current) => {
-      if (current?.ownedUrl) URL.revokeObjectURL(current.src);
-      return {
-        src: user.photo_url,
-        file: null,
-        ownedUrl: false,
-        crop: { x: user.crop_x || 0, y: user.crop_y || 0, scale: user.crop_scale || 1 },
-      };
     });
   }
 
@@ -223,18 +236,19 @@ export default function SettingsView() {
     setMembers((current) => current.map((item) => (item.memberid === updated.memberid ? updated : item)));
   }
 
-  function onSaveAngle(crop) {
-    const file = angle?.file || null;
+  function onSavePhoto(crop) {
+    const file = editor?.file || null;
+    if (!file && !editor?.src) return;
     run(async () => {
       const updated = file ? await uploadMyPhoto(file, crop) : await updateMyCrop(crop);
       await refresh();
       rememberMember(updated);
-      closeAngle();
+      closeEditor();
     }, "Profile photo saved.");
   }
 
   function onRemovePhoto() {
-    closeAngle();
+    closeEditor();
     run(async () => {
       const updated = await deleteMyPhoto();
       await refresh();
@@ -307,14 +321,6 @@ export default function SettingsView() {
     }, "Image placement saved.");
   }
 
-  function onMemberTitle(member, next) {
-    run(async () => {
-      await setMemberTitle(member.memberid, next);
-      setMembers(await fetchMembers());
-      if (member.memberid === user?.memberid) await refresh();
-    }, "Title saved.");
-  }
-
   function onAdmin(member, next) {
     run(async () => {
       const updated = await setMemberAdmin(member.memberid, next);
@@ -354,28 +360,23 @@ export default function SettingsView() {
           <article className="card settings-card">
             <h3>Profile photo</h3>
             <p>One photo. It is public and appears wherever you are shown.</p>
-            {angle ? (
-              <ViewingAngle
-                key={angle.src}
-                src={angle.src}
-                initial={angle.crop}
+            {editor ? (
+              <PhotoEditor
+                key={editor.src || "empty"}
+                src={editor.src}
+                initial={editor.crop}
                 pending={pending}
-                onSave={onSaveAngle}
-                onCancel={closeAngle}
+                onSave={onSavePhoto}
+                onCancel={closeEditor}
+                onSwap={onSwap}
               />
             ) : (
               <div className="settings-photo-row">
                 <Photo user={user} className="settings-photo" />
                 <div className="signin-actions">
-                  <label className="btn">
-                    {user?.photo_url ? "Replace photo" : "Upload photo"}
-                    <input type="file" accept={ACCEPT} hidden onChange={onPhoto} disabled={pending} />
-                  </label>
-                  {user?.photo_url ? (
-                    <button type="button" className="btn btn-quiet" onClick={onAdjust} disabled={pending}>
-                      Viewing angle
-                    </button>
-                  ) : null}
+                  <button type="button" className="btn" onClick={openEditor} disabled={pending}>
+                    Change photo
+                  </button>
                   {user?.photo_url ? (
                     <button type="button" className="btn btn-quiet" onClick={onRemovePhoto} disabled={pending}>
                       Remove photo
@@ -410,21 +411,6 @@ export default function SettingsView() {
                   <div>
                     <div className="role">{member.memberid}</div>
                     <strong>{memberLabel(member)}</strong>
-                    <label className="signin-field officer-pick">
-                      <span>Officer title</span>
-                      <select
-                        value={member.title || ""}
-                        disabled={pending}
-                        onChange={(event) => onMemberTitle(member, event.target.value)}
-                      >
-                        <option value="">No title</option>
-                        {OFFICER_TITLES.map(([label, abbrev]) => (
-                          <option key={abbrev} value={abbrev}>
-                            {abbrev} — {label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
                     <label className="admin-toggle">
                       <input
                         type="checkbox"

@@ -380,6 +380,26 @@ memberList.push(
     "recog.3.detail",
     "He logged charity hours each month and walked new members through their first meeting.",
   ),
+  text(
+    "event.0.detail",
+    "Brothers meet online to review the month's business before the council meeting.",
+  ),
+  text(
+    "event.1.detail",
+    "The council prays the rosary together in the parish hall before the business meeting.",
+  ),
+  text(
+    "event.2.detail",
+    "Officers report, motions are heard, and brothers plan the next charity work.",
+  ),
+  text(
+    "event.3.detail",
+    "Give blood at the council hall. Appointments and walk-ins are both welcome.",
+  ),
+  text(
+    "event.4.detail",
+    "Sorted coats are handed out to families at the parish from the morning shift.",
+  ),
 );
 
 export const memberBlocks = withOrder(memberList);

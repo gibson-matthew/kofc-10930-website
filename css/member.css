@@ -47,6 +47,13 @@ body.page-member .brand .name {
   flex-shrink: 0;
 }
 
+body.page-member .brand > .hero-medallion-navbar,
+body.page-member .footer-brand > .hero-medallion-navbar {
+  width: auto;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
 nav.site-nav {
   order: 2;
   margin-left: auto;
@@ -262,6 +269,12 @@ section.block { margin-top: 2.2rem; }
   color: var(--wine);
   font-size: 0.76rem;
   font-weight: 700;
+}
+
+.event p {
+  margin-top: 0.35rem;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
 }
 
 .more {
@@ -634,17 +647,85 @@ button.more {
   pointer-events: none;
 }
 
-.viewing-stage {
-  cursor: grab;
+.photo-editor-stage {
+  position: relative;
+  width: min(360px, 100%);
+  aspect-ratio: 1;
+  margin: 0.9rem auto 0.2rem;
+  background: #122842;
+  border-radius: var(--radius);
+  overflow: hidden;
   touch-action: none;
-  margin-top: 0.8rem;
+  cursor: grab;
+  user-select: none;
 }
 
-.viewing-stage:active {
+.photo-editor-stage.is-empty {
+  cursor: default;
+}
+
+.photo-editor-stage:active {
   cursor: grabbing;
 }
 
-.viewing-angle .signin-field input[type="range"] {
+.photo-editor-stage.is-empty:active {
+  cursor: default;
+}
+
+.photo-editor-window {
+  position: absolute;
+  left: 16%;
+  top: 16%;
+  width: 68%;
+  height: 68%;
+  z-index: 1;
+  overflow: visible;
+}
+
+.photo-editor-window img {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  display: block;
+  transform-origin: center center;
+  pointer-events: none;
+}
+
+.photo-editor-ring {
+  position: absolute;
+  left: 16%;
+  top: 16%;
+  width: 68%;
+  height: 68%;
+  border-radius: 50%;
+  border: 2px solid var(--gold);
+  box-shadow: 0 0 0 999px rgba(18, 40, 66, 0.62);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.photo-editor-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  color: var(--gold-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 1rem;
+}
+
+.photo-editor .signin-field {
+  margin-top: 0.75rem;
+}
+
+.photo-editor .signin-field input[type="range"] {
   padding: 0;
   border: 0;
   background: transparent;
