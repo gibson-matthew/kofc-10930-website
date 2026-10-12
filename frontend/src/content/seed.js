@@ -364,6 +364,22 @@ memberList.push(
     "\u00a9 2026 Knights of Columbus Council 10930 \u2014 Fort Worth, TX",
   ),
   text("footer.principles", "Charity \u00b7 Unity \u00b7 Fraternity \u00b7 Patriotism"),
+  text(
+    "recog.0.detail",
+    "Neighbors packed boxes on Saturday and delivered them to families after Sunday Mass.",
+  ),
+  text(
+    "recog.1.detail",
+    "He organized sizes, labeled bags, and stayed until every coat had a home.",
+  ),
+  text(
+    "recog.2.detail",
+    "The family hosted monthly rosaries and raised scholarship funds through the parish festival.",
+  ),
+  text(
+    "recog.3.detail",
+    "He logged charity hours each month and walked new members through their first meeting.",
+  ),
 );
 
 export const memberBlocks = withOrder(memberList);

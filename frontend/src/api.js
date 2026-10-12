@@ -134,19 +134,47 @@ async function readJson(response, fallback) {
   return response.json();
 }
 
-export async function updateMyTitle(title) {
-  const response = await send("/api/members/me", {
+export async function uploadMyPhoto(file, crop = {}) {
+  const body = new FormData();
+  body.append("file", file);
+  body.append("crop_x", String(crop.x ?? crop.crop_x ?? 0));
+  body.append("crop_y", String(crop.y ?? crop.crop_y ?? 0));
+  body.append("crop_scale", String(crop.scale ?? crop.crop_scale ?? 1));
+  const response = await send("/api/members/me/photo", { method: "POST", body });
+  return readJson(response, "Could not upload the photo.");
+}
+
+export async function updateMyCrop(crop) {
+  const response = await send("/api/members/me/photo", {
+    method: "PATCH",
+    body: JSON.stringify({
+      crop_x: crop.x ?? crop.crop_x ?? 0,
+      crop_y: crop.y ?? crop.crop_y ?? 0,
+      crop_scale: crop.scale ?? crop.crop_scale ?? 1,
+    }),
+  });
+  return readJson(response, "Could not save the viewing angle.");
+}
+
+export async function setMemberTitle(memberid, title) {
+  const response = await send(`/api/members/${encodeURIComponent(memberid)}/title`, {
     method: "PATCH",
     body: JSON.stringify({ title: title || null }),
   });
   return readJson(response, "Could not save the title.");
 }
 
-export async function uploadMyPhoto(file) {
-  const body = new FormData();
-  body.append("file", file);
-  const response = await send("/api/members/me/photo", { method: "POST", body });
-  return readJson(response, "Could not upload the photo.");
+export async function fetchRoster() {
+  const response = await send("/api/members/roster");
+  return readJson(response, "Could not load members.");
+}
+
+export async function saveRoleAssignments(payload) {
+  const response = await send("/api/members/assignments", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return readJson(response, "Could not save officer assignments.");
 }
 
 export async function deleteMyPhoto() {

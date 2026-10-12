@@ -11,7 +11,10 @@
 --   .\.venv\Scripts\python.exe backend\seed_member.py
 -- members.title stores one officer-title abbreviation, or NULL.
 -- members.is_admin grants full edit access.
--- images holds the logo, carousel photos, uploads, and profile photos.
+-- images holds the logo, carousel photos, About photos, uploads, and profile photos.
+-- Profile photos store crop_x, crop_y, and crop_scale for the viewing angle.
+-- About photos use slots recog.0 through recog.3.
+-- Membership 1000000 is renamed to David Hernandez when the row still says Test Member.
 
 BEGIN;
 
@@ -310,7 +313,11 @@ Fort Worth, TX 76179 US$v$, 22),
   ('member', 'footer.nav.links', 'text', $v$Member Links$v$, 173),
   ('member', 'footer.nav.public', 'text', $v$Public page$v$, 174),
   ('member', 'footer.copy', 'text', $v$© 2026 Knights of Columbus Council 10930 — Fort Worth, TX$v$, 175),
-  ('member', 'footer.principles', 'text', $v$Charity · Unity · Fraternity · Patriotism$v$, 176)
+  ('member', 'footer.principles', 'text', $v$Charity · Unity · Fraternity · Patriotism$v$, 176),
+  ('member', 'recog.0.detail', 'text', $v$Neighbors packed boxes on Saturday and delivered them to families after Sunday Mass.$v$, 177),
+  ('member', 'recog.1.detail', 'text', $v$He organized sizes, labeled bags, and stayed until every coat had a home.$v$, 178),
+  ('member', 'recog.2.detail', 'text', $v$The family hosted monthly rosaries and raised scholarship funds through the parish festival.$v$, 179),
+  ('member', 'recog.3.detail', 'text', $v$He logged charity hours each month and walked new members through their first meeting.$v$, 180)
 ) AS v(slug, block_key, field_type, value, sort_order)
 JOIN pages p ON p.slug = v.slug
 ON CONFLICT (page_id, "key") DO NOTHING;
@@ -323,10 +330,27 @@ CREATE TABLE IF NOT EXISTS images (
   purpose TEXT NOT NULL DEFAULT 'library',
   slot TEXT,
   owner_membership_id TEXT REFERENCES members (membership_id) ON DELETE SET NULL,
+  crop_x DOUBLE PRECISION NOT NULL DEFAULT 0,
+  crop_y DOUBLE PRECISION NOT NULL DEFAULT 0,
+  crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT images_purpose_chk CHECK (purpose IN ('library', 'profile')),
   CONSTRAINT images_slot_chk CHECK (
-    slot IS NULL OR slot IN ('logo', 'carousel.1', 'carousel.2', 'carousel.3', 'carousel.4')
+    slot IS NULL OR slot IN (
+      'logo', 'carousel.1', 'carousel.2', 'carousel.3', 'carousel.4',
+      'recog.0', 'recog.1', 'recog.2', 'recog.3'
+    )
+  )
+);
+
+ALTER TABLE images ADD COLUMN IF NOT EXISTS crop_x DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS crop_y DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1;
+ALTER TABLE images DROP CONSTRAINT IF EXISTS images_slot_chk;
+ALTER TABLE images ADD CONSTRAINT images_slot_chk CHECK (
+  slot IS NULL OR slot IN (
+    'logo', 'carousel.1', 'carousel.2', 'carousel.3', 'carousel.4',
+    'recog.0', 'recog.1', 'recog.2', 'recog.3'
   )
 );
 
@@ -349,6 +373,11 @@ FROM (
 WHERE NOT EXISTS (
   SELECT 1 FROM images i WHERE i.path = v.path OR (v.slot IS NOT NULL AND i.slot = v.slot)
 );
+
+UPDATE members
+SET display_name = 'David Hernandez'
+WHERE membership_id = '1000000'
+  AND display_name = 'Test Member';
 
 UPDATE members
 SET is_admin = TRUE,

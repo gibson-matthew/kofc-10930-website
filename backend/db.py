@@ -8,16 +8,21 @@ import threading
 from copy import deepcopy
 from datetime import datetime, timezone
 
-from media import SEED_IMAGES, delete_stored_file, public_url
+from media import RECOG_SLOTS, SEED_IMAGES, delete_stored_file, public_url, slot_check_sql
 from security import hash_password, verify_password, verify_password_dummy
 from seed import PAGES
-from titles import TITLE_ABBREVS, normalize_title
+from titles import (
+    DIRECTOR_ROLE_SET,
+    OFFICER_ROLE_SET,
+    TITLE_ABBREVS,
+    normalize_title,
+)
 
 DEFAULT_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/koc10930"
 # Documented local account. Created only when this membership id is missing.
 TEST_MEMBER_ID = "1000000"
 TEST_MEMBER_PASSWORD = "Password123!"
-TEST_MEMBER_NAME = "Test Member"
+TEST_MEMBER_NAME = "David Hernandez"
 TEST_MEMBER_TITLE = "GK"
 # Second local account so the webmaster can grant admin access to someone else.
 SAMPLE_MEMBER_ID = "1000001"
@@ -92,6 +97,7 @@ class Store:
                 status = _upsert_test_member(cur, hashed)
                 _ensure_sample_member(cur, hashed)
                 _ensure_admin(cur)
+                _rename_test_member(cur)
             conn.commit()
             conn.close()
             return status
@@ -266,7 +272,7 @@ class Store:
                 cur.execute(
                     """
                     SELECT m.membership_id, m.password_hash, m.display_name, m.title, m.is_admin,
-                           i.id, i.path
+                           i.id, i.path, i.crop_x, i.crop_y, i.crop_scale
                     FROM members m
                     LEFT JOIN images i
                       ON i.owner_membership_id = m.membership_id AND i.purpose = 'profile'
@@ -295,6 +301,9 @@ class Store:
                     record = dict(member)
                     record["photo_id"] = photo["id"] if photo else None
                     record["photo_path"] = photo["path"] if photo else None
+                    record["crop_x"] = photo.get("crop_x", 0) if photo else 0
+                    record["crop_y"] = photo.get("crop_y", 0) if photo else 0
+                    record["crop_scale"] = photo.get("crop_scale", 1) if photo else 1
                     return record
         return None
 
@@ -311,6 +320,9 @@ class Store:
             "title": title,
             "is_admin": bool(record.get("is_admin")),
             "photo_url": photo_url,
+            "crop_x": float(record.get("crop_x") or 0),
+            "crop_y": float(record.get("crop_y") or 0),
+            "crop_scale": float(record.get("crop_scale") or 1),
         }
 
     def list_members(self) -> list[dict]:
@@ -323,6 +335,9 @@ class Store:
                     record = dict(member)
                     record["photo_id"] = photo["id"] if photo else None
                     record["photo_path"] = photo["path"] if photo else None
+                    record["crop_x"] = photo.get("crop_x", 0) if photo else 0
+                    record["crop_y"] = photo.get("crop_y", 0) if photo else 0
+                    record["crop_scale"] = photo.get("crop_scale", 1) if photo else 1
                     rows.append(self._public_member(record))
             rows.sort(key=lambda item: (item["display_name"].lower(), item["memberid"]))
             return rows
@@ -331,7 +346,7 @@ class Store:
                 cur.execute(
                     """
                     SELECT m.membership_id, m.password_hash, m.display_name, m.title, m.is_admin,
-                           i.id, i.path
+                           i.id, i.path, i.crop_x, i.crop_y, i.crop_scale
                     FROM members m
                     LEFT JOIN images i
                       ON i.owner_membership_id = m.membership_id AND i.purpose = 'profile'
@@ -357,12 +372,14 @@ class Store:
         conn = self._open()
         if conn is None:
             with self._lock:
-                for member in self._members:
-                    if member["membership_id"] == memberid:
-                        member["title"] = cleaned
-                        break
-                else:
+                target = next((item for item in self._members if item["membership_id"] == memberid), None)
+                if target is None:
                     raise StoreError("Member was not found.", 404)
+                if cleaned:
+                    for member in self._members:
+                        if member is not target and member.get("title") == cleaned:
+                            member["title"] = None
+                target["title"] = cleaned
             record = self._memory_member(memberid)
             if record is None:
                 raise StoreError("Member was not found.", 404)
@@ -371,16 +388,36 @@ class Store:
             with conn.cursor() as cur:
                 cur.execute(
                     """
+                    SELECT membership_id
+                    FROM members
+                    WHERE membership_id = %s OR (%s IS NOT NULL AND title = %s)
+                    ORDER BY membership_id
+                    FOR UPDATE
+                    """,
+                    (memberid, cleaned, cleaned),
+                )
+                rows = cur.fetchall()
+                if not any(row[0] == memberid for row in rows):
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Member was not found.", 404)
+                if cleaned:
+                    cur.execute(
+                        """
+                        UPDATE members
+                        SET title = NULL
+                        WHERE title = %s AND membership_id <> %s
+                        """,
+                        (cleaned, memberid),
+                    )
+                cur.execute(
+                    """
                     UPDATE members
                     SET title = %s
                     WHERE membership_id = %s
                     """,
                     (cleaned, memberid),
                 )
-                if cur.rowcount != 1:
-                    conn.rollback()
-                    conn.close()
-                    raise StoreError("Member was not found.", 404)
             conn.commit()
             conn.close()
         except StoreError:
@@ -449,6 +486,55 @@ class Store:
             raise StoreError("Member was not found.", 404)
         return member
 
+    def assign_roles(self, officer: list[dict], director: list[dict]) -> list[dict]:
+        desired, managed = _role_plan(officer, director)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                known = {item["membership_id"] for item in self._members}
+                for memberid in desired:
+                    if memberid not in known:
+                        raise StoreError("Member was not found.", 404)
+                for member in self._members:
+                    memberid = member["membership_id"]
+                    if memberid in desired:
+                        member["title"] = desired[memberid]
+                    elif member.get("title") in managed:
+                        member["title"] = None
+            return self.list_members()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT membership_id, title FROM members ORDER BY membership_id FOR UPDATE"
+                )
+                rows = cur.fetchall()
+                known = {row[0] for row in rows}
+                for memberid in desired:
+                    if memberid not in known:
+                        conn.rollback()
+                        conn.close()
+                        raise StoreError("Member was not found.", 404)
+                for memberid, title in rows:
+                    if memberid in desired:
+                        new_title = desired[memberid]
+                    elif title in managed:
+                        new_title = None
+                    else:
+                        continue
+                    if new_title != title:
+                        cur.execute(
+                            "UPDATE members SET title = %s WHERE membership_id = %s",
+                            (new_title, memberid),
+                        )
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save officer assignments.", 503) from exc
+        return self.list_members()
+
     def list_images(self, purpose: str | None = "library") -> list[dict]:
         conn = self._open()
         if conn is None:
@@ -481,9 +567,14 @@ class Store:
         slides = []
         for slot in ("carousel.1", "carousel.2", "carousel.3", "carousel.4"):
             image = by_slot.get(slot)
-            slides.append({"slot": slot, "url": image["url"] if image else None})
+            slides.append(_slot_payload(slot, image))
+        recognition = [_slot_payload(slot, by_slot.get(slot)) for slot in RECOG_SLOTS]
         logo = by_slot.get("logo")
-        return {"logo": logo["url"] if logo else None, "slides": slides}
+        return {
+            "logo": logo["url"] if logo else None,
+            "slides": slides,
+            "recognition": recognition,
+        }
 
     def get_image(self, image_id: int) -> dict | None:
         conn = self._open()
@@ -638,7 +729,15 @@ class Store:
             raise StoreError("Image was not found.", 404)
         return _public_image(updated)
 
-    def set_profile_image(self, memberid: str, path: str, original_name: str, content_type: str) -> dict:
+    def set_profile_image(
+        self,
+        memberid: str,
+        path: str,
+        original_name: str,
+        content_type: str,
+        crop: tuple[float, float, float] = (0, 0, 1),
+    ) -> dict:
+        crop_x, crop_y, crop_scale = crop
         if self.get_member(memberid) is None:
             delete_stored_file(path)
             raise StoreError("Member was not found.", 404)
@@ -652,6 +751,9 @@ class Store:
                         image["path"] = path
                         image["original_name"] = original_name
                         image["content_type"] = content_type
+                        image["crop_x"] = crop_x
+                        image["crop_y"] = crop_y
+                        image["crop_scale"] = crop_scale
                         break
                 else:
                     self._images.append(
@@ -663,6 +765,9 @@ class Store:
                             "purpose": "profile",
                             "slot": None,
                             "owner_membership_id": memberid,
+                            "crop_x": crop_x,
+                            "crop_y": crop_y,
+                            "crop_scale": crop_scale,
                         }
                     )
                     self._image_seq += 1
@@ -687,20 +792,26 @@ class Store:
                     cur.execute(
                         """
                         UPDATE images
-                        SET path = %s, original_name = %s, content_type = %s
+                        SET path = %s,
+                            original_name = %s,
+                            content_type = %s,
+                            crop_x = %s,
+                            crop_y = %s,
+                            crop_scale = %s
                         WHERE id = %s
                         """,
-                        (path, original_name, content_type, existing[0]),
+                        (path, original_name, content_type, crop_x, crop_y, crop_scale, existing[0]),
                     )
                     old_path = existing[1]
                 else:
                     cur.execute(
                         """
                         INSERT INTO images
-                          (path, original_name, content_type, purpose, slot, owner_membership_id)
-                        VALUES (%s, %s, %s, 'profile', NULL, %s)
+                          (path, original_name, content_type, purpose, slot,
+                           owner_membership_id, crop_x, crop_y, crop_scale)
+                        VALUES (%s, %s, %s, 'profile', NULL, %s, %s, %s, %s)
                         """,
-                        (path, original_name, content_type, memberid),
+                        (path, original_name, content_type, memberid, crop_x, crop_y, crop_scale),
                     )
                     old_path = None
             conn.commit()
@@ -711,6 +822,47 @@ class Store:
             raise StoreError("Could not save the profile photo.", 503) from exc
         if old_path:
             delete_stored_file(old_path)
+        member = self.get_member(memberid)
+        if member is None:
+            raise StoreError("Member was not found.", 404)
+        return member
+
+    def update_profile_crop(self, memberid: str, crop: tuple[float, float, float]) -> dict:
+        crop_x, crop_y, crop_scale = crop
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                photo = _profile_in(self._images, memberid)
+                if photo is None:
+                    raise StoreError("Upload a profile photo first.", 404)
+                photo["crop_x"] = crop_x
+                photo["crop_y"] = crop_y
+                photo["crop_scale"] = crop_scale
+            record = self._memory_member(memberid)
+            if record is None:
+                raise StoreError("Member was not found.", 404)
+            return self._public_member(record)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE images
+                    SET crop_x = %s, crop_y = %s, crop_scale = %s
+                    WHERE owner_membership_id = %s AND purpose = 'profile'
+                    """,
+                    (crop_x, crop_y, crop_scale, memberid),
+                )
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Upload a profile photo first.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the viewing angle.", 503) from exc
         member = self.get_member(memberid)
         if member is None:
             raise StoreError("Member was not found.", 404)
@@ -787,6 +939,9 @@ class Store:
                     "purpose": purpose,
                     "slot": slot,
                     "owner_membership_id": owner,
+                    "crop_x": 0,
+                    "crop_y": 0,
+                    "crop_scale": 1,
                 }
                 self._image_seq += 1
                 self._images.append(image)
@@ -1010,6 +1165,9 @@ def _seed_image_rows() -> list[dict]:
                 "purpose": "library",
                 "slot": slot,
                 "owner_membership_id": None,
+                "crop_x": 0,
+                "crop_y": 0,
+                "crop_scale": 1,
             }
         )
     return rows
@@ -1031,6 +1189,9 @@ def _record_from_row(row) -> dict:
         "is_admin": bool(row[4]),
         "photo_id": row[5],
         "photo_path": row[6],
+        "crop_x": float(row[7]) if len(row) > 7 and row[7] is not None else 0,
+        "crop_y": float(row[8]) if len(row) > 8 and row[8] is not None else 0,
+        "crop_scale": float(row[9]) if len(row) > 9 and row[9] is not None else 1,
     }
 
 
@@ -1096,7 +1257,7 @@ def _ensure_schema(cur) -> None:
         """
     )
     cur.execute(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS images (
           id SERIAL PRIMARY KEY,
           path TEXT NOT NULL,
@@ -1105,14 +1266,22 @@ def _ensure_schema(cur) -> None:
           purpose TEXT NOT NULL DEFAULT 'library',
           slot TEXT,
           owner_membership_id TEXT REFERENCES members (membership_id) ON DELETE SET NULL,
+          crop_x DOUBLE PRECISION NOT NULL DEFAULT 0,
+          crop_y DOUBLE PRECISION NOT NULL DEFAULT 0,
+          crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           CONSTRAINT images_purpose_chk CHECK (purpose IN ('library', 'profile')),
-          CONSTRAINT images_slot_chk CHECK (
-            slot IS NULL OR slot IN ('logo', 'carousel.1', 'carousel.2', 'carousel.3', 'carousel.4')
-          )
+          CONSTRAINT images_slot_chk {slot_check_sql()}
         )
         """
     )
+    cur.execute("ALTER TABLE images ADD COLUMN IF NOT EXISTS crop_x DOUBLE PRECISION NOT NULL DEFAULT 0")
+    cur.execute("ALTER TABLE images ADD COLUMN IF NOT EXISTS crop_y DOUBLE PRECISION NOT NULL DEFAULT 0")
+    cur.execute(
+        "ALTER TABLE images ADD COLUMN IF NOT EXISTS crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1"
+    )
+    cur.execute("ALTER TABLE images DROP CONSTRAINT IF EXISTS images_slot_chk")
+    cur.execute(f"ALTER TABLE images ADD CONSTRAINT images_slot_chk {slot_check_sql()}")
     cur.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS images_slot_idx
@@ -1196,6 +1365,54 @@ def _ensure_admin(cur) -> None:
         """,
         (TEST_MEMBER_TITLE, TEST_MEMBER_ID),
     )
+
+
+def _rename_test_member(cur) -> None:
+    cur.execute(
+        """
+        UPDATE members
+        SET display_name = %s
+        WHERE membership_id = %s AND display_name = 'Test Member'
+        """,
+        (TEST_MEMBER_NAME, TEST_MEMBER_ID),
+    )
+
+
+def _role_plan(officer: list[dict], director: list[dict]) -> tuple[dict[str, str], set[str]]:
+    groups = (
+        (officer or [], OFFICER_ROLE_SET),
+        (director or [], DIRECTOR_ROLE_SET),
+    )
+    desired: dict[str, str] = {}
+    managed: set[str] = set()
+    for rows, allowed in groups:
+        seen_titles: set[str] = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                raise StoreError("Unknown officer title.", 400)
+            try:
+                title = normalize_title(row.get("title"))
+            except ValueError as exc:
+                raise StoreError(str(exc), 400) from exc
+            if title is None or title not in allowed:
+                raise StoreError("Unknown officer title.", 400)
+            if title in seen_titles:
+                raise StoreError("Each title can be assigned once.", 400)
+            seen_titles.add(title)
+            managed.add(title)
+            memberid = str(row.get("memberid") or "").strip()
+            if not memberid:
+                continue
+            if memberid in desired:
+                raise StoreError("A member can hold only one title.", 400)
+            desired[memberid] = title
+    return desired, managed
+
+
+def _slot_payload(slot: str, image: dict | None) -> dict:
+    if not image:
+        return {"slot": slot, "url": None, "id": None}
+    return {"slot": slot, "url": image["url"], "id": image["id"]}
 
 
 store = Store()

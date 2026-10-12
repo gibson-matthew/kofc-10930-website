@@ -24,6 +24,33 @@ export const OFFICER_TITLES = [
   ["Past Grand Knight", "PGK"],
 ];
 
+export const OFFICER_ROLES = [
+  ["Chaplain", "CHP"],
+  ["Grand Knight", "GK"],
+  ["Deputy Grand Knight", "DGK"],
+  ["Chancellor", "CH"],
+  ["Recorder", "REC"],
+  ["Financial Secretary", "FS"],
+  ["Treasurer", "TR"],
+  ["Lecturer", "LEC"],
+  ["Advocate", "ADV"],
+  ["Warden", "WRD"],
+  ["Inside Guard", "IG"],
+  ["Outside Guard", "OG"],
+  ["Trustee, 3rd year", "T3"],
+  ["Trustee, 2nd year", "T2"],
+  ["Trustee, 1st year", "T1"],
+];
+
+export const DIRECTOR_ROLES = [
+  ["Program Director", "PD"],
+  ["Faith Director", "FD"],
+  ["Family Director", "FAM"],
+  ["Community Director", "COM"],
+  ["Life Director", "LIFE"],
+  ["Membership Director", "MD"],
+];
+
 export function memberLabel(user) {
   const name = (user && String(user.display_name || "").trim()) || "Member";
   const title = user && user.title ? String(user.title).trim() : "";

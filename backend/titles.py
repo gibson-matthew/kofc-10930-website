@@ -32,6 +32,29 @@ TITLE_CHOICES: tuple[tuple[str, str], ...] = (
 TITLE_ABBREVS: tuple[str, ...] = tuple(abbrev for _, abbrev in TITLE_CHOICES)
 TITLE_ABBREV_SET = frozenset(TITLE_ABBREVS)
 
+# Current Officers, in the order the member page already shows them.
+OFFICER_ROLE_ABBREVS: tuple[str, ...] = (
+    "CHP",
+    "GK",
+    "DGK",
+    "CH",
+    "REC",
+    "FS",
+    "TR",
+    "LEC",
+    "ADV",
+    "WRD",
+    "IG",
+    "OG",
+    "T3",
+    "T2",
+    "T1",
+)
+# Current Directors, in the order the member page already shows them.
+DIRECTOR_ROLE_ABBREVS: tuple[str, ...] = ("PD", "FD", "FAM", "COM", "LIFE", "MD")
+OFFICER_ROLE_SET = frozenset(OFFICER_ROLE_ABBREVS)
+DIRECTOR_ROLE_SET = frozenset(DIRECTOR_ROLE_ABBREVS)
+
 
 class TitleError(ValueError):
     pass

@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
+import CroppedPhoto from "../components/CroppedPhoto";
 import { PortraitSm } from "../components/Marks";
+import { clampCrop } from "../crop";
 import {
   assignMediaSlot,
   deleteMedia,
@@ -10,7 +12,8 @@ import {
   imageFileError,
   replaceMedia,
   setMemberAdmin,
-  updateMyTitle,
+  setMemberTitle,
+  updateMyCrop,
   uploadMedia,
   uploadMyPhoto,
 } from "../api";
@@ -23,6 +26,10 @@ const SLOTS = [
   ["carousel.2", "Carousel photo 2"],
   ["carousel.3", "Carousel photo 3"],
   ["carousel.4", "Carousel photo 4"],
+  ["recog.0", "Family of the Month"],
+  ["recog.1", "Knight of the Month"],
+  ["recog.2", "Family of the Year"],
+  ["recog.3", "Knight of the Year"],
 ];
 
 const ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
@@ -33,25 +40,108 @@ function Photo({ user, className }) {
     setFailed(false);
   }, [user?.photo_url]);
   if (user?.photo_url && !failed) {
-    return <img className={className} src={user.photo_url} alt="" onError={() => setFailed(true)} />;
+    return <CroppedPhoto className={className} src={user.photo_url} crop={user} onError={() => setFailed(true)} />;
   }
   return <PortraitSm />;
+}
+
+function ViewingAngle({ src, initial, pending, onSave, onCancel }) {
+  const [crop, setCrop] = useState(() => clampCrop(initial?.x, initial?.y, initial?.scale ?? 1));
+  const frameRef = useRef(null);
+  const dragRef = useRef(null);
+
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return undefined;
+    function onWheel(event) {
+      event.preventDefault();
+      const delta = event.deltaY > 0 ? -0.08 : 0.08;
+      setCrop((current) => clampCrop(current.x, current.y, current.scale + delta));
+    }
+    frame.addEventListener("wheel", onWheel, { passive: false });
+    return () => frame.removeEventListener("wheel", onWheel);
+  }, []);
+
+  function onPointerDown(event) {
+    if (event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { x: event.clientX, y: event.clientY, crop };
+  }
+
+  function onPointerMove(event) {
+    const drag = dragRef.current;
+    const frame = frameRef.current;
+    if (!drag || !frame || !frame.clientWidth || !frame.clientHeight) return;
+    const dx = (event.clientX - drag.x) / frame.clientWidth;
+    const dy = (event.clientY - drag.y) / frame.clientHeight;
+    setCrop(clampCrop(drag.crop.x + dx, drag.crop.y + dy, drag.crop.scale));
+  }
+
+  function onPointerUp() {
+    dragRef.current = null;
+  }
+
+  return (
+    <div className="viewing-angle">
+      <div className="eyebrow left-only">Viewing Angle</div>
+      <div
+        className="settings-photo crop-frame viewing-stage"
+        ref={frameRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <img
+          src={src}
+          alt=""
+          draggable={false}
+          style={{ transform: `translate(${crop.x * 100}%, ${crop.y * 100}%) scale(${crop.scale})` }}
+        />
+      </div>
+      <label className="signin-field">
+        <span>Zoom</span>
+        <input
+          type="range"
+          min="1"
+          max="3"
+          step="0.01"
+          value={crop.scale}
+          disabled={pending}
+          onChange={(event) => setCrop((current) => clampCrop(current.x, current.y, event.target.value))}
+        />
+      </label>
+      <div className="signin-actions">
+        <button type="button" className="btn" disabled={pending} onClick={() => onSave(crop)}>
+          Save photo
+        </button>
+        <button type="button" className="btn btn-quiet" disabled={pending} onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function SettingsView() {
   const { user, refresh } = useAuth();
   const admin = Boolean(user?.is_admin);
-  const [title, setTitle] = useState(user?.title || "");
   const [members, setMembers] = useState([]);
   const [images, setImages] = useState([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState(false);
   const [loadingAdmin, setLoadingAdmin] = useState(admin);
+  const [angle, setAngle] = useState(null);
+  const angleRef = useRef(null);
+  angleRef.current = angle;
 
   useEffect(() => {
-    setTitle(user?.title || "");
-  }, [user?.title]);
+    return () => {
+      const current = angleRef.current;
+      if (current?.ownedUrl) URL.revokeObjectURL(current.src);
+    };
+  }, []);
 
   useEffect(() => {
     if (!admin) return undefined;
@@ -88,19 +178,11 @@ export default function SettingsView() {
     }
   }
 
-  function onTitle(event) {
-    const next = event.target.value;
-    const previous = title;
-    setTitle(next);
-    run(async () => {
-      try {
-        await updateMyTitle(next);
-        await refresh();
-      } catch (err) {
-        setTitle(previous);
-        throw err;
-      }
-    }, "Title saved.");
+  function closeAngle() {
+    setAngle((current) => {
+      if (current?.ownedUrl) URL.revokeObjectURL(current.src);
+      return null;
+    });
   }
 
   function onPhoto(event) {
@@ -112,16 +194,51 @@ export default function SettingsView() {
       setError(problem);
       return;
     }
+    const url = URL.createObjectURL(file);
+    setError("");
+    setNotice("");
+    setAngle((current) => {
+      if (current?.ownedUrl) URL.revokeObjectURL(current.src);
+      return { src: url, file, ownedUrl: true, crop: { x: 0, y: 0, scale: 1 } };
+    });
+  }
+
+  function onAdjust() {
+    if (!user?.photo_url) return;
+    setError("");
+    setNotice("");
+    setAngle((current) => {
+      if (current?.ownedUrl) URL.revokeObjectURL(current.src);
+      return {
+        src: user.photo_url,
+        file: null,
+        ownedUrl: false,
+        crop: { x: user.crop_x || 0, y: user.crop_y || 0, scale: user.crop_scale || 1 },
+      };
+    });
+  }
+
+  function rememberMember(updated) {
+    if (!updated) return;
+    setMembers((current) => current.map((item) => (item.memberid === updated.memberid ? updated : item)));
+  }
+
+  function onSaveAngle(crop) {
+    const file = angle?.file || null;
     run(async () => {
-      await uploadMyPhoto(file);
+      const updated = file ? await uploadMyPhoto(file, crop) : await updateMyCrop(crop);
       await refresh();
+      rememberMember(updated);
+      closeAngle();
     }, "Profile photo saved.");
   }
 
   function onRemovePhoto() {
+    closeAngle();
     run(async () => {
-      await deleteMyPhoto();
+      const updated = await deleteMyPhoto();
       await refresh();
+      rememberMember(updated);
     }, "Profile photo removed.");
   }
 
@@ -190,6 +307,14 @@ export default function SettingsView() {
     }, "Image placement saved.");
   }
 
+  function onMemberTitle(member, next) {
+    run(async () => {
+      await setMemberTitle(member.memberid, next);
+      setMembers(await fetchMembers());
+      if (member.memberid === user?.memberid) await refresh();
+    }, "Title saved.");
+  }
+
   function onAdmin(member, next) {
     run(async () => {
       const updated = await setMemberAdmin(member.memberid, next);
@@ -227,38 +352,38 @@ export default function SettingsView() {
 
         <div className="settings-stack">
           <article className="card settings-card">
-            <h3>Officer title</h3>
-            <p>Shown before your name. With no title, only your name is shown.</p>
-            <label className="signin-field">
-              <span>Title</span>
-              <select value={title} onChange={onTitle} disabled={pending}>
-                <option value="">No title</option>
-                {OFFICER_TITLES.map(([label, abbrev]) => (
-                  <option key={abbrev} value={abbrev}>
-                    {abbrev} — {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </article>
-
-          <article className="card settings-card">
             <h3>Profile photo</h3>
             <p>One photo. It is public and appears wherever you are shown.</p>
-            <div className="settings-photo-row">
-              <Photo user={user} className="settings-photo" />
-              <div className="signin-actions">
-                <label className="btn">
-                  {user?.photo_url ? "Replace photo" : "Upload photo"}
-                  <input type="file" accept={ACCEPT} hidden onChange={onPhoto} disabled={pending} />
-                </label>
-                {user?.photo_url ? (
-                  <button type="button" className="btn btn-quiet" onClick={onRemovePhoto} disabled={pending}>
-                    Remove photo
-                  </button>
-                ) : null}
+            {angle ? (
+              <ViewingAngle
+                key={angle.src}
+                src={angle.src}
+                initial={angle.crop}
+                pending={pending}
+                onSave={onSaveAngle}
+                onCancel={closeAngle}
+              />
+            ) : (
+              <div className="settings-photo-row">
+                <Photo user={user} className="settings-photo" />
+                <div className="signin-actions">
+                  <label className="btn">
+                    {user?.photo_url ? "Replace photo" : "Upload photo"}
+                    <input type="file" accept={ACCEPT} hidden onChange={onPhoto} disabled={pending} />
+                  </label>
+                  {user?.photo_url ? (
+                    <button type="button" className="btn btn-quiet" onClick={onAdjust} disabled={pending}>
+                      Viewing angle
+                    </button>
+                  ) : null}
+                  {user?.photo_url ? (
+                    <button type="button" className="btn btn-quiet" onClick={onRemovePhoto} disabled={pending}>
+                      Remove photo
+                    </button>
+                  ) : null}
+                </div>
               </div>
-            </div>
+            )}
           </article>
         </div>
         <div className="signin-actions settings-back">
@@ -285,6 +410,21 @@ export default function SettingsView() {
                   <div>
                     <div className="role">{member.memberid}</div>
                     <strong>{memberLabel(member)}</strong>
+                    <label className="signin-field officer-pick">
+                      <span>Officer title</span>
+                      <select
+                        value={member.title || ""}
+                        disabled={pending}
+                        onChange={(event) => onMemberTitle(member, event.target.value)}
+                      >
+                        <option value="">No title</option>
+                        {OFFICER_TITLES.map(([label, abbrev]) => (
+                          <option key={abbrev} value={abbrev}>
+                            {abbrev} — {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <label className="admin-toggle">
                       <input
                         type="checkbox"
@@ -308,7 +448,7 @@ export default function SettingsView() {
           <div className="section-head">
             <div className="eyebrow left-only">Library</div>
             <h2 id="mediaHeading">Media</h2>
-            <p>Upload a JPG, PNG, or WebP, then choose it for the logo or a carousel photo. Replace or remove any image. An empty slot uses the example image.</p>
+            <p>Upload a JPG, PNG, or WebP, then choose it for the logo, a carousel photo, or an About photo. Replace or remove any image. An empty slot uses the example image.</p>
           </div>
           <div className="signin-actions">
             <label className="btn">

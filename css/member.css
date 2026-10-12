@@ -231,6 +231,7 @@ section.block { margin-top: 2.2rem; }
   height: 92px;
   border-radius: var(--radius);
   display: block;
+  object-fit: cover;
 }
 
 .recog h3 { font-size: 1.25rem; }
@@ -601,4 +602,76 @@ body.page-member .settings-view .signin-field select {
 
 @media (min-width: 680px) {
   .media-grid { grid-template-columns: 1fr 1fr; }
+}
+
+img.mark {
+  object-fit: contain;
+  display: block;
+}
+
+button.more {
+  display: inline;
+  background: none;
+  border: 0;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.crop-frame {
+  display: block;
+  overflow: hidden;
+  position: relative;
+}
+
+.crop-frame > img {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  display: block;
+  transform-origin: center center;
+  pointer-events: none;
+}
+
+.viewing-stage {
+  cursor: grab;
+  touch-action: none;
+  margin-top: 0.8rem;
+}
+
+.viewing-stage:active {
+  cursor: grabbing;
+}
+
+.viewing-angle .signin-field input[type="range"] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--wine);
+}
+
+.officer .officer-pick {
+  margin: 0.35rem 0 0;
+}
+
+.officer .officer-pick select {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid rgba(26, 23, 20, 0.16);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.45;
+}
+
+.recog-actions {
+  justify-content: flex-start;
+  margin-top: 0.45rem;
+}
+
+.save-status {
+  max-width: min(36rem, calc(100% - 2rem));
+  text-align: center;
 }

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from media import SEED_IMAGES
+from media import SEED_IMAGES, slot_check_sql
 from titles import TITLE_ABBREVS
 
 
@@ -352,6 +352,22 @@ _member.extend(
         text("footer.nav.public", "Public page"),
         text("footer.copy", "© 2026 Knights of Columbus Council 10930 — Fort Worth, TX"),
         text("footer.principles", "Charity · Unity · Fraternity · Patriotism"),
+        text(
+            "recog.0.detail",
+            "Neighbors packed boxes on Saturday and delivered them to families after Sunday Mass.",
+        ),
+        text(
+            "recog.1.detail",
+            "He organized sizes, labeled bags, and stayed until every coat had a home.",
+        ),
+        text(
+            "recog.2.detail",
+            "The family hosted monthly rosaries and raised scholarship funds through the parish festival.",
+        ),
+        text(
+            "recog.3.detail",
+            "He logged charity hours each month and walked new members through their first meeting.",
+        ),
     ]
 )
 
@@ -417,6 +433,7 @@ def render_schema() -> str:
     values = ",\n".join(rows)
     title_choices = _title_choices_sql()
     image_values = _image_values_sql()
+    slot_check = slot_check_sql()
     return f"""-- Council 10930 schema and content seed.
 -- Create the database, then run this file:
 --   createdb koc10930
@@ -430,7 +447,10 @@ def render_schema() -> str:
 --   .\\.venv\\Scripts\\python.exe backend\\seed_member.py
 -- members.title stores one officer-title abbreviation, or NULL.
 -- members.is_admin grants full edit access.
--- images holds the logo, carousel photos, uploads, and profile photos.
+-- images holds the logo, carousel photos, About photos, uploads, and profile photos.
+-- Profile photos store crop_x, crop_y, and crop_scale for the viewing angle.
+-- About photos use slots recog.0 through recog.3.
+-- Membership 1000000 is renamed to David Hernandez when the row still says Test Member.
 
 BEGIN;
 
@@ -496,12 +516,19 @@ CREATE TABLE IF NOT EXISTS images (
   purpose TEXT NOT NULL DEFAULT 'library',
   slot TEXT,
   owner_membership_id TEXT REFERENCES members (membership_id) ON DELETE SET NULL,
+  crop_x DOUBLE PRECISION NOT NULL DEFAULT 0,
+  crop_y DOUBLE PRECISION NOT NULL DEFAULT 0,
+  crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT images_purpose_chk CHECK (purpose IN ('library', 'profile')),
-  CONSTRAINT images_slot_chk CHECK (
-    slot IS NULL OR slot IN ('logo', 'carousel.1', 'carousel.2', 'carousel.3', 'carousel.4')
-  )
+  CONSTRAINT images_slot_chk {slot_check}
 );
+
+ALTER TABLE images ADD COLUMN IF NOT EXISTS crop_x DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS crop_y DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1;
+ALTER TABLE images DROP CONSTRAINT IF EXISTS images_slot_chk;
+ALTER TABLE images ADD CONSTRAINT images_slot_chk {slot_check};
 
 CREATE UNIQUE INDEX IF NOT EXISTS images_slot_idx
   ON images (slot) WHERE slot IS NOT NULL;
@@ -518,6 +545,11 @@ FROM (
 WHERE NOT EXISTS (
   SELECT 1 FROM images i WHERE i.path = v.path OR (v.slot IS NOT NULL AND i.slot = v.slot)
 );
+
+UPDATE members
+SET display_name = 'David Hernandez'
+WHERE membership_id = '1000000'
+  AND display_name = 'Test Member';
 
 UPDATE members
 SET is_admin = TRUE,

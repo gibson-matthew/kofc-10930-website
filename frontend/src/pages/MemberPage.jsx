@@ -1,12 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { fetchMediaSlots, fetchRoster, imageFileError, replaceMedia, saveRoleAssignments, uploadMedia, assignMediaSlot } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { Block, Eyebrow } from "../components/Block";
+import CroppedPhoto from "../components/CroppedPhoto";
 import { Avatar, Emblem, Portrait, PortraitSm } from "../components/Marks";
 import { ContentProvider, useContent } from "../content/ContentContext";
-import { DIRECTOR_COUNT, EVENT_COUNT, OFFICER_COUNT } from "../content/seed";
+import { EVENT_COUNT, LOGO_SRC } from "../content/seed";
 import SettingsView from "./SettingsView";
 import { navigate, usePath } from "../router";
-import { memberLabel } from "../titles";
+import { DIRECTOR_ROLES, memberLabel, OFFICER_ROLES } from "../titles";
 
 const TITLE = "Members Area — Council 10930 — Knights of Columbus";
 
@@ -45,15 +47,182 @@ function range(count) {
   return Array.from({ length: count }, (_, index) => index);
 }
 
+const PHOTO_ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
+
 function MemberAvatar({ user }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     setFailed(false);
   }, [user?.photo_url]);
   if (user?.photo_url && !failed) {
-    return <img className="avatar" src={user.photo_url} alt="" onError={() => setFailed(true)} />;
+    return <CroppedPhoto className="avatar" src={user.photo_url} crop={user} onError={() => setFailed(true)} />;
   }
   return <Avatar />;
+}
+
+function PersonPhoto({ member }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [member?.photo_url]);
+  if (member?.photo_url && !failed) {
+    return (
+      <CroppedPhoto className="portrait-sm" src={member.photo_url} crop={member} onError={() => setFailed(true)} />
+    );
+  }
+  return <PortraitSm />;
+}
+
+function buildDraft(roster, roles) {
+  const draft = {};
+  for (const [, abbrev] of roles) {
+    const holder = roster.find((member) => member.title === abbrev);
+    draft[abbrev] = holder ? holder.memberid : "";
+  }
+  return draft;
+}
+
+function optionLabel(member, roster) {
+  const shared = roster.filter((item) => item.display_name === member.display_name).length > 1;
+  return shared ? `${member.display_name} (${member.memberid})` : member.display_name;
+}
+
+function RoleGrid({ roles, roster, ready, editing, onDraft }) {
+  const [draft, setDraft] = useState(null);
+
+  useEffect(() => {
+    if (!editing || !ready) {
+      setDraft(null);
+      return;
+    }
+    setDraft((current) => current || buildDraft(roster, roles));
+  }, [editing, ready, roster, roles]);
+
+  useEffect(() => {
+    if (!editing) onDraft(null);
+    else if (draft) onDraft(draft);
+    return () => onDraft(null);
+  }, [editing, draft, onDraft]);
+
+  function onPick(abbrev, memberid) {
+    setDraft((current) => {
+      if (!current) return current;
+      const next = { ...current, [abbrev]: memberid };
+      if (memberid) {
+        for (const key of Object.keys(next)) {
+          if (key !== abbrev && next[key] === memberid) next[key] = "";
+        }
+      }
+      return next;
+    });
+  }
+
+  return roles.map(([label, abbrev]) => {
+    const holder = roster.find((member) => member.title === abbrev) || null;
+    const picked = editing && draft ? draft[abbrev] : "";
+    const shown = editing && draft ? roster.find((member) => member.memberid === picked) || null : holder;
+    return (
+      <article className="officer" key={abbrev}>
+        <PersonPhoto member={shown} />
+        <div>
+          <div className="role">{label}</div>
+          {editing && draft ? (
+            <label className="signin-field officer-pick">
+              <span>Member</span>
+              <select value={draft[abbrev] || ""} onChange={(event) => onPick(abbrev, event.target.value)}>
+                <option value="">Unassigned</option>
+                {roster.map((member) => (
+                  <option key={member.memberid} value={member.memberid}>
+                    {optionLabel(member, roster)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <strong>{shown ? shown.display_name : "\u00a0"}</strong>
+          )}
+        </div>
+      </article>
+    );
+  });
+}
+
+function RecogCard({ index, editing, recognition, onReload }) {
+  const { text } = useContent();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const slot = (recognition || []).find((item) => item.slot === `recog.${index}`) || null;
+  const src = slot?.url || "";
+  const showDetail = editing || open;
+
+  async function onFile(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = "";
+    const problem = imageFileError(file);
+    if (problem) {
+      setPhotoError(problem);
+      return;
+    }
+    setBusy(true);
+    setPhotoError("");
+    try {
+      if (slot?.id) {
+        await replaceMedia(slot.id, file);
+      } else {
+        const image = await uploadMedia(file);
+        await assignMediaSlot(image.id, `recog.${index}`);
+      }
+      await onReload();
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : "Could not save the photo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="recog">
+      {src ? <img className="portrait" src={src} alt="" /> : <Portrait />}
+      <div>
+        <Block id={`recog.${index}.title`} as="h3" />
+        <p>
+          <Block id={`recog.${index}.body`} />
+          {showDetail ? (
+            <>
+              {" "}
+              <Block id={`recog.${index}.detail`} />
+            </>
+          ) : null}{" "}
+          {editing ? (
+            <Block id={`recog.${index}.more`} className="more" />
+          ) : (
+            <button
+              type="button"
+              className="more"
+              aria-expanded={open ? "true" : "false"}
+              onClick={() => setOpen((value) => !value)}
+            >
+              {open ? "Show less" : text(`recog.${index}.more`) || "Read More..."}
+            </button>
+          )}
+        </p>
+        {editing ? (
+          <div className="signin-actions recog-actions">
+            <label className="btn btn-quiet">
+              {src ? "Replace photo" : "Add photo"}
+              <input type="file" accept={PHOTO_ACCEPT} hidden disabled={busy} onChange={onFile} />
+            </label>
+          </div>
+        ) : null}
+        {photoError ? (
+          <p className="signin-error" role="alert">
+            {photoError}
+          </p>
+        ) : null}
+      </div>
+    </article>
+  );
 }
 
 function keepEditingClick(event) {
@@ -81,21 +250,9 @@ function EditBar() {
   );
 }
 
-function People({ prefix, count }) {
-  return range(count).map((index) => (
-    <article className="officer" key={`${prefix}-${index}`}>
-      <PortraitSm />
-      <div>
-        <Block id={`${prefix}.${index}.role`} as="div" className="role" />
-        <Block id={`${prefix}.${index}.name`} as="strong" />
-      </div>
-    </article>
-  ));
-}
-
 function MemberView() {
-  const { editing, savedFlash, cancelEdit } = useContent();
-  const { logout: signOut, user } = useAuth();
+  const { editing, savedFlash, saveError, cancelEdit, registerSaveHook } = useContent();
+  const { logout: signOut, user, refresh } = useAuth();
   const path = usePath();
   const onSettings = path === "/member/settings";
   const [navOpen, setNavOpen] = useState(false);
@@ -104,6 +261,28 @@ function MemberView() {
   const [openPanels, setOpenPanels] = useState({});
   const profileRef = useRef(null);
   const hiddenRef = useRef(false);
+  const roleDrafts = useRef({ officer: null, director: null });
+  const [logoSrc, setLogoSrc] = useState(LOGO_SRC);
+  const [recognition, setRecognition] = useState([]);
+  const [roster, setRoster] = useState([]);
+  const [rosterReady, setRosterReady] = useState(false);
+
+  const onOfficerDraft = useCallback((draft) => {
+    roleDrafts.current.officer = draft;
+  }, []);
+  const onDirectorDraft = useCallback((draft) => {
+    roleDrafts.current.director = draft;
+  }, []);
+
+  function keepExampleLogo() {
+    setLogoSrc((current) => (current === LOGO_SRC ? current : LOGO_SRC));
+  }
+
+  async function reloadSlots() {
+    const data = await fetchMediaSlots();
+    if (data?.logo) setLogoSrc(data.logo);
+    if (Array.isArray(data?.recognition)) setRecognition(data.recognition);
+  }
 
   useLayoutEffect(() => {
     document.body.className = "page-member";
@@ -114,6 +293,85 @@ function MemberView() {
   useEffect(() => {
     if (onSettings && editing) cancelEdit();
   }, [onSettings, editing, cancelEdit]);
+
+  useEffect(() => {
+    let cancel = false;
+    fetchMediaSlots()
+      .then((data) => {
+        if (cancel || !data) return;
+        if (data.logo) setLogoSrc(data.logo);
+        if (Array.isArray(data.recognition)) setRecognition(data.recognition);
+      })
+      .catch(() => {
+        /* The example logo stays in the header. */
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (onSettings) return undefined;
+    let cancel = false;
+    fetchRoster()
+      .then((rows) => {
+        if (cancel) return;
+        setRoster(Array.isArray(rows) ? rows : []);
+        setRosterReady(true);
+      })
+      .catch(() => {
+        /* Keep the last roster so a failed reload cannot clear titles. */
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [onSettings]);
+
+  useEffect(() => {
+    if (onSettings || editing || !rosterReady) return undefined;
+    let cancel = false;
+    fetchRoster()
+      .then((rows) => {
+        if (cancel || !Array.isArray(rows)) return;
+        setRoster(rows);
+      })
+      .catch(() => {
+        /* Keep the last roster so a failed reload cannot clear titles. */
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [onSettings, editing, rosterReady]);
+
+  useEffect(() => {
+    return registerSaveHook(async () => {
+      const officer = roleDrafts.current.officer;
+      const director = roleDrafts.current.director;
+      if (!officer || !director) return;
+      const seen = new Set();
+      for (const memberid of [...Object.values(officer), ...Object.values(director)]) {
+        if (!memberid) continue;
+        if (seen.has(memberid)) throw new Error("A member can hold only one title.");
+        seen.add(memberid);
+      }
+      const rows = await saveRoleAssignments({
+        officer: Object.entries(officer).map(([title, memberid]) => ({
+          title,
+          memberid: memberid || null,
+        })),
+        director: Object.entries(director).map(([title, memberid]) => ({
+          title,
+          memberid: memberid || null,
+        })),
+      });
+      if (Array.isArray(rows)) setRoster(rows);
+      try {
+        await refresh();
+      } catch {
+        /* The assignment is saved. The name updates on the next visit. */
+      }
+    });
+  }, [registerSaveHook, refresh]);
 
   useEffect(() => {
     if (onSettings) return undefined;
@@ -225,7 +483,7 @@ function MemberView() {
             navigate("/member");
           }}
         >
-          <Emblem className="mark" />
+          <img className="mark" src={logoSrc} alt="" onError={keepExampleLogo} />
           <span>
             <Block id="brand.name" className="name" />
             <Block id="brand.sub" className="sub" />
@@ -312,15 +570,13 @@ function MemberView() {
             </div>
             <div className="recog-grid">
               {range(4).map((index) => (
-                <article className="recog" key={`recog-${index}`}>
-                  <Portrait />
-                  <div>
-                    <Block id={`recog.${index}.title`} as="h3" />
-                    <p>
-                      <Block id={`recog.${index}.body`} /> <Block id={`recog.${index}.more`} className="more" href="#about" />
-                    </p>
-                  </div>
-                </article>
+                <RecogCard
+                  key={`recog-${index}`}
+                  index={index}
+                  editing={editing}
+                  recognition={recognition}
+                  onReload={reloadSlots}
+                />
               ))}
             </div>
           </section>
@@ -332,7 +588,13 @@ function MemberView() {
               <Block id="officers.intro" as="p" htmlId="headlineIntro" />
             </div>
             <div className="officer-grid" id="officerGrid">
-              <People prefix="officer" count={OFFICER_COUNT} />
+              <RoleGrid
+                roles={OFFICER_ROLES}
+                roster={roster}
+                ready={rosterReady}
+                editing={editing}
+                onDraft={onOfficerDraft}
+              />
             </div>
           </section>
 
@@ -343,7 +605,13 @@ function MemberView() {
               <Block id="directors.intro" as="p" htmlId="directorIntro" />
             </div>
             <div className="officer-grid" id="directorGrid">
-              <People prefix="director" count={DIRECTOR_COUNT} />
+              <RoleGrid
+                roles={DIRECTOR_ROLES}
+                roster={roster}
+                ready={rosterReady}
+                editing={editing}
+                onDraft={onDirectorDraft}
+              />
             </div>
           </section>
 
@@ -494,8 +762,14 @@ function MemberView() {
           </div>
         </div>
       </footer>
-      <div id="saveStatus" className="save-status" role="status" aria-live="polite" hidden={!savedFlash}>
-        Saved
+      <div
+        id="saveStatus"
+        className="save-status"
+        role="status"
+        aria-live="polite"
+        hidden={!savedFlash && !saveError}
+      >
+        {saveError || "Saved"}
       </div>
     </>
   );

@@ -67,6 +67,8 @@ export function ContentProvider({ slug, canEdit = false, children }) {
   const [epoch, setEpoch] = useState(0);
   const [savedFlash, setSavedFlash] = useState(false);
   const [saveCount, setSaveCount] = useState(0);
+  const [saveError, setSaveError] = useState("");
+  const saveHooksRef = useRef(new Set());
 
   useEffect(() => {
     let cancel = false;
@@ -96,6 +98,7 @@ export function ContentProvider({ slug, canEdit = false, children }) {
     editingRef.current = false;
     setEditing(false);
     setSavedFlash(false);
+    setSaveError("");
   }, [canEdit]);
 
   useEffect(() => {
@@ -124,11 +127,16 @@ export function ContentProvider({ slug, canEdit = false, children }) {
       setDraft(id, value) {
         draftRef.current = { ...draftRef.current, [id]: value };
       },
+      registerSaveHook(fn) {
+        saveHooksRef.current.add(fn);
+        return () => saveHooksRef.current.delete(fn);
+      },
       startEdit() {
         if (!canEditRef.current) return;
         draftRef.current = { ...savedRef.current };
         editingRef.current = true;
         setEditing(true);
+        setSaveError("");
         setEpoch((value) => value + 1);
       },
       cancelEdit() {
@@ -136,9 +144,17 @@ export function ContentProvider({ slug, canEdit = false, children }) {
         editingRef.current = false;
         setEditing(false);
         setSavedFlash(false);
+        setSaveError("");
       },
       async saveEdits() {
         if (!canEditRef.current) return;
+        setSaveError("");
+        try {
+          for (const hook of [...saveHooksRef.current]) await hook();
+        } catch (err) {
+          setSaveError(err instanceof Error ? err.message : "Could not save.");
+          return;
+        }
         const next = { ...savedRef.current };
         for (const block of blocksRef.current) {
           const raw = Object.prototype.hasOwnProperty.call(draftRef.current, block.key)
@@ -167,9 +183,10 @@ export function ContentProvider({ slug, canEdit = false, children }) {
       editing: Boolean(canEdit) && editing,
       epoch,
       savedFlash,
+      saveError,
       saved,
     }),
-    [canEdit, editing, epoch, savedFlash, saved],
+    [canEdit, editing, epoch, savedFlash, saveError, saved],
   );
 
   return (

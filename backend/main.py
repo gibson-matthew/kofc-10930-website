@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
@@ -16,9 +16,11 @@ from pydantic import BaseModel, Field, field_validator
 from db import StoreError, store
 from media import (
     MAX_IMAGE_BYTES,
+    RECOG_SLOTS,
     MediaError,
     absolute_path,
     delete_stored_file,
+    normalize_crop,
     normalize_slot,
     safe_original_name,
     validate_image,
@@ -107,10 +109,29 @@ class MemberOut(BaseModel):
     title: str | None = None
     is_admin: bool = False
     photo_url: str | None = None
+    crop_x: float = 0
+    crop_y: float = 0
+    crop_scale: float = 1
 
 
 class TitleIn(BaseModel):
     title: str | None = None
+
+
+class CropIn(BaseModel):
+    crop_x: float = 0
+    crop_y: float = 0
+    crop_scale: float = 1
+
+
+class RoleAssignIn(BaseModel):
+    title: str
+    memberid: str | None = None
+
+
+class AssignmentsIn(BaseModel):
+    officer: list[RoleAssignIn] = Field(default_factory=list)
+    director: list[RoleAssignIn] = Field(default_factory=list)
 
 
 class AdminIn(BaseModel):
@@ -134,11 +155,13 @@ class SlotIn(BaseModel):
 class SlideOut(BaseModel):
     slot: str
     url: str | None = None
+    id: int | None = None
 
 
 class SlotsOut(BaseModel):
     logo: str | None = None
     slides: list[SlideOut]
+    recognition: list[SlideOut] = Field(default_factory=list)
 
 
 class BlockOut(BaseModel):
@@ -350,25 +373,42 @@ def save_member_page(body: SaveIn, member: dict = Depends(require_admin)) -> Pag
 
 
 @api.patch("/members/me", response_model=MemberOut)
-def update_me(body: TitleIn, member: dict = Depends(get_current_member)) -> MemberOut:
-    try:
-        updated = store.set_title(member["memberid"], body.title)
-    except (StoreError, MediaError) as exc:
-        _raise_store(exc)
-    return MemberOut(**updated)
+def update_me(member: dict = Depends(get_current_member)) -> MemberOut:
+    del member
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="An admin assigns officer titles.",
+    )
 
 
 @api.post("/members/me/photo", response_model=MemberOut)
 async def upload_my_photo(
-    file: UploadFile = File(...),
     member: dict = Depends(get_current_member),
+    file: UploadFile = File(...),
+    crop_x: float = Form(0),
+    crop_y: float = Form(0),
+    crop_scale: float = Form(1),
 ) -> MemberOut:
     data, content_type, ext, original = await _read_upload(file)
+    try:
+        crop = normalize_crop(crop_x, crop_y, crop_scale)
+    except MediaError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     path = write_upload(data, ext)
     try:
-        updated = store.set_profile_image(member["memberid"], path, original, content_type)
+        updated = store.set_profile_image(member["memberid"], path, original, content_type, crop)
     except (StoreError, MediaError) as exc:
         delete_stored_file(path)
+        _raise_store(exc)
+    return MemberOut(**updated)
+
+
+@api.patch("/members/me/photo", response_model=MemberOut)
+def update_my_crop(body: CropIn, member: dict = Depends(get_current_member)) -> MemberOut:
+    try:
+        crop = normalize_crop(body.crop_x, body.crop_y, body.crop_scale)
+        updated = store.update_profile_crop(member["memberid"], crop)
+    except (StoreError, MediaError) as exc:
         _raise_store(exc)
     return MemberOut(**updated)
 
@@ -392,6 +432,16 @@ def list_members(member: dict = Depends(require_admin)) -> list[MemberOut]:
     return [MemberOut(**row) for row in rows]
 
 
+@api.get("/members/roster", response_model=list[MemberOut])
+def member_roster(member: dict = Depends(get_current_member)) -> list[MemberOut]:
+    del member
+    try:
+        rows = store.list_members()
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return [MemberOut(**row) for row in rows]
+
+
 @api.patch("/members/{memberid}", response_model=MemberOut)
 def update_member_admin(
     memberid: str,
@@ -406,6 +456,33 @@ def update_member_admin(
     return MemberOut(**updated)
 
 
+@api.patch("/members/{memberid}/title", response_model=MemberOut)
+def update_member_title(
+    memberid: str,
+    body: TitleIn,
+    member: dict = Depends(require_admin),
+) -> MemberOut:
+    del member
+    try:
+        updated = store.set_title(memberid, body.title)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return MemberOut(**updated)
+
+
+@api.post("/members/assignments", response_model=list[MemberOut])
+def save_assignments(body: AssignmentsIn, member: dict = Depends(require_admin)) -> list[MemberOut]:
+    del member
+    try:
+        rows = store.assign_roles(
+            [row.model_dump() for row in body.officer],
+            [row.model_dump() for row in body.director],
+        )
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return [MemberOut(**row) for row in rows]
+
+
 @api.get("/media/slots", response_model=SlotsOut)
 def media_slots() -> SlotsOut:
     try:
@@ -414,11 +491,12 @@ def media_slots() -> SlotsOut:
         payload = {
             "logo": None,
             "slides": [
-                {"slot": "carousel.1", "url": None},
-                {"slot": "carousel.2", "url": None},
-                {"slot": "carousel.3", "url": None},
-                {"slot": "carousel.4", "url": None},
+                {"slot": "carousel.1", "url": None, "id": None},
+                {"slot": "carousel.2", "url": None, "id": None},
+                {"slot": "carousel.3", "url": None, "id": None},
+                {"slot": "carousel.4", "url": None, "id": None},
             ],
+            "recognition": [{"slot": slot, "url": None, "id": None} for slot in RECOG_SLOTS],
         }
     return SlotsOut(**payload)
 
