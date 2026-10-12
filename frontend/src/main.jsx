@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { AuthProvider } from "./auth/AuthContext";
 import App from "./App.jsx";
 import "./index.css";
 import "../../css/shared.css";
@@ -9,4 +10,8 @@ const memberRoute = window.location.pathname === "/member" || window.location.pa
 document.body.className = memberRoute ? "page-member" : "page-public";
 document.body.dataset.page = memberRoute ? "member" : "public";
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(
+  <AuthProvider>
+    <App />
+  </AuthProvider>,
+);

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useAuth } from "../auth/AuthContext";
 import { Block, Eyebrow } from "../components/Block";
 import { Avatar, Emblem, Portrait, PortraitSm } from "../components/Marks";
 import { ContentProvider, useContent } from "../content/ContentContext";
@@ -81,6 +82,7 @@ function People({ prefix, count }) {
 
 function MemberView() {
   const { editing, savedFlash } = useContent();
+  const { logout: signOut, user } = useAuth();
   const [navOpen, setNavOpen] = useState(false);
   const [navHidden, setNavHidden] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -156,9 +158,9 @@ function MemberView() {
     setOpenPanels((current) => ({ ...current, [panel]: !current[panel] }));
   }
 
-  function logout() {
+  async function logout() {
     setMenuOpen(false);
-    sessionStorage.removeItem("koc10930.token");
+    await signOut();
     navigate("/");
   }
 
@@ -209,7 +211,7 @@ function MemberView() {
               }}
             >
               <Avatar />
-              <Block id="profile.name" className="profile-name" />
+              <span className="profile-name">{user?.display_name || "Member"}</span>
             </button>
             <div className="profile-menu" id="profileMenu" role="menu" hidden={!menuOpen}>
               <button type="button" role="menuitem" id="settingsBtn" onClick={settings}>

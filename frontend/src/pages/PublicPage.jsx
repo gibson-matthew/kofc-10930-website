@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useAuth } from "../auth/AuthContext";
 import { Block, Eyebrow } from "../components/Block";
 import { SvgSprite } from "../components/Marks";
-import { SignInDialog } from "../components/SignInDialog";
 import { ContentProvider, useContent } from "../content/ContentContext";
 import { slides } from "../content/seed";
+import { navigate } from "../router";
 
 const TITLE = "Knights of Columbus — Council 10930 — Fort Worth, TX";
 
@@ -116,9 +117,9 @@ function Carousel() {
 
 function PublicView() {
   const { text } = useContent();
+  const { user } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
-  const [signInOpen, setSignInOpen] = useState(false);
 
   useLayoutEffect(() => {
     document.body.className = "page-public";
@@ -159,7 +160,7 @@ function PublicView() {
 
   function openSignIn() {
     closeNav();
-    setSignInOpen(true);
+    navigate(user ? "/member" : "/login");
   }
 
   return (
@@ -180,7 +181,7 @@ function PublicView() {
           <Block id="nav.why" href="#why" locked onClick={closeNav} />
           <Block id="nav.join" href="#join" locked onClick={closeNav} />
           <button type="button" className="nav-signin" id="signInBtn" onClick={openSignIn}>
-            {text("nav.signin")}
+            {user ? "Members" : text("nav.signin")}
           </button>
         </nav>
         <button
@@ -370,7 +371,6 @@ function PublicView() {
         </div>
       </footer>
 
-      <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} />
     </>
   );
 }

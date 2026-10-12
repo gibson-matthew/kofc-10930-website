@@ -1,10 +1,12 @@
--- Council 10930 schema and mockup seed.
+-- Council 10930 schema and content seed.
 -- Create the database, then run this file:
 --   createdb koc10930
 --   psql -d koc10930 -f backend/schema.sql
 -- The API reads DATABASE_URL
 -- (default postgresql://postgres:postgres@localhost:5432/koc10930).
--- Login accepts any membership id and password. The stored hash is not checked.
+-- Passwords are bcrypt hashes. The API creates membership id 1000000
+-- on startup when that row is missing. You can also run:
+--   .\.venv\Scripts\python.exe backend\seed_member.py
 
 BEGIN;
 
@@ -14,6 +16,16 @@ CREATE TABLE IF NOT EXISTS members (
   password_hash TEXT NOT NULL,
   display_name TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+  jti TEXT PRIMARY KEY,
+  membership_id TEXT NOT NULL REFERENCES members (membership_id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS refresh_tokens_member_idx ON refresh_tokens (membership_id);
 
 CREATE TABLE IF NOT EXISTS pages (
   id SERIAL PRIMARY KEY,
@@ -30,10 +42,6 @@ CREATE TABLE IF NOT EXISTS content_blocks (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (page_id, "key")
 );
-
-INSERT INTO members (membership_id, password_hash, display_name)
-VALUES ('10930', 'sha256:demo-not-checked', 'James Harrington')
-ON CONFLICT (membership_id) DO NOTHING;
 
 INSERT INTO pages (slug)
 VALUES ('public'), ('member')

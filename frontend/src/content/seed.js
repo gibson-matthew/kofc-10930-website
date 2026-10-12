@@ -394,10 +394,3 @@ export function serialize(blocks, map) {
   }));
 }
 
-export const members = [
-  {
-    membership_id: "10930",
-    password_hash: "sha256:demo-not-checked",
-    display_name: "James Harrington",
-  },
-];
