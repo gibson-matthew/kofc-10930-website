@@ -50,12 +50,14 @@ function overlay(blocks, extra) {
   return map;
 }
 
-export function ContentProvider({ slug, children }) {
+export function ContentProvider({ slug, canEdit = false, children }) {
   const blocks = slug === "member" ? memberBlocks : publicBlocks;
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
+  const canEditRef = useRef(canEdit);
+  canEditRef.current = canEdit;
   const [saved, setSaved] = useState(() =>
-    slug === "member" ? overlay(blocks, readLocal()) : toMap(blocks),
+    slug === "member" && canEdit ? overlay(blocks, readLocal()) : toMap(blocks),
   );
   const savedRef = useRef(saved);
   savedRef.current = saved;
@@ -78,7 +80,7 @@ export function ContentProvider({ slug, children }) {
         const map = overlay(blocksRef.current, incoming);
         setSaved(map);
         draftRef.current = map;
-        if (slug === "member") writeLocal(map);
+        if (slug === "member" && canEditRef.current) writeLocal(map);
       })
       .catch(() => {
         /* Seed and any local member edits stay on screen. */
@@ -86,7 +88,15 @@ export function ContentProvider({ slug, children }) {
     return () => {
       cancel = true;
     };
-  }, [slug]);
+  }, [slug, canEdit]);
+
+  useEffect(() => {
+    if (canEdit || !editingRef.current) return;
+    draftRef.current = { ...savedRef.current };
+    editingRef.current = false;
+    setEditing(false);
+    setSavedFlash(false);
+  }, [canEdit]);
 
   useEffect(() => {
     if (!savedFlash) return undefined;
@@ -115,6 +125,7 @@ export function ContentProvider({ slug, children }) {
         draftRef.current = { ...draftRef.current, [id]: value };
       },
       startEdit() {
+        if (!canEditRef.current) return;
         draftRef.current = { ...savedRef.current };
         editingRef.current = true;
         setEditing(true);
@@ -127,6 +138,7 @@ export function ContentProvider({ slug, children }) {
         setSavedFlash(false);
       },
       async saveEdits() {
+        if (!canEditRef.current) return;
         const next = { ...savedRef.current };
         for (const block of blocksRef.current) {
           const raw = Object.prototype.hasOwnProperty.call(draftRef.current, block.key)
@@ -152,12 +164,12 @@ export function ContentProvider({ slug, children }) {
 
   const state = useMemo(
     () => ({
-      editing: slug === "member" && editing,
+      editing: Boolean(canEdit) && editing,
       epoch,
       savedFlash,
       saved,
     }),
-    [slug, editing, epoch, savedFlash, saved],
+    [canEdit, editing, epoch, savedFlash, saved],
   );
 
   return (

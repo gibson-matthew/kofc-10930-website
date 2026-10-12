@@ -1,21 +1,23 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { fetchMediaSlots } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { Block, Eyebrow } from "../components/Block";
 import { SvgSprite } from "../components/Marks";
 import { ContentProvider, useContent } from "../content/ContentContext";
-import { slides } from "../content/seed";
+import { LOGO_SRC, slides } from "../content/seed";
 import { navigate } from "../router";
 
 const TITLE = "Knights of Columbus — Council 10930 — Fort Worth, TX";
 
-function Carousel() {
+function Carousel({ slides: slideList }) {
   const { text } = useContent();
   const [index, setIndex] = useState(0);
+  const [fallbacks, setFallbacks] = useState({});
   const indexRef = useRef(0);
   const rootRef = useRef(null);
   const timerRef = useRef(null);
   const reducedRef = useRef(false);
-  const total = slides.length;
+  const total = slideList.length;
 
   function stop() {
     if (timerRef.current) {
@@ -87,11 +89,24 @@ function Carousel() {
       }}
     >
       <div className="carousel-track">
-        {slides.map((slide, slideIndex) => (
-          <div className={slideIndex === index ? "carousel-slide is-active" : "carousel-slide"} key={slide.src}>
-            <img src={slide.src} alt={text(slide.altKey)} width="800" height="500" />
-          </div>
-        ))}
+        {slideList.map((slide, slideIndex) => {
+          const example = slides.find((item) => item.slot === slide.slot);
+          const src = fallbacks[slide.slot] || slide.src;
+          return (
+            <div className={slideIndex === index ? "carousel-slide is-active" : "carousel-slide"} key={slide.slot || src}>
+              <img
+                src={src}
+                alt={text(slide.altKey)}
+                width="800"
+                height="500"
+                onError={() => {
+                  if (!example || src === example.src) return;
+                  setFallbacks((current) => ({ ...current, [slide.slot]: example.src }));
+                }}
+              />
+            </div>
+          );
+        })}
       </div>
       <button type="button" className="carousel-btn prev" aria-label="Previous photo" onClick={() => goTo(index - 1, true)}>
         ‹
@@ -100,9 +115,9 @@ function Carousel() {
         ›
       </button>
       <div className="carousel-dots" role="tablist" aria-label="Slide controls">
-        {slides.map((slide, slideIndex) => (
+        {slideList.map((slide, slideIndex) => (
           <button
-            key={slide.src}
+            key={slide.slot || slide.src}
             type="button"
             className={slideIndex === index ? "carousel-dot is-active" : "carousel-dot"}
             role="tab"
@@ -120,6 +135,35 @@ function PublicView() {
   const { user } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [logoSrc, setLogoSrc] = useState(LOGO_SRC);
+  const [carouselSlides, setCarouselSlides] = useState(slides);
+
+  function keepExampleLogo() {
+    setLogoSrc((current) => (current === LOGO_SRC ? current : LOGO_SRC));
+  }
+
+  useEffect(() => {
+    let cancel = false;
+    fetchMediaSlots()
+      .then((data) => {
+        if (cancel || !data) return;
+        if (data.logo) setLogoSrc(data.logo);
+        if (Array.isArray(data.slides)) {
+          setCarouselSlides(
+            slides.map((slide) => {
+              const live = data.slides.find((item) => item.slot === slide.slot);
+              return live && live.url ? { ...slide, src: live.url } : slide;
+            }),
+          );
+        }
+      })
+      .catch(() => {
+        /* The example logo and carousel stay on screen. */
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
 
   useLayoutEffect(() => {
     document.body.className = "page-public";
@@ -168,7 +212,7 @@ function PublicView() {
       <SvgSprite />
       <header id="siteHeader" className={scrolled ? "is-scrolled" : undefined}>
         <a href="#top" className="brand">
-          <img className="hero-medallion-navbar" src="/images/kofc-logo.png" alt="" />
+          <img className="hero-medallion-navbar" src={logoSrc} alt="" onError={keepExampleLogo} />
           <span className="brand-text">
             <Block id="brand.name" className="name" />
             <br />
@@ -206,11 +250,11 @@ function PublicView() {
         <span className="corner bl" aria-hidden="true" />
         <span className="corner br" aria-hidden="true" />
         <div className="hero-inner">
-          <img className="hero-medallion" src="/images/kofc-logo.png" alt="" />
+          <img className="hero-medallion" src={logoSrc} alt="" onError={keepExampleLogo} />
           <Eyebrow id="hero.eyebrow" />
           <Block id="hero.title" as="h1" />
           <Block id="hero.place" as="div" className="place" />
-          <Carousel />
+          <Carousel slides={carouselSlides} />
           <Block id="hero.cta" className="btn btn-lg" href="#join" />
         </div>
         <div className="scroll-cue" aria-hidden="true">
@@ -339,7 +383,7 @@ function PublicView() {
             <span className="corner tr" aria-hidden="true" />
             <span className="corner bl" aria-hidden="true" />
             <span className="corner br" aria-hidden="true" />
-            <img className="hero-medallion-end" src="/images/kofc-logo.png" alt="" />
+            <img className="hero-medallion-end" src={logoSrc} alt="" onError={keepExampleLogo} />
             <Block id="join.title" as="h2" />
             <Block id="join.body" as="p" />
             <Block id="join.cta" className="btn btn-lg" href="#" />
@@ -351,7 +395,7 @@ function PublicView() {
         <div className="container">
           <div className="footer-inner">
             <div className="footer-brand">
-              <img className="hero-medallion-navbar" src="/images/kofc-logo.png" alt="" />
+              <img className="hero-medallion-navbar" src={logoSrc} alt="" onError={keepExampleLogo} />
               <span>
                 <Block id="footer.name" className="name" />
                 <Block id="footer.sub" className="sub" />

@@ -85,12 +85,13 @@ export async function currentMember() {
 }
 
 async function send(path, options = {}, retry = true) {
+  const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
   const response = await fetch(path, {
     credentials: "include",
     ...options,
     headers: {
       Accept: "application/json",
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.body && !isForm ? { "Content-Type": "application/json" } : {}),
       ...(options.headers || {}),
     },
   });
@@ -113,6 +114,93 @@ export async function saveMember(blocks) {
     method: "PUT",
     body: JSON.stringify({ blocks }),
   });
-  if (!response.ok) throw new Error("save failed");
+  if (!response.ok) throw new Error(await errorMessage(response, "save failed"));
   return response.json();
+}
+
+export function imageFileError(file) {
+  if (!file) return "Choose an image file.";
+  const ext = file.name.includes(".") ? file.name.split(".").pop().toLowerCase() : "";
+  if (!["jpg", "jpeg", "png", "webp"].includes(ext)) {
+    return "Only JPG, PNG, and WebP images are accepted.";
+  }
+  if (file.size > 8 * 1024 * 1024) return "Image must be 8 MB or smaller.";
+  return "";
+}
+
+async function readJson(response, fallback) {
+  if (!response.ok) throw new Error(await errorMessage(response, fallback));
+  if (response.status === 204) return null;
+  return response.json();
+}
+
+export async function updateMyTitle(title) {
+  const response = await send("/api/members/me", {
+    method: "PATCH",
+    body: JSON.stringify({ title: title || null }),
+  });
+  return readJson(response, "Could not save the title.");
+}
+
+export async function uploadMyPhoto(file) {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await send("/api/members/me/photo", { method: "POST", body });
+  return readJson(response, "Could not upload the photo.");
+}
+
+export async function deleteMyPhoto() {
+  const response = await send("/api/members/me/photo", { method: "DELETE" });
+  return readJson(response, "Could not remove the photo.");
+}
+
+export async function fetchMembers() {
+  const response = await send("/api/members");
+  return readJson(response, "Could not load members.");
+}
+
+export async function setMemberAdmin(memberid, isAdmin) {
+  const response = await send(`/api/members/${encodeURIComponent(memberid)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_admin: isAdmin }),
+  });
+  return readJson(response, "Could not update admin access.");
+}
+
+export async function fetchMediaSlots() {
+  const response = await fetch("/api/media/slots", { headers: { Accept: "application/json" } });
+  if (!response.ok) throw new Error("media failed");
+  return response.json();
+}
+
+export async function fetchMedia() {
+  const response = await send("/api/media");
+  return readJson(response, "Could not load images.");
+}
+
+export async function uploadMedia(file) {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await send("/api/media", { method: "POST", body });
+  return readJson(response, "Could not upload the image.");
+}
+
+export async function replaceMedia(id, file) {
+  const body = new FormData();
+  body.append("file", file);
+  const response = await send(`/api/media/${id}/replace`, { method: "POST", body });
+  return readJson(response, "Could not replace the image.");
+}
+
+export async function deleteMedia(id) {
+  const response = await send(`/api/media/${id}`, { method: "DELETE" });
+  return readJson(response, "Could not remove the image.");
+}
+
+export async function assignMediaSlot(id, slot) {
+  const response = await send(`/api/media/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ slot: slot || null }),
+  });
+  return readJson(response, "Could not update the image slot.");
 }

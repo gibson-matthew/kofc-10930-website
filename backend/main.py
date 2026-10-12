@@ -8,12 +8,22 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, FastAPI, File, HTTPException, Request, Response, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from db import store
+from db import StoreError, store
+from media import (
+    MAX_IMAGE_BYTES,
+    MediaError,
+    absolute_path,
+    delete_stored_file,
+    normalize_slot,
+    safe_original_name,
+    validate_image,
+    write_upload,
+)
 from security import (
     ACCESS_COOKIE,
     ACCESS_MINUTES,
@@ -62,7 +72,7 @@ app.add_middleware(
     ],
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1):517\d",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -94,6 +104,41 @@ class LoginIn(BaseModel):
 class MemberOut(BaseModel):
     memberid: str
     display_name: str
+    title: str | None = None
+    is_admin: bool = False
+    photo_url: str | None = None
+
+
+class TitleIn(BaseModel):
+    title: str | None = None
+
+
+class AdminIn(BaseModel):
+    is_admin: bool
+
+
+class ImageOut(BaseModel):
+    id: int
+    url: str
+    original_name: str
+    content_type: str
+    purpose: str
+    slot: str | None = None
+    owner_membership_id: str | None = None
+
+
+class SlotIn(BaseModel):
+    slot: str | None = None
+
+
+class SlideOut(BaseModel):
+    slot: str
+    url: str | None = None
+
+
+class SlotsOut(BaseModel):
+    logo: str | None = None
+    slides: list[SlideOut]
 
 
 class BlockOut(BaseModel):
@@ -171,6 +216,36 @@ def _session_response(member: dict) -> JSONResponse:
     return response
 
 
+def _raise_store(exc: Exception) -> None:
+    if isinstance(exc, StoreError):
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    if isinstance(exc, MediaError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    raise exc
+
+
+def optional_member(request: Request) -> dict | None:
+    token = access_from_request(request)
+    if not token:
+        return None
+    try:
+        payload = decode_token(token)
+    except TokenError:
+        return None
+    if payload.get("type") != "access" or not payload.get("sub"):
+        return None
+    return store.get_member(str(payload["sub"]))
+
+
+async def _read_upload(upload: UploadFile) -> tuple[bytes, str, str, str]:
+    data = await upload.read(MAX_IMAGE_BYTES + 1)
+    try:
+        content_type, ext = validate_image(upload.filename or "", upload.content_type, data)
+    except MediaError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return data, content_type, ext, safe_original_name(upload.filename or "", ext)
+
+
 def get_current_member(request: Request) -> dict:
     token = access_from_request(request)
     if not token:
@@ -184,6 +259,15 @@ def get_current_member(request: Request) -> dict:
     member = store.get_member(str(payload["sub"]))
     if member is None:
         raise _unauthorized()
+    return member
+
+
+def require_admin(member: dict = Depends(get_current_member)) -> dict:
+    if not member.get("is_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access is required",
+        )
     return member
 
 
@@ -259,10 +343,170 @@ def get_member_page(member: dict = Depends(get_current_member)) -> PageOut:
 
 
 @api.put("/pages/member")
-def save_member_page(body: SaveIn, member: dict = Depends(get_current_member)) -> PageOut:
+def save_member_page(body: SaveIn, member: dict = Depends(require_admin)) -> PageOut:
     del member
     payload = [block.model_dump() for block in body.blocks]
     return PageOut(**store.save_member(payload))
+
+
+@api.patch("/members/me", response_model=MemberOut)
+def update_me(body: TitleIn, member: dict = Depends(get_current_member)) -> MemberOut:
+    try:
+        updated = store.set_title(member["memberid"], body.title)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return MemberOut(**updated)
+
+
+@api.post("/members/me/photo", response_model=MemberOut)
+async def upload_my_photo(
+    file: UploadFile = File(...),
+    member: dict = Depends(get_current_member),
+) -> MemberOut:
+    data, content_type, ext, original = await _read_upload(file)
+    path = write_upload(data, ext)
+    try:
+        updated = store.set_profile_image(member["memberid"], path, original, content_type)
+    except (StoreError, MediaError) as exc:
+        delete_stored_file(path)
+        _raise_store(exc)
+    return MemberOut(**updated)
+
+
+@api.delete("/members/me/photo", response_model=MemberOut)
+def delete_my_photo(member: dict = Depends(get_current_member)) -> MemberOut:
+    try:
+        updated = store.clear_profile_image(member["memberid"])
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return MemberOut(**updated)
+
+
+@api.get("/members", response_model=list[MemberOut])
+def list_members(member: dict = Depends(require_admin)) -> list[MemberOut]:
+    del member
+    try:
+        rows = store.list_members()
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return [MemberOut(**row) for row in rows]
+
+
+@api.patch("/members/{memberid}", response_model=MemberOut)
+def update_member_admin(
+    memberid: str,
+    body: AdminIn,
+    member: dict = Depends(require_admin),
+) -> MemberOut:
+    del member
+    try:
+        updated = store.set_admin(memberid, body.is_admin)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return MemberOut(**updated)
+
+
+@api.get("/media/slots", response_model=SlotsOut)
+def media_slots() -> SlotsOut:
+    try:
+        payload = store.public_slots()
+    except StoreError:
+        payload = {
+            "logo": None,
+            "slides": [
+                {"slot": "carousel.1", "url": None},
+                {"slot": "carousel.2", "url": None},
+                {"slot": "carousel.3", "url": None},
+                {"slot": "carousel.4", "url": None},
+            ],
+        }
+    return SlotsOut(**payload)
+
+
+@api.get("/media", response_model=list[ImageOut])
+def list_media(member: dict = Depends(require_admin)) -> list[ImageOut]:
+    del member
+    try:
+        rows = store.list_images("library")
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return [ImageOut(**row) for row in rows]
+
+
+@api.post("/media", response_model=ImageOut)
+async def upload_media(
+    file: UploadFile = File(...),
+    member: dict = Depends(require_admin),
+) -> ImageOut:
+    data, content_type, ext, original = await _read_upload(file)
+    path = write_upload(data, ext)
+    try:
+        image = store.add_library_image(path, original, content_type, member["memberid"])
+    except (StoreError, MediaError) as exc:
+        delete_stored_file(path)
+        _raise_store(exc)
+    return ImageOut(**image)
+
+
+@api.post("/media/{image_id}/replace", response_model=ImageOut)
+async def replace_media(
+    image_id: int,
+    file: UploadFile = File(...),
+    member: dict = Depends(require_admin),
+) -> ImageOut:
+    del member
+    data, content_type, ext, original = await _read_upload(file)
+    path = write_upload(data, ext)
+    try:
+        image = store.replace_image(image_id, path, original, content_type)
+    except (StoreError, MediaError) as exc:
+        delete_stored_file(path)
+        _raise_store(exc)
+    return ImageOut(**image)
+
+
+@api.patch("/media/{image_id}", response_model=ImageOut)
+def assign_media(
+    image_id: int,
+    body: SlotIn,
+    member: dict = Depends(require_admin),
+) -> ImageOut:
+    del member
+    try:
+        slot = normalize_slot(body.slot)
+        image = store.assign_slot(image_id, slot)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return ImageOut(**image)
+
+
+@api.delete("/media/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_media(image_id: int, member: dict = Depends(require_admin)) -> Response:
+    del member
+    try:
+        store.delete_image(image_id)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@api.get("/media/files/{image_id}")
+def media_file(image_id: int, request: Request) -> FileResponse:
+    image = store.get_image(image_id)
+    if image is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image was not found.")
+    visible = image["purpose"] == "profile" or bool(image.get("slot"))
+    if not visible:
+        member = optional_member(request)
+        if not (member and member.get("is_admin")):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image was not found.")
+    try:
+        path = absolute_path(image["path"])
+    except MediaError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image was not found.") from exc
+    if not path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image was not found.")
+    return FileResponse(path, media_type=image["content_type"], headers={"Cache-Control": "no-cache"})
 
 
 app.include_router(api)

@@ -46,6 +46,11 @@ export function AuthProvider({ children }) {
           setUser(null);
         }
       },
+      async refresh() {
+        const member = await currentMember();
+        setUser(member);
+        return member;
+      },
     }),
     [user, ready],
   );

@@ -5,8 +5,13 @@
 -- The API reads DATABASE_URL
 -- (default postgresql://postgres:postgres@localhost:5432/koc10930).
 -- Passwords are bcrypt hashes. The API creates membership id 1000000
--- on startup when that row is missing. You can also run:
+-- on startup when that row is missing, with officer title GK and admin
+-- access. It also creates membership id 1000001 without admin access.
+-- You can also run:
 --   .\.venv\Scripts\python.exe backend\seed_member.py
+-- members.title stores one officer-title abbreviation, or NULL.
+-- members.is_admin grants full edit access.
+-- images holds the logo, carousel photos, uploads, and profile photos.
 
 BEGIN;
 
@@ -14,8 +19,16 @@ CREATE TABLE IF NOT EXISTS members (
   id SERIAL PRIMARY KEY,
   membership_id TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  display_name TEXT NOT NULL
+  display_name TEXT NOT NULL,
+  title TEXT,
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE
 );
+
+ALTER TABLE members ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE members DROP CONSTRAINT IF EXISTS members_title_abbrev;
+ALTER TABLE members ADD CONSTRAINT members_title_abbrev
+  CHECK (title IS NULL OR title IN ('GK', 'DGK', 'CH', 'CHP', 'REC', 'FS', 'TR', 'ADV', 'WRD', 'IG', 'OG', 'LEC', 'T1', 'T2', 'T3', 'PD', 'MD', 'FD', 'FAM', 'COM', 'LIFE', 'VOC', 'PGK'));
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   jti TEXT PRIMARY KEY,
@@ -301,5 +314,46 @@ Fort Worth, TX 76179 US$v$, 22),
 ) AS v(slug, block_key, field_type, value, sort_order)
 JOIN pages p ON p.slug = v.slug
 ON CONFLICT (page_id, "key") DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS images (
+  id SERIAL PRIMARY KEY,
+  path TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  purpose TEXT NOT NULL DEFAULT 'library',
+  slot TEXT,
+  owner_membership_id TEXT REFERENCES members (membership_id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT images_purpose_chk CHECK (purpose IN ('library', 'profile')),
+  CONSTRAINT images_slot_chk CHECK (
+    slot IS NULL OR slot IN ('logo', 'carousel.1', 'carousel.2', 'carousel.3', 'carousel.4')
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS images_slot_idx
+  ON images (slot) WHERE slot IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS images_profile_idx
+  ON images (owner_membership_id) WHERE purpose = 'profile';
+
+INSERT INTO images (path, original_name, content_type, purpose, slot)
+SELECT v.path, v.original_name, v.content_type, v.purpose, v.slot
+FROM (
+  VALUES
+  ('images/kofc-logo.png', 'kofc-logo.png', 'image/png', 'library', 'logo'),
+  ('images/carousel1.jpg', 'carousel1.jpg', 'image/jpeg', 'library', 'carousel.1'),
+  ('images/carousel2.jpg', 'carousel2.jpg', 'image/jpeg', 'library', 'carousel.2'),
+  ('images/carousel3.jpg', 'carousel3.jpg', 'image/jpeg', 'library', 'carousel.3'),
+  ('images/carousel4.jpg', 'carousel4.jpg', 'image/jpeg', 'library', 'carousel.4')
+) AS v(path, original_name, content_type, purpose, slot)
+WHERE NOT EXISTS (
+  SELECT 1 FROM images i WHERE i.path = v.path OR (v.slot IS NOT NULL AND i.slot = v.slot)
+);
+
+UPDATE members
+SET is_admin = TRUE,
+    title = COALESCE(title, 'GK')
+WHERE membership_id = '1000000'
+  AND NOT EXISTS (SELECT 1 FROM members WHERE is_admin);
 
 COMMIT;

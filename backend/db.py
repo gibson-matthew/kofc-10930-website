@@ -8,16 +8,28 @@ import threading
 from copy import deepcopy
 from datetime import datetime, timezone
 
+from media import SEED_IMAGES, delete_stored_file, public_url
 from security import hash_password, verify_password, verify_password_dummy
 from seed import PAGES
+from titles import TITLE_ABBREVS, normalize_title
 
 DEFAULT_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/koc10930"
 # Documented local account. Created only when this membership id is missing.
 TEST_MEMBER_ID = "1000000"
 TEST_MEMBER_PASSWORD = "Password123!"
 TEST_MEMBER_NAME = "Test Member"
+TEST_MEMBER_TITLE = "GK"
+# Second local account so the webmaster can grant admin access to someone else.
+SAMPLE_MEMBER_ID = "1000001"
+SAMPLE_MEMBER_NAME = "Sample Brother"
 
 log = logging.getLogger("koc10930")
+
+
+class StoreError(Exception):
+    def __init__(self, message: str, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 def _database_url() -> str:
@@ -40,11 +52,13 @@ class Store:
         self._lock = threading.Lock()
         self._memory = {slug: deepcopy(blocks) for slug, blocks in PAGES.items()}
         self._members: list[dict] = []
+        self._images: list[dict] = []
+        self._image_seq = 1
         self._refresh: dict[str, dict] = {}
         self._prefer_memory = False
 
     def prepare(self) -> str:
-        """Create auth tables and the test member. Returns a short status."""
+        """Create auth tables, the webmaster, and example images. Returns a short status."""
         hashed = hash_password(TEST_MEMBER_PASSWORD)
         with self._lock:
             self._prefer_memory = False
@@ -53,8 +67,19 @@ class Store:
                     "membership_id": TEST_MEMBER_ID,
                     "password_hash": hashed,
                     "display_name": TEST_MEMBER_NAME,
-                }
+                    "title": TEST_MEMBER_TITLE,
+                    "is_admin": True,
+                },
+                {
+                    "membership_id": SAMPLE_MEMBER_ID,
+                    "password_hash": hashed,
+                    "display_name": SAMPLE_MEMBER_NAME,
+                    "title": None,
+                    "is_admin": False,
+                },
             ]
+            self._images = _seed_image_rows()
+            self._image_seq = len(self._images) + 1
         conn = _connect()
         if conn is None:
             with self._lock:
@@ -62,69 +87,14 @@ class Store:
             return "memory"
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS members (
-                      id SERIAL PRIMARY KEY,
-                      membership_id TEXT NOT NULL UNIQUE,
-                      password_hash TEXT NOT NULL,
-                      display_name TEXT NOT NULL
-                    )
-                    """
-                )
-                cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS refresh_tokens (
-                      jti TEXT PRIMARY KEY,
-                      membership_id TEXT NOT NULL REFERENCES members (membership_id) ON DELETE CASCADE,
-                      expires_at TIMESTAMPTZ NOT NULL,
-                      revoked_at TIMESTAMPTZ,
-                      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-                    )
-                    """
-                )
-                cur.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS refresh_tokens_member_idx
-                    ON refresh_tokens (membership_id)
-                    """
-                )
-                cur.execute(
-                    """
-                    INSERT INTO members (membership_id, password_hash, display_name)
-                    VALUES (%s, %s, %s)
-                    ON CONFLICT (membership_id) DO NOTHING
-                    RETURNING id
-                    """,
-                    (TEST_MEMBER_ID, hashed, TEST_MEMBER_NAME),
-                )
-                created = cur.fetchone()
-                if created:
-                    conn.commit()
-                    conn.close()
-                    return "created"
-                cur.execute(
-                    "SELECT password_hash FROM members WHERE membership_id = %s",
-                    (TEST_MEMBER_ID,),
-                )
-                row = cur.fetchone()
-                if row and row[0] == "sha256:demo-not-checked":
-                    cur.execute(
-                        """
-                        UPDATE members
-                        SET password_hash = %s, display_name = %s
-                        WHERE membership_id = %s
-                        """,
-                        (hashed, TEST_MEMBER_NAME, TEST_MEMBER_ID),
-                    )
-                    conn.commit()
-                    conn.close()
-                    return "created"
-                conn.commit()
-                conn.close()
-            if row and verify_password(TEST_MEMBER_PASSWORD, row[0]):
-                return "present"
-            return "different-password"
+                _ensure_schema(cur)
+                _seed_images(cur)
+                status = _upsert_test_member(cur, hashed)
+                _ensure_sample_member(cur, hashed)
+                _ensure_admin(cur)
+            conn.commit()
+            conn.close()
+            return status
         except Exception as exc:
             log.warning("PostgreSQL auth setup failed: %s", exc)
             try:
@@ -295,9 +265,12 @@ class Store:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT membership_id, password_hash, display_name
-                    FROM members
-                    WHERE membership_id = %s
+                    SELECT m.membership_id, m.password_hash, m.display_name, m.title, m.is_admin,
+                           i.id, i.path
+                    FROM members m
+                    LEFT JOIN images i
+                      ON i.owner_membership_id = m.membership_id AND i.purpose = 'profile'
+                    WHERE m.membership_id = %s
                     """,
                     (memberid,),
                 )
@@ -312,25 +285,534 @@ class Store:
             return self._memory_member(memberid)
         if row is None:
             return None
-        return {
-            "membership_id": row[0],
-            "password_hash": row[1],
-            "display_name": row[2],
-        }
+        return _record_from_row(row)
 
     def _memory_member(self, memberid: str) -> dict | None:
         with self._lock:
             for member in self._members:
                 if member["membership_id"] == memberid:
-                    return dict(member)
+                    photo = _profile_in(self._images, memberid)
+                    record = dict(member)
+                    record["photo_id"] = photo["id"] if photo else None
+                    record["photo_path"] = photo["path"] if photo else None
+                    return record
         return None
 
-    @staticmethod
-    def _public_member(record: dict) -> dict:
+    def _public_member(self, record: dict) -> dict:
+        title = record.get("title") or None
+        if isinstance(title, str):
+            title = title.strip() or None
+        photo_url = None
+        if record.get("photo_id") and record.get("photo_path"):
+            photo_url = public_url(int(record["photo_id"]), str(record["photo_path"]))
         return {
             "memberid": record["membership_id"],
             "display_name": record["display_name"],
+            "title": title,
+            "is_admin": bool(record.get("is_admin")),
+            "photo_url": photo_url,
         }
+
+    def list_members(self) -> list[dict]:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                rows = []
+                for member in self._members:
+                    photo = _profile_in(self._images, member["membership_id"])
+                    record = dict(member)
+                    record["photo_id"] = photo["id"] if photo else None
+                    record["photo_path"] = photo["path"] if photo else None
+                    rows.append(self._public_member(record))
+            rows.sort(key=lambda item: (item["display_name"].lower(), item["memberid"]))
+            return rows
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT m.membership_id, m.password_hash, m.display_name, m.title, m.is_admin,
+                           i.id, i.path
+                    FROM members m
+                    LEFT JOIN images i
+                      ON i.owner_membership_id = m.membership_id AND i.purpose = 'profile'
+                    ORDER BY lower(m.display_name), m.membership_id
+                    """
+                )
+                fetched = cur.fetchall()
+            conn.close()
+        except Exception as exc:
+            log.warning("Member list failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise StoreError("Could not load members.", 503) from exc
+        return [self._public_member(_record_from_row(row)) for row in fetched]
+
+    def set_title(self, memberid: str, title: str | None) -> dict:
+        try:
+            cleaned = normalize_title(title)
+        except ValueError as exc:
+            raise StoreError(str(exc), 400) from exc
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                for member in self._members:
+                    if member["membership_id"] == memberid:
+                        member["title"] = cleaned
+                        break
+                else:
+                    raise StoreError("Member was not found.", 404)
+            record = self._memory_member(memberid)
+            if record is None:
+                raise StoreError("Member was not found.", 404)
+            return self._public_member(record)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE members
+                    SET title = %s
+                    WHERE membership_id = %s
+                    """,
+                    (cleaned, memberid),
+                )
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Member was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the title.", 503) from exc
+        member = self.get_member(memberid)
+        if member is None:
+            raise StoreError("Member was not found.", 404)
+        return member
+
+    def set_admin(self, memberid: str, is_admin: bool) -> dict:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                target = next((item for item in self._members if item["membership_id"] == memberid), None)
+                if target is None:
+                    raise StoreError("Member was not found.", 404)
+                if target["is_admin"] and not is_admin:
+                    admins = sum(1 for item in self._members if item["is_admin"])
+                    if admins <= 1:
+                        raise StoreError("The council needs at least one admin.", 400)
+                target["is_admin"] = bool(is_admin)
+            record = self._memory_member(memberid)
+            if record is None:
+                raise StoreError("Member was not found.", 404)
+            return self._public_member(record)
+        try:
+            with conn.cursor() as cur:
+                # Lock the target and every admin in one ordered pass so two
+                # demotions cannot both pass the "at least one admin" check.
+                cur.execute(
+                    """
+                    SELECT membership_id, is_admin
+                    FROM members
+                    WHERE membership_id = %s OR is_admin
+                    ORDER BY membership_id
+                    FOR UPDATE
+                    """,
+                    (memberid,),
+                )
+                rows = cur.fetchall()
+                target = next((item for item in rows if item[0] == memberid), None)
+                if target is None:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Member was not found.", 404)
+                if target[1] and not is_admin and sum(1 for item in rows if item[1]) <= 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("The council needs at least one admin.", 400)
+                cur.execute(
+                    "UPDATE members SET is_admin = %s WHERE membership_id = %s",
+                    (bool(is_admin), memberid),
+                )
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not update admin access.", 503) from exc
+        member = self.get_member(memberid)
+        if member is None:
+            raise StoreError("Member was not found.", 404)
+        return member
+
+    def list_images(self, purpose: str | None = "library") -> list[dict]:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                rows = [dict(image) for image in self._images if purpose is None or image["purpose"] == purpose]
+            return [_public_image(image) for image in _sorted_images(rows)]
+        try:
+            with conn.cursor() as cur:
+                if purpose is None:
+                    cur.execute(_IMAGE_SELECT + " ORDER BY CASE WHEN slot IS NULL THEN 1 ELSE 0 END, slot, id")
+                else:
+                    cur.execute(
+                        _IMAGE_SELECT + " WHERE purpose = %s ORDER BY CASE WHEN slot IS NULL THEN 1 ELSE 0 END, slot, id",
+                        (purpose,),
+                    )
+                fetched = cur.fetchall()
+            conn.close()
+        except Exception as exc:
+            log.warning("Image list failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise StoreError("Could not load images.", 503) from exc
+        return [_public_image(_image_from_row(row)) for row in fetched]
+
+    def public_slots(self) -> dict:
+        images = self.list_images("library")
+        by_slot = {image["slot"]: image for image in images if image.get("slot")}
+        slides = []
+        for slot in ("carousel.1", "carousel.2", "carousel.3", "carousel.4"):
+            image = by_slot.get(slot)
+            slides.append({"slot": slot, "url": image["url"] if image else None})
+        logo = by_slot.get("logo")
+        return {"logo": logo["url"] if logo else None, "slides": slides}
+
+    def get_image(self, image_id: int) -> dict | None:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                for image in self._images:
+                    if image["id"] == image_id:
+                        return dict(image)
+            return None
+        try:
+            with conn.cursor() as cur:
+                cur.execute(_IMAGE_SELECT + " WHERE id = %s", (image_id,))
+                row = cur.fetchone()
+            conn.close()
+        except Exception as exc:
+            log.warning("Image lookup failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return None
+        if row is None:
+            return None
+        return _image_from_row(row)
+
+    def add_library_image(self, path: str, original_name: str, content_type: str, owner: str | None) -> dict:
+        return self._insert_image(path, original_name, content_type, "library", None, owner)
+
+    def replace_image(self, image_id: int, path: str, original_name: str, content_type: str) -> dict:
+        current = self.get_image(image_id)
+        if current is None:
+            delete_stored_file(path)
+            raise StoreError("Image was not found.", 404)
+        if current["purpose"] == "profile":
+            delete_stored_file(path)
+            raise StoreError("Profile photos are replaced from Settings.", 400)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                for image in self._images:
+                    if image["id"] == image_id:
+                        old = image["path"]
+                        image["path"] = path
+                        image["original_name"] = original_name
+                        image["content_type"] = content_type
+                        delete_stored_file(old)
+                        return _public_image(image)
+            delete_stored_file(path)
+            raise StoreError("Image was not found.", 404)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE images
+                    SET path = %s, original_name = %s, content_type = %s
+                    WHERE id = %s AND purpose <> 'profile'
+                    """,
+                    (path, original_name, content_type, image_id),
+                )
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    delete_stored_file(path)
+                    raise StoreError("Image was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            delete_stored_file(path)
+            raise StoreError("Could not replace the image.", 503) from exc
+        delete_stored_file(current["path"])
+        updated = self.get_image(image_id)
+        if updated is None:
+            raise StoreError("Image was not found.", 404)
+        return _public_image(updated)
+
+    def delete_image(self, image_id: int) -> None:
+        current = self.get_image(image_id)
+        if current is None:
+            raise StoreError("Image was not found.", 404)
+        if current["purpose"] == "profile":
+            raise StoreError("Remove a profile photo from that member's settings.", 400)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                self._images = [image for image in self._images if image["id"] != image_id]
+            delete_stored_file(current["path"])
+            return
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM images WHERE id = %s AND purpose <> 'profile'", (image_id,))
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Image was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not remove the image.", 503) from exc
+        delete_stored_file(current["path"])
+
+    def assign_slot(self, image_id: int, slot: str | None) -> dict:
+        current = self.get_image(image_id)
+        if current is None:
+            raise StoreError("Image was not found.", 404)
+        if current["purpose"] == "profile":
+            raise StoreError("Profile photos are not used in site slots.", 400)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                if slot:
+                    for image in self._images:
+                        if image["slot"] == slot and image["id"] != image_id:
+                            image["slot"] = None
+                for image in self._images:
+                    if image["id"] == image_id:
+                        image["slot"] = slot
+                        return _public_image(image)
+            raise StoreError("Image was not found.", 404)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT purpose FROM images WHERE id = %s FOR UPDATE", (image_id,))
+                row = cur.fetchone()
+                if row is None:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Image was not found.", 404)
+                if row[0] == "profile":
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Profile photos are not used in site slots.", 400)
+                if slot:
+                    cur.execute(
+                        "UPDATE images SET slot = NULL WHERE slot = %s AND id <> %s",
+                        (slot, image_id),
+                    )
+                cur.execute("UPDATE images SET slot = %s WHERE id = %s", (slot, image_id))
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not update the image slot.", 503) from exc
+        updated = self.get_image(image_id)
+        if updated is None:
+            raise StoreError("Image was not found.", 404)
+        return _public_image(updated)
+
+    def set_profile_image(self, memberid: str, path: str, original_name: str, content_type: str) -> dict:
+        if self.get_member(memberid) is None:
+            delete_stored_file(path)
+            raise StoreError("Member was not found.", 404)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                old = None
+                for image in self._images:
+                    if image["purpose"] == "profile" and image["owner_membership_id"] == memberid:
+                        old = image["path"]
+                        image["path"] = path
+                        image["original_name"] = original_name
+                        image["content_type"] = content_type
+                        break
+                else:
+                    self._images.append(
+                        {
+                            "id": self._image_seq,
+                            "path": path,
+                            "original_name": original_name,
+                            "content_type": content_type,
+                            "purpose": "profile",
+                            "slot": None,
+                            "owner_membership_id": memberid,
+                        }
+                    )
+                    self._image_seq += 1
+            if old:
+                delete_stored_file(old)
+            record = self._memory_member(memberid)
+            if record is None:
+                raise StoreError("Member was not found.", 404)
+            return self._public_member(record)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, path FROM images
+                    WHERE owner_membership_id = %s AND purpose = 'profile'
+                    FOR UPDATE
+                    """,
+                    (memberid,),
+                )
+                existing = cur.fetchone()
+                if existing:
+                    cur.execute(
+                        """
+                        UPDATE images
+                        SET path = %s, original_name = %s, content_type = %s
+                        WHERE id = %s
+                        """,
+                        (path, original_name, content_type, existing[0]),
+                    )
+                    old_path = existing[1]
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO images
+                          (path, original_name, content_type, purpose, slot, owner_membership_id)
+                        VALUES (%s, %s, %s, 'profile', NULL, %s)
+                        """,
+                        (path, original_name, content_type, memberid),
+                    )
+                    old_path = None
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            _rollback(conn)
+            delete_stored_file(path)
+            raise StoreError("Could not save the profile photo.", 503) from exc
+        if old_path:
+            delete_stored_file(old_path)
+        member = self.get_member(memberid)
+        if member is None:
+            raise StoreError("Member was not found.", 404)
+        return member
+
+    def clear_profile_image(self, memberid: str) -> dict:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                kept = []
+                old = None
+                for image in self._images:
+                    if image["purpose"] == "profile" and image["owner_membership_id"] == memberid:
+                        old = image["path"]
+                        continue
+                    kept.append(image)
+                self._images = kept
+            if old:
+                delete_stored_file(old)
+            record = self._memory_member(memberid)
+            if record is None:
+                raise StoreError("Member was not found.", 404)
+            return self._public_member(record)
+        old_path = None
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM images
+                    WHERE owner_membership_id = %s AND purpose = 'profile'
+                    RETURNING path
+                    """,
+                    (memberid,),
+                )
+                row = cur.fetchone()
+                if row:
+                    old_path = row[0]
+                cur.execute("SELECT 1 FROM members WHERE membership_id = %s", (memberid,))
+                if cur.fetchone() is None:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Member was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not remove the profile photo.", 503) from exc
+        if old_path:
+            delete_stored_file(old_path)
+        member = self.get_member(memberid)
+        if member is None:
+            raise StoreError("Member was not found.", 404)
+        return member
+
+    def _insert_image(
+        self,
+        path: str,
+        original_name: str,
+        content_type: str,
+        purpose: str,
+        slot: str | None,
+        owner: str | None,
+    ) -> dict:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                image = {
+                    "id": self._image_seq,
+                    "path": path,
+                    "original_name": original_name,
+                    "content_type": content_type,
+                    "purpose": purpose,
+                    "slot": slot,
+                    "owner_membership_id": owner,
+                }
+                self._image_seq += 1
+                self._images.append(image)
+                return _public_image(image)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO images
+                      (path, original_name, content_type, purpose, slot, owner_membership_id)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (path, original_name, content_type, purpose, slot, owner),
+                )
+                image_id = cur.fetchone()[0]
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            _rollback(conn)
+            delete_stored_file(path)
+            raise StoreError("Could not save the image.", 503) from exc
+        image = self.get_image(image_id)
+        if image is None:
+            raise StoreError("Could not save the image.", 503)
+        return _public_image(image)
 
     def get_page(self, slug: str) -> dict:
         if slug not in PAGES:
@@ -489,6 +971,231 @@ class Store:
                 for block in blocks
             ],
         }
+
+
+_IMAGE_SELECT = """
+SELECT id, path, original_name, content_type, purpose, slot, owner_membership_id
+FROM images
+"""
+
+_MEMBER_COLUMNS = """
+CREATE TABLE IF NOT EXISTS members (
+  id SERIAL PRIMARY KEY,
+  membership_id TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  title TEXT,
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE
+)
+"""
+
+
+def _rollback(conn) -> None:
+    try:
+        conn.rollback()
+        conn.close()
+    except Exception:
+        pass
+
+
+def _seed_image_rows() -> list[dict]:
+    rows = []
+    for index, (path, original, content_type, slot) in enumerate(SEED_IMAGES, start=1):
+        rows.append(
+            {
+                "id": index,
+                "path": path,
+                "original_name": original,
+                "content_type": content_type,
+                "purpose": "library",
+                "slot": slot,
+                "owner_membership_id": None,
+            }
+        )
+    return rows
+
+
+def _profile_in(images: list[dict], memberid: str) -> dict | None:
+    for image in images:
+        if image["purpose"] == "profile" and image["owner_membership_id"] == memberid:
+            return image
+    return None
+
+
+def _record_from_row(row) -> dict:
+    return {
+        "membership_id": row[0],
+        "password_hash": row[1],
+        "display_name": row[2],
+        "title": row[3],
+        "is_admin": bool(row[4]),
+        "photo_id": row[5],
+        "photo_path": row[6],
+    }
+
+
+def _image_from_row(row) -> dict:
+    return {
+        "id": row[0],
+        "path": row[1],
+        "original_name": row[2],
+        "content_type": row[3],
+        "purpose": row[4],
+        "slot": row[5],
+        "owner_membership_id": row[6],
+    }
+
+
+def _public_image(image: dict) -> dict:
+    return {
+        "id": image["id"],
+        "url": public_url(int(image["id"]), image["path"]),
+        "original_name": image["original_name"],
+        "content_type": image["content_type"],
+        "purpose": image["purpose"],
+        "slot": image.get("slot"),
+        "owner_membership_id": image.get("owner_membership_id"),
+    }
+
+
+def _sorted_images(images: list[dict]) -> list[dict]:
+    return sorted(images, key=lambda image: (image.get("slot") is None, image.get("slot") or "", image["id"]))
+
+
+def _title_constraint_sql() -> str:
+    for abbrev in TITLE_ABBREVS:
+        if not abbrev.isascii() or not abbrev.isalnum() or abbrev != abbrev.upper():
+            raise RuntimeError(f"Unexpected title abbreviation: {abbrev}")
+    choices = ", ".join(f"'{abbrev}'" for abbrev in TITLE_ABBREVS)
+    return f"CHECK (title IS NULL OR title IN ({choices}))"
+
+
+def _ensure_schema(cur) -> None:
+    cur.execute(_MEMBER_COLUMNS)
+    cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS title TEXT")
+    cur.execute(
+        "ALTER TABLE members ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE"
+    )
+    cur.execute("ALTER TABLE members DROP CONSTRAINT IF EXISTS members_title_abbrev")
+    cur.execute(f"ALTER TABLE members ADD CONSTRAINT members_title_abbrev {_title_constraint_sql()}")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS refresh_tokens (
+          jti TEXT PRIMARY KEY,
+          membership_id TEXT NOT NULL REFERENCES members (membership_id) ON DELETE CASCADE,
+          expires_at TIMESTAMPTZ NOT NULL,
+          revoked_at TIMESTAMPTZ,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS refresh_tokens_member_idx
+        ON refresh_tokens (membership_id)
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS images (
+          id SERIAL PRIMARY KEY,
+          path TEXT NOT NULL,
+          original_name TEXT NOT NULL,
+          content_type TEXT NOT NULL,
+          purpose TEXT NOT NULL DEFAULT 'library',
+          slot TEXT,
+          owner_membership_id TEXT REFERENCES members (membership_id) ON DELETE SET NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CONSTRAINT images_purpose_chk CHECK (purpose IN ('library', 'profile')),
+          CONSTRAINT images_slot_chk CHECK (
+            slot IS NULL OR slot IN ('logo', 'carousel.1', 'carousel.2', 'carousel.3', 'carousel.4')
+          )
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS images_slot_idx
+        ON images (slot) WHERE slot IS NOT NULL
+        """
+    )
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS images_profile_idx
+        ON images (owner_membership_id) WHERE purpose = 'profile'
+        """
+    )
+
+
+def _seed_images(cur) -> None:
+    cur.execute("SELECT COUNT(*) FROM images")
+    if cur.fetchone()[0]:
+        return
+    for path, original, content_type, slot in SEED_IMAGES:
+        cur.execute(
+            """
+            INSERT INTO images (path, original_name, content_type, purpose, slot)
+            VALUES (%s, %s, %s, 'library', %s)
+            """,
+            (path, original, content_type, slot),
+        )
+
+
+def _upsert_test_member(cur, hashed: str) -> str:
+    cur.execute(
+        """
+        INSERT INTO members (membership_id, password_hash, display_name, title, is_admin)
+        VALUES (%s, %s, %s, %s, TRUE)
+        ON CONFLICT (membership_id) DO NOTHING
+        RETURNING id
+        """,
+        (TEST_MEMBER_ID, hashed, TEST_MEMBER_NAME, TEST_MEMBER_TITLE),
+    )
+    if cur.fetchone():
+        return "created"
+    cur.execute(
+        "SELECT password_hash FROM members WHERE membership_id = %s",
+        (TEST_MEMBER_ID,),
+    )
+    row = cur.fetchone()
+    if row and row[0] == "sha256:demo-not-checked":
+        cur.execute(
+            """
+            UPDATE members
+            SET password_hash = %s, display_name = %s
+            WHERE membership_id = %s
+            """,
+            (hashed, TEST_MEMBER_NAME, TEST_MEMBER_ID),
+        )
+        return "created"
+    if row and verify_password(TEST_MEMBER_PASSWORD, row[0]):
+        return "present"
+    return "different-password"
+
+
+def _ensure_sample_member(cur, hashed: str) -> None:
+    cur.execute(
+        """
+        INSERT INTO members (membership_id, password_hash, display_name, title, is_admin)
+        VALUES (%s, %s, %s, NULL, FALSE)
+        ON CONFLICT (membership_id) DO NOTHING
+        """,
+        (SAMPLE_MEMBER_ID, hashed, SAMPLE_MEMBER_NAME),
+    )
+
+
+def _ensure_admin(cur) -> None:
+    cur.execute("SELECT COUNT(*) FROM members WHERE is_admin")
+    if cur.fetchone()[0]:
+        return
+    cur.execute(
+        """
+        UPDATE members
+        SET is_admin = TRUE, title = COALESCE(title, %s)
+        WHERE membership_id = %s
+        """,
+        (TEST_MEMBER_TITLE, TEST_MEMBER_ID),
+    )
 
 
 store = Store()

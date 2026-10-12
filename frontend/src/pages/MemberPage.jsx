@@ -4,7 +4,9 @@ import { Block, Eyebrow } from "../components/Block";
 import { Avatar, Emblem, Portrait, PortraitSm } from "../components/Marks";
 import { ContentProvider, useContent } from "../content/ContentContext";
 import { DIRECTOR_COUNT, EVENT_COUNT, OFFICER_COUNT } from "../content/seed";
-import { navigate } from "../router";
+import SettingsView from "./SettingsView";
+import { navigate, usePath } from "../router";
+import { memberLabel } from "../titles";
 
 const TITLE = "Members Area — Council 10930 — Knights of Columbus";
 
@@ -41,6 +43,17 @@ const LINK_CARDS = [
 
 function range(count) {
   return Array.from({ length: count }, (_, index) => index);
+}
+
+function MemberAvatar({ user }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [user?.photo_url]);
+  if (user?.photo_url && !failed) {
+    return <img className="avatar" src={user.photo_url} alt="" onError={() => setFailed(true)} />;
+  }
+  return <Avatar />;
 }
 
 function keepEditingClick(event) {
@@ -81,8 +94,10 @@ function People({ prefix, count }) {
 }
 
 function MemberView() {
-  const { editing, savedFlash } = useContent();
+  const { editing, savedFlash, cancelEdit } = useContent();
   const { logout: signOut, user } = useAuth();
+  const path = usePath();
+  const onSettings = path === "/member/settings";
   const [navOpen, setNavOpen] = useState(false);
   const [navHidden, setNavHidden] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -93,8 +108,21 @@ function MemberView() {
   useLayoutEffect(() => {
     document.body.className = "page-member";
     document.body.dataset.page = "member";
-    document.title = TITLE;
-  }, []);
+    document.title = onSettings ? "Settings — Council 10930" : TITLE;
+  }, [onSettings]);
+
+  useEffect(() => {
+    if (onSettings && editing) cancelEdit();
+  }, [onSettings, editing, cancelEdit]);
+
+  useEffect(() => {
+    if (onSettings) return undefined;
+    const id = window.location.hash.replace(/^#/, "");
+    if (!id) return undefined;
+    const node = document.getElementById(id);
+    if (node) node.scrollIntoView();
+    return undefined;
+  }, [onSettings]);
 
   useEffect(() => {
     let lastY = window.scrollY;
@@ -166,7 +194,19 @@ function MemberView() {
 
   function settings() {
     setMenuOpen(false);
-    window.alert("Settings. Replace this with the member settings page.");
+    navigate("/member/settings");
+  }
+
+  function sectionProps(hash) {
+    if (!onSettings) return { href: `#${hash}`, onClick: closeNav };
+    return {
+      href: `/member#${hash}`,
+      onClick: (event) => {
+        closeNav();
+        event.preventDefault();
+        navigate(`/member#${hash}`);
+      },
+    };
   }
 
   return (
@@ -175,7 +215,16 @@ function MemberView() {
         Skip to members content
       </a>
       <header className={navHidden ? "site nav-hidden" : "site"}>
-        <a className="brand" href="#top" onClick={keepEditingClick}>
+        <a
+          className="brand"
+          href={onSettings ? "/member" : "#top"}
+          onClick={(event) => {
+            keepEditingClick(event);
+            if (!onSettings) return;
+            event.preventDefault();
+            navigate("/member");
+          }}
+        >
           <Emblem className="mark" />
           <span>
             <Block id="brand.name" className="name" />
@@ -196,7 +245,7 @@ function MemberView() {
             <span />
             <span />
           </button>
-          <EditBar />
+          {user?.is_admin && !onSettings ? <EditBar /> : null}
           <div className="profile" ref={profileRef}>
             <button
               type="button"
@@ -210,8 +259,8 @@ function MemberView() {
                 setMenuOpen((open) => !open);
               }}
             >
-              <Avatar />
-              <span className="profile-name">{user?.display_name || "Member"}</span>
+              <MemberAvatar user={user} />
+              <span className="profile-name">{memberLabel(user)}</span>
             </button>
             <div className="profile-menu" id="profileMenu" role="menu" hidden={!menuOpen}>
               <button type="button" role="menuitem" id="settingsBtn" onClick={settings}>
@@ -224,15 +273,16 @@ function MemberView() {
           </div>
         </div>
         <nav className={navOpen ? "site-nav open" : "site-nav"} id="siteNav" aria-label="Page sections">
-          <Block id="nav.about" href="#about" locked onClick={closeNav} />
-          <Block id="nav.officers" href="#officers" locked onClick={closeNav} />
-          <Block id="nav.directors" href="#directors" locked onClick={closeNav} />
-          <Block id="nav.events" href="#events" locked onClick={closeNav} />
-          <Block id="nav.blood" href="#blood" locked onClick={closeNav} />
-          <Block id="nav.links" href="#links" locked onClick={closeNav} />
+          <Block id="nav.about" locked {...sectionProps("about")} />
+          <Block id="nav.officers" locked {...sectionProps("officers")} />
+          <Block id="nav.directors" locked {...sectionProps("directors")} />
+          <Block id="nav.events" locked {...sectionProps("events")} />
+          <Block id="nav.blood" locked {...sectionProps("blood")} />
+          <Block id="nav.links" locked {...sectionProps("links")} />
         </nav>
       </header>
 
+      {onSettings ? null : (
       <section className="member-hero" id="top">
         <div className="container">
           <Eyebrow id="hero.eyebrow" />
@@ -240,8 +290,12 @@ function MemberView() {
           <Block id="hero.place" as="div" className="place" />
         </div>
       </section>
+      )}
 
       <main id="main">
+        {onSettings ? <SettingsView /> : null}
+        {onSettings ? null : (
+        <>
         <div className="container">
           <section id="about" aria-labelledby="aboutHeading">
             <div className="section-head">
@@ -402,6 +456,8 @@ function MemberView() {
             </div>
           </section>
         </div>
+        </>
+        )}
       </main>
 
       <footer>
@@ -415,12 +471,12 @@ function MemberView() {
               </span>
             </div>
             <nav className="footer-nav" aria-label="Footer">
-              <Block id="footer.nav.about" href="#about" />
-              <Block id="footer.nav.officers" href="#officers" />
-              <Block id="footer.nav.directors" href="#directors" />
-              <Block id="footer.nav.events" href="#events" />
-              <Block id="footer.nav.blood" href="#blood" />
-              <Block id="footer.nav.links" href="#links" />
+              <Block id="footer.nav.about" {...sectionProps("about")} />
+              <Block id="footer.nav.officers" {...sectionProps("officers")} />
+              <Block id="footer.nav.directors" {...sectionProps("directors")} />
+              <Block id="footer.nav.events" {...sectionProps("events")} />
+              <Block id="footer.nav.blood" {...sectionProps("blood")} />
+              <Block id="footer.nav.links" {...sectionProps("links")} />
               <Block
                 id="footer.nav.public"
                 href="/"
@@ -446,8 +502,9 @@ function MemberView() {
 }
 
 export default function MemberPage() {
+  const { user } = useAuth();
   return (
-    <ContentProvider slug="member">
+    <ContentProvider slug="member" canEdit={Boolean(user?.is_admin)}>
       <MemberView />
     </ContentProvider>
   );
