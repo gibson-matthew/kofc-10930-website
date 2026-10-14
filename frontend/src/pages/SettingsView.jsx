@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import CroppedPhoto from "../components/CroppedPhoto";
 import { PortraitSm } from "../components/Marks";
+import { daysInMonth } from "../birthdays";
 import { clampCrop } from "../crop";
+import { MONTHS } from "../content/records";
 import {
   assignMediaSlot,
   createMember,
@@ -13,6 +15,7 @@ import {
   imageFileError,
   replaceMedia,
   setMemberAdmin,
+  setMemberBirthday,
   updateMyCrop,
   uploadMedia,
   uploadMyPhoto,
@@ -33,7 +36,7 @@ const SLOTS = [
 ];
 
 const ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
-const EMPTY_MEMBER = { memberid: "", password: "", display_name: "", title: "" };
+const EMPTY_MEMBER = { memberid: "", password: "", display_name: "", title: "", birth_month: "", birth_day: "" };
 
 function collapse(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
@@ -43,6 +46,27 @@ function titleText(title) {
   if (!title) return "No title";
   const found = OFFICER_TITLES.find(([, abbrev]) => abbrev === title);
   return found ? `${found[1]} — ${found[0]}` : title;
+}
+
+function birthdayProblem(month, day) {
+  const monthBlank = month === "" || month == null;
+  const dayBlank = day === "" || day == null;
+  if (monthBlank && dayBlank) return "";
+  const monthN = Number(month);
+  const dayN = Number(day);
+  if (
+    monthBlank ||
+    dayBlank ||
+    !Number.isInteger(monthN) ||
+    monthN < 1 ||
+    monthN > 12 ||
+    !Number.isInteger(dayN) ||
+    dayN < 1 ||
+    dayN > daysInMonth(monthN)
+  ) {
+    return "Choose a valid birthday.";
+  }
+  return "";
 }
 
 function memberProblem(form) {
@@ -57,7 +81,104 @@ function memberProblem(form) {
   if (form.title && !OFFICER_TITLES.some(([, abbrev]) => abbrev === form.title)) {
     return "Choose a title from the list.";
   }
+  const birthday = birthdayProblem(form.birth_month, form.birth_day);
+  if (birthday) return birthday;
   return "";
+}
+
+function BirthdayFields({ month, day, disabled, onMonth, onDay, compact = false }) {
+  const max = month ? daysInMonth(Number(month)) : 0;
+  const fieldClass = compact ? "member-birth-field" : "signin-field";
+  return (
+    <div className={compact ? "member-birthday-fields" : "birthday-inputs"}>
+      <label className={fieldClass}>
+        <span>{compact ? "Month" : "Birth month"}</span>
+        <select value={month || ""} disabled={disabled} onChange={(event) => onMonth(event.target.value)}>
+          <option value="">Month</option>
+          {MONTHS.map((label, index) => (
+            <option key={label} value={String(index + 1)}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={fieldClass}>
+        <span>{compact ? "Day" : "Birth day"}</span>
+        <select value={day || ""} disabled={disabled || !month} onChange={(event) => onDay(event.target.value)}>
+          <option value="">Day</option>
+          {Array.from({ length: max }, (_, index) => (
+            <option key={index + 1} value={String(index + 1)}>
+              {index + 1}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function BirthdayEditor({ member, onSave }) {
+  const [month, setMonth] = useState(member.birth_month ? String(member.birth_month) : "");
+  const [day, setDay] = useState(member.birth_day ? String(member.birth_day) : "");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setMonth(member.birth_month ? String(member.birth_month) : "");
+    setDay(member.birth_day ? String(member.birth_day) : "");
+  }, [member.memberid, member.birth_month, member.birth_day]);
+
+  function changeMonth(value) {
+    setMonth(value);
+    setDay((current) => {
+      if (!value) return "";
+      if (current && Number(current) > daysInMonth(Number(value))) return "";
+      return current;
+    });
+  }
+
+  async function save() {
+    const problem = birthdayProblem(month, day);
+    if (problem) {
+      setError(problem);
+      setNotice("");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await onSave(member.memberid, {
+        birth_month: month ? Number(month) : null,
+        birth_day: day ? Number(day) : null,
+      });
+      setNotice("Birthday saved.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the birthday.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="member-birthday">
+      <BirthdayFields month={month} day={day} disabled={busy} onMonth={changeMonth} onDay={setDay} compact />
+      <button type="button" className="btn btn-quiet" onClick={save} disabled={busy}>
+        Save birthday
+      </button>
+      {notice ? (
+        <p className="settings-notice is-confirm" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="signin-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 function Photo({ user, className }) {
@@ -366,6 +487,8 @@ export default function SettingsView() {
       password: memberForm.password,
       display_name: displayName,
       title: memberForm.title || null,
+      birth_month: memberForm.birth_month ? Number(memberForm.birth_month) : null,
+      birth_day: memberForm.birth_day ? Number(memberForm.birth_day) : null,
     };
     setPending(true);
     setError("");
@@ -397,6 +520,11 @@ export default function SettingsView() {
     } finally {
       setPending(false);
     }
+  }
+
+  async function onBirthday(memberid, payload) {
+    const updated = await setMemberBirthday(memberid, payload);
+    setMembers((current) => current.map((item) => (item.memberid === updated.memberid ? updated : item)));
   }
 
   function onAdmin(member, next) {
@@ -550,6 +678,23 @@ export default function SettingsView() {
                 </select>
                 <p className="settings-hint">Optional. A title can belong to one member. Later changes are made from Edit page.</p>
               </label>
+              <BirthdayFields
+                month={memberForm.birth_month}
+                day={memberForm.birth_day}
+                disabled={pending}
+                onMonth={(value) =>
+                  setMemberForm((current) => ({
+                    ...current,
+                    birth_month: value,
+                    birth_day:
+                      !value || (current.birth_day && Number(current.birth_day) > daysInMonth(Number(value)))
+                        ? ""
+                        : current.birth_day,
+                  }))
+                }
+                onDay={(value) => setMemberForm((current) => ({ ...current, birth_day: value }))}
+              />
+              <p className="settings-hint">Optional. Month and day only.</p>
               <div className="signin-actions">
                 <button type="submit" className="btn" disabled={pending}>
                   Create member
@@ -570,6 +715,7 @@ export default function SettingsView() {
                     {" · "}
                     {member.is_admin ? "Admin" : "Member"}
                   </p>
+                  <BirthdayEditor member={member} onSave={onBirthday} />
                 </div>
               </article>
             ))}

@@ -187,6 +187,14 @@ export async function fetchMembers() {
   return readJson(response, "Could not load members.");
 }
 
+export async function setMemberBirthday(memberid, payload) {
+  const response = await send(`/api/members/${encodeURIComponent(memberid)}/birthday`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  return readJson(response, "Could not save the birthday.");
+}
+
 export async function setMemberAdmin(memberid, isAdmin) {
   const response = await send(`/api/members/${encodeURIComponent(memberid)}`, {
     method: "PATCH",

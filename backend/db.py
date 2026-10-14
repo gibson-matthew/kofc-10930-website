@@ -79,6 +79,8 @@ class Store:
                     "display_name": TEST_MEMBER_NAME,
                     "title": TEST_MEMBER_TITLE,
                     "is_admin": True,
+                    "birth_month": None,
+                    "birth_day": None,
                 },
                 {
                     "membership_id": SAMPLE_MEMBER_ID,
@@ -86,6 +88,8 @@ class Store:
                     "display_name": SAMPLE_MEMBER_NAME,
                     "title": None,
                     "is_admin": False,
+                    "birth_month": None,
+                    "birth_day": None,
                 },
             ]
             self._images = _seed_image_rows()
@@ -282,7 +286,8 @@ class Store:
                 cur.execute(
                     """
                     SELECT m.membership_id, m.password_hash, m.display_name, m.title, m.is_admin,
-                           i.id, i.path, i.crop_x, i.crop_y, i.crop_scale
+                           i.id, i.path, i.crop_x, i.crop_y, i.crop_scale,
+                           m.birth_month, m.birth_day
                     FROM members m
                     LEFT JOIN images i
                       ON i.owner_membership_id = m.membership_id AND i.purpose = 'profile'
@@ -333,6 +338,8 @@ class Store:
             "crop_x": float(record.get("crop_x") or 0),
             "crop_y": float(record.get("crop_y") or 0),
             "crop_scale": float(record.get("crop_scale") or 1),
+            "birth_month": _birthday_number(record.get("birth_month")),
+            "birth_day": _birthday_number(record.get("birth_day")),
         }
 
     def list_members(self) -> list[dict]:
@@ -356,7 +363,8 @@ class Store:
                 cur.execute(
                     """
                     SELECT m.membership_id, m.password_hash, m.display_name, m.title, m.is_admin,
-                           i.id, i.path, i.crop_x, i.crop_y, i.crop_scale
+                           i.id, i.path, i.crop_x, i.crop_y, i.crop_scale,
+                           m.birth_month, m.birth_day
                     FROM members m
                     LEFT JOIN images i
                       ON i.owner_membership_id = m.membership_id AND i.purpose = 'profile'
@@ -545,7 +553,15 @@ class Store:
             raise StoreError("Could not save officer assignments.", 503) from exc
         return self.list_members()
 
-    def _remember_member(self, memberid: str, hashed: str, name: str, cleaned: str | None) -> None:
+    def _remember_member(
+        self,
+        memberid: str,
+        hashed: str,
+        name: str,
+        cleaned: str | None,
+        birth_month: int | None,
+        birth_day: int | None,
+    ) -> None:
         with self._lock:
             if cleaned:
                 for member in self._members:
@@ -556,6 +572,8 @@ class Store:
                     member["password_hash"] = hashed
                     member["display_name"] = name
                     member["title"] = cleaned
+                    member["birth_month"] = birth_month
+                    member["birth_day"] = birth_day
                     return
             self._members.append(
                 {
@@ -564,11 +582,22 @@ class Store:
                     "display_name": name,
                     "title": cleaned,
                     "is_admin": False,
+                    "birth_month": birth_month,
+                    "birth_day": birth_day,
                 }
             )
 
-    def create_member(self, memberid: str, password: str, display_name: str, title: str | None) -> dict:
+    def create_member(
+        self,
+        memberid: str,
+        password: str,
+        display_name: str,
+        title: str | None,
+        birth_month: int | None = None,
+        birth_day: int | None = None,
+    ) -> dict:
         memberid, name, cleaned = _member_create_fields(memberid, password, display_name, title)
+        month, day = _clean_birthday(birth_month, birth_day)
         hashed = hash_password(password)
         conn = self._open()
         if conn is None:
@@ -586,6 +615,8 @@ class Store:
                         "display_name": name,
                         "title": cleaned,
                         "is_admin": False,
+                        "birth_month": month,
+                        "birth_day": day,
                     }
                 )
             record = self._memory_member(memberid)
@@ -597,7 +628,7 @@ class Store:
             # work back so the insert itself still runs.
             _guard_member_ids(conn)
             with conn.cursor() as cur:
-                row = _insert_member_row(cur, memberid, hashed, name, cleaned)
+                row = _insert_member_row(cur, memberid, hashed, name, cleaned, month, day)
             conn.commit()
         except StoreError:
             _rollback(conn)
@@ -613,7 +644,7 @@ class Store:
                 with conn.cursor() as cur:
                     _ensure_member_id_default(cur)
                     _sync_member_id_sequence(cur)
-                    row = _insert_member_row(cur, memberid, hashed, name, cleaned)
+                    row = _insert_member_row(cur, memberid, hashed, name, cleaned, month, day)
                 conn.commit()
             except StoreError:
                 _rollback(conn)
@@ -633,7 +664,7 @@ class Store:
                 pass
         if row is None:
             raise StoreError("Could not create the member.", 503)
-        self._remember_member(memberid, hashed, name, cleaned)
+        self._remember_member(memberid, hashed, name, cleaned, month, day)
         saved_title = row[2]
         if isinstance(saved_title, str):
             saved_title = saved_title.strip() or None
@@ -646,7 +677,58 @@ class Store:
             "crop_x": 0.0,
             "crop_y": 0.0,
             "crop_scale": 1.0,
+            "birth_month": month,
+            "birth_day": day,
         }
+
+    def set_birthday(self, memberid: str, birth_month: int | None, birth_day: int | None) -> dict:
+        memberid = memberid.strip()
+        month, day = _clean_birthday(birth_month, birth_day)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                target = next((item for item in self._members if item["membership_id"] == memberid), None)
+                if target is None:
+                    raise StoreError("Member was not found.", 404)
+                target["birth_month"] = month
+                target["birth_day"] = day
+            record = self._memory_member(memberid)
+            if record is None:
+                raise StoreError("Member was not found.", 404)
+            return self._public_member(record)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE members
+                    SET birth_month = %s, birth_day = %s
+                    WHERE membership_id = %s
+                    RETURNING membership_id
+                    """,
+                    (month, day, memberid),
+                )
+                found = cur.fetchone()
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise _member_create_error(exc) if _birthday_fault(exc) else StoreError(
+                "Could not save the birthday.", 503
+            ) from exc
+        if found is None:
+            raise StoreError("Member was not found.", 404)
+        with self._lock:
+            for member in self._members:
+                if member["membership_id"] == memberid:
+                    member["birth_month"] = month
+                    member["birth_day"] = day
+                    break
+        updated = self.get_member(memberid)
+        if updated is None:
+            raise StoreError("Member was not found.", 404)
+        return updated
 
     def list_honors(self) -> list[dict]:
         conn = self._open()
@@ -1612,6 +1694,21 @@ SELECT id, path, original_name, content_type, purpose, slot, owner_membership_id
 FROM images
 """
 
+_BIRTHDAY_CHECK = """
+CHECK (
+  (birth_month IS NULL AND birth_day IS NULL)
+  OR (
+    birth_month BETWEEN 1 AND 12
+    AND birth_day BETWEEN 1 AND 31
+    AND (
+      (birth_month = 2 AND birth_day <= 29)
+      OR (birth_month IN (4, 6, 9, 11) AND birth_day <= 30)
+      OR (birth_month IN (1, 3, 5, 7, 8, 10, 12) AND birth_day <= 31)
+    )
+  )
+)
+"""
+
 _MEMBER_COLUMNS = """
 CREATE TABLE IF NOT EXISTS members (
   id SERIAL PRIMARY KEY,
@@ -1619,7 +1716,9 @@ CREATE TABLE IF NOT EXISTS members (
   password_hash TEXT NOT NULL,
   display_name TEXT NOT NULL,
   title TEXT,
-  is_admin BOOLEAN NOT NULL DEFAULT FALSE
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  birth_month SMALLINT,
+  birth_day SMALLINT
 )
 """
 
@@ -1659,6 +1758,31 @@ def _profile_in(images: list[dict], memberid: str) -> dict | None:
     return None
 
 
+def _birthday_number(value):
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number
+
+
+def _clean_birthday(month, day) -> tuple[int | None, int | None]:
+    if month is None and day is None:
+        return None, None
+    if month is None or day is None or isinstance(month, bool) or isinstance(day, bool):
+        raise StoreError("Choose a valid birthday.", 400)
+    if not isinstance(month, int) or not isinstance(day, int):
+        raise StoreError("Choose a valid birthday.", 400)
+    if month < 1 or month > 12:
+        raise StoreError("Choose a valid birthday.", 400)
+    limit = 29 if month == 2 else 30 if month in (4, 6, 9, 11) else 31
+    if day < 1 or day > limit:
+        raise StoreError("Choose a valid birthday.", 400)
+    return month, day
+
+
 def _record_from_row(row) -> dict:
     return {
         "membership_id": row[0],
@@ -1671,6 +1795,8 @@ def _record_from_row(row) -> dict:
         "crop_x": float(row[7]) if len(row) > 7 and row[7] is not None else 0,
         "crop_y": float(row[8]) if len(row) > 8 and row[8] is not None else 0,
         "crop_scale": float(row[9]) if len(row) > 9 and row[9] is not None else 1,
+        "birth_month": _birthday_number(row[10]) if len(row) > 10 else None,
+        "birth_day": _birthday_number(row[11]) if len(row) > 11 else None,
     }
 
 
@@ -2059,19 +2185,30 @@ def _member_id_fault(exc: Exception) -> bool:
     return False
 
 
+def _birthday_fault(exc: Exception) -> bool:
+    state = _pg_sqlstate(exc)
+    if state != "23514":
+        return False
+    diag = getattr(exc, "diag", None)
+    constraint = getattr(diag, "constraint_name", None) if diag is not None else None
+    return constraint == "members_birthday_chk" or "birth" in str(exc).lower()
+
+
 def _member_create_error(exc: Exception) -> StoreError:
     state = _pg_sqlstate(exc)
     diag = getattr(exc, "diag", None)
     column = getattr(diag, "column_name", None) if diag is not None else None
     if state == "23505" and not _member_id_fault(exc):
         return StoreError("That membership ID is already in use.", 409)
+    if _birthday_fault(exc):
+        return StoreError("Choose a valid birthday.", 400)
     if state == "23514" or (state == "23502" and column == "title"):
         return StoreError("Choose a title from the list.", 400)
     log.warning("Could not create the member: %s", exc)
     return StoreError("Could not create the member.", 503)
 
 
-def _insert_member_row(cur, memberid: str, hashed: str, name: str, cleaned: str | None):
+def _insert_member_row(cur, memberid: str, hashed: str, name: str, cleaned: str | None, month=None, day=None):
     cur.execute(
         "SELECT membership_id FROM members WHERE membership_id = %s",
         (memberid,),
@@ -2085,11 +2222,11 @@ def _insert_member_row(cur, memberid: str, hashed: str, name: str, cleaned: str 
         )
     cur.execute(
         """
-        INSERT INTO members (membership_id, password_hash, display_name, title, is_admin)
-        VALUES (%s, %s, %s, %s, FALSE)
+        INSERT INTO members (membership_id, password_hash, display_name, title, is_admin, birth_month, birth_day)
+        VALUES (%s, %s, %s, %s, FALSE, %s, %s)
         RETURNING membership_id, display_name, title, is_admin
         """,
-        (memberid, hashed, name, cleaned),
+        (memberid, hashed, name, cleaned, month, day),
     )
     return cur.fetchone()
 
@@ -2183,6 +2320,16 @@ def _ensure_schema(cur) -> None:
     cur.execute(
         "ALTER TABLE members ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE"
     )
+    cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_month SMALLINT")
+    cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_day SMALLINT")
+    cur.execute("SAVEPOINT member_birthday")
+    try:
+        cur.execute("ALTER TABLE members DROP CONSTRAINT IF EXISTS members_birthday_chk")
+        cur.execute(f"ALTER TABLE members ADD CONSTRAINT members_birthday_chk {_BIRTHDAY_CHECK}")
+        cur.execute("RELEASE SAVEPOINT member_birthday")
+    except Exception as exc:
+        log.warning("Could not check member birthdays: %s", exc)
+        cur.execute("ROLLBACK TO SAVEPOINT member_birthday")
     cur.execute("ALTER TABLE members DROP CONSTRAINT IF EXISTS members_title_abbrev")
     cur.execute(f"ALTER TABLE members ADD CONSTRAINT members_title_abbrev {_title_constraint_sql()}")
     cur.execute("SAVEPOINT member_id_seq")
@@ -2248,6 +2395,22 @@ def _ensure_schema(cur) -> None:
         ON images (owner_membership_id) WHERE purpose = 'profile'
         """
     )
+    cur.execute("SAVEPOINT fraternal_year")
+    try:
+        cur.execute(
+            """
+            INSERT INTO content_blocks (page_id, "key", field_type, value, sort_order)
+            SELECT p.id, 'year.fraternal', 'text', %s, 200
+            FROM pages p
+            WHERE p.slug = 'member'
+            ON CONFLICT (page_id, "key") DO NOTHING
+            """,
+            ("2026\u201327",),
+        )
+        cur.execute("RELEASE SAVEPOINT fraternal_year")
+    except Exception as exc:
+        log.warning("Could not store the fraternal year: %s", exc)
+        cur.execute("ROLLBACK TO SAVEPOINT fraternal_year")
 
 
 def _seed_images(cur) -> None:

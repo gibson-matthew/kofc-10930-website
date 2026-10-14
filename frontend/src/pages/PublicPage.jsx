@@ -397,20 +397,20 @@ function PublicView() {
             <div className="footer-brand">
               <img className="hero-medallion-navbar" src={logoSrc} alt="" onError={keepExampleLogo} />
               <span>
-                <Block id="footer.name" className="name" />
-                <Block id="footer.sub" className="sub" />
+                <Block id="footer.name" className="name" locked />
+                <Block id="footer.sub" className="sub" locked />
               </span>
             </div>
             <nav className="footer-nav" aria-label="Footer">
-              <Block id="footer.nav.who" href="#who" />
-              <Block id="footer.nav.what" href="#what" />
-              <Block id="footer.nav.why" href="#why" />
-              <Block id="footer.nav.join" href="#join" />
+              <Block id="footer.nav.who" href="#who" locked />
+              <Block id="footer.nav.what" href="#what" locked />
+              <Block id="footer.nav.why" href="#why" locked />
+              <Block id="footer.nav.join" href="#join" locked />
             </nav>
           </div>
           <div className="footer-bottom">
-            <Block id="footer.copy" />
-            <Block id="footer.principles" />
+            <Block id="footer.copy" locked />
+            <Block id="footer.principles" locked />
           </div>
         </div>
       </footer>

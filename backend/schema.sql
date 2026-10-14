@@ -11,6 +11,8 @@
 --   .\.venv\Scripts\python.exe backend\seed_member.py
 -- members.title stores one officer-title abbreviation, or NULL.
 -- members.is_admin grants full edit access.
+-- members.birth_month and members.birth_day store a birthday, or both stay NULL.
+-- year.fraternal stores the current fraternal year, such as 2026–27.
 -- images holds the logo, carousel photos, About photos, uploads, and profile photos.
 -- Profile photos store crop_x, crop_y, and crop_scale for the viewing angle.
 -- About photos use slots recog.0 through recog.3.
@@ -27,14 +29,31 @@ CREATE TABLE IF NOT EXISTS members (
   password_hash TEXT NOT NULL,
   display_name TEXT NOT NULL,
   title TEXT,
-  is_admin BOOLEAN NOT NULL DEFAULT FALSE
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  birth_month SMALLINT,
+  birth_day SMALLINT
 );
 
 ALTER TABLE members ADD COLUMN IF NOT EXISTS title TEXT;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_month SMALLINT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_day SMALLINT;
 ALTER TABLE members DROP CONSTRAINT IF EXISTS members_title_abbrev;
 ALTER TABLE members ADD CONSTRAINT members_title_abbrev
   CHECK (title IS NULL OR title IN ('GK', 'DGK', 'CH', 'CHP', 'REC', 'FS', 'TR', 'ADV', 'WRD', 'IG', 'OG', 'LEC', 'T1', 'T2', 'T3', 'PD', 'MD', 'FD', 'FAM', 'COM', 'LIFE', 'VOC', 'PGK'));
+ALTER TABLE members DROP CONSTRAINT IF EXISTS members_birthday_chk;
+ALTER TABLE members ADD CONSTRAINT members_birthday_chk CHECK (
+  (birth_month IS NULL AND birth_day IS NULL)
+  OR (
+    birth_month BETWEEN 1 AND 12
+    AND birth_day BETWEEN 1 AND 31
+    AND (
+      (birth_month = 2 AND birth_day <= 29)
+      OR (birth_month IN (4, 6, 9, 11) AND birth_day <= 30)
+      OR (birth_month IN (1, 3, 5, 7, 8, 10, 12) AND birth_day <= 31)
+    )
+  )
+);
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   jti TEXT PRIMARY KEY,
@@ -210,7 +229,7 @@ Fort Worth, TX 76179 US$v$, 22),
   ('member', 'officer.14.name', 'text', $v$Steven Alvarez$v$, 67),
   ('member', 'directors.eyebrow', 'text', $v$Fraternal year 2026–27$v$, 68),
   ('member', 'directors.title', 'text', $v$Current Directors$v$, 69),
-  ('member', 'directors.intro', 'text', $v$Program directors for the 2026–27 fraternal year. Replace the sample names.$v$, 70),
+  ('member', 'directors.intro', 'text', $v$Program directors for the 2026–27 fraternal year.$v$, 70),
   ('member', 'director.0.role', 'text', $v$Program Director$v$, 71),
   ('member', 'director.0.name', 'text', $v$Sample Program Director$v$, 72),
   ('member', 'director.1.role', 'text', $v$Faith Director$v$, 73),
@@ -323,6 +342,12 @@ Fort Worth, TX 76179 US$v$, 22),
   ('member', 'recog.3.detail', 'text', $v$He logged charity hours each month and walked new members through their first meeting.$v$, 180)
 ) AS v(slug, block_key, field_type, value, sort_order)
 JOIN pages p ON p.slug = v.slug
+ON CONFLICT (page_id, "key") DO NOTHING;
+
+INSERT INTO content_blocks (page_id, "key", field_type, value, sort_order)
+SELECT p.id, 'year.fraternal', 'text', $v$2026–27$v$, 200
+FROM pages p
+WHERE p.slug = 'member'
 ON CONFLICT (page_id, "key") DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS images (

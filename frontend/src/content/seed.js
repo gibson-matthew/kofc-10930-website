@@ -236,7 +236,7 @@ memberList.push(
   text("directors.title", "Current Directors"),
   text(
     "directors.intro",
-    "Program directors for the 2026\u201327 fraternal year. Replace the sample names.",
+    "Program directors for the 2026\u201327 fraternal year.",
   ),
 );
 
@@ -400,6 +400,7 @@ memberList.push(
     "event.4.detail",
     "Sorted coats are handed out to families at the parish from the morning shift.",
   ),
+  text("year.fraternal", "2026\u201327"),
 );
 
 export const memberBlocks = withOrder(memberList);

@@ -5,7 +5,9 @@ import { Block, Eyebrow } from "../components/Block";
 import CroppedPhoto from "../components/CroppedPhoto";
 import { Avatar, Portrait, PortraitSm } from "../components/Marks";
 import { ContentProvider, useContent } from "../content/ContentContext";
+import { birthdayGroups } from "../birthdays";
 import { LOGO_SRC, SITE_TITLE } from "../content/seed";
+import { DEFAULT_YEAR, FIXED_CHROME, YEAR_KEY, fraternalPhrases, normalizeFraternalYear } from "../content/year";
 import EventsSection from "./EventsSection";
 import HonorsSection from "./HonorsSection";
 import SettingsView from "./SettingsView";
@@ -197,7 +199,7 @@ function RecogCard({ index, editing, recognition, onReload }) {
             </>
           ) : null}{" "}
           {editing ? (
-            <span className="more">{text(`recog.${index}.more`) || "Read More..."}</span>
+            <span className="more">Read More...</span>
           ) : (
             <button
               type="button"
@@ -205,7 +207,7 @@ function RecogCard({ index, editing, recognition, onReload }) {
               aria-expanded={open ? "true" : "false"}
               onClick={() => setOpen((value) => !value)}
             >
-              {open ? "Show less" : text(`recog.${index}.more`) || "Read More..."}
+              {open ? "Show less" : "Read More..."}
             </button>
           )}
         </p>
@@ -232,7 +234,8 @@ function keepEditingClick(event) {
 }
 
 function EditBar() {
-  const { editing, startEdit, cancelEdit, saveEdits } = useContent();
+  const { editing, startEdit, cancelEdit, saveEdits, draftText, setFraternalYear } = useContent();
+  const yearValue = draftText(YEAR_KEY);
   return (
     <>
       <button
@@ -245,6 +248,21 @@ function EditBar() {
       >
         {editing ? "CANCEL CHANGES" : "EDIT PAGE"}
       </button>
+      {editing ? (
+        <label className="year-field">
+          <span>Fraternal year</span>
+          <input
+            value={yearValue}
+            maxLength={9}
+            inputMode="text"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Fraternal year"
+            placeholder="2026–27"
+            onChange={(event) => setFraternalYear(event.target.value)}
+          />
+        </label>
+      ) : null}
       <button type="button" className="btn save-edits" id="saveEdits" hidden={!editing} onClick={saveEdits}>
         SAVE CHANGES
       </button>
@@ -252,8 +270,64 @@ function EditBar() {
   );
 }
 
+function YearText({ id, as: Tag = "p", className, htmlId }) {
+  const { editing, draftText, text } = useContent();
+  const raw = editing ? draftText(YEAR_KEY) : text(YEAR_KEY);
+  const year = normalizeFraternalYear(raw) || normalizeFraternalYear(text(YEAR_KEY)) || DEFAULT_YEAR;
+  return (
+    <Tag id={htmlId} className={className}>
+      {fraternalPhrases(year)[id]}
+    </Tag>
+  );
+}
+
+function FixedText({ id, as: Tag = "p", className, htmlId, style }) {
+  return (
+    <Tag id={htmlId} className={className} style={style}>
+      {FIXED_CHROME[id]}
+    </Tag>
+  );
+}
+
+function BirthdayList({ roster, ready, editing, onHide }) {
+  const groups = birthdayGroups(roster);
+  const total = groups.reduce((count, group) => count + group.people.length, 0);
+  function hideControl(key) {
+    if (editing) return null;
+    return (
+      <button type="button" className="more birthday-hide" onClick={onHide} key={key}>
+        Hide birthdays
+      </button>
+    );
+  }
+  if (!ready) return <p>Loading…</p>;
+  return (
+    <>
+      {total > 8 ? hideControl("top") : null}
+      {groups.map((group) => (
+        <div key={group.month}>
+          <p className="birthday-month">{group.label}</p>
+          {group.people.length === 0 ? (
+            <p>No birthdays.</p>
+          ) : (
+            <ul className="birthday-list">
+              {group.people.map((person) => (
+                <li key={person.memberid}>
+                  <span className="when">{person.day}</span>
+                  <span>{person.name}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+      {hideControl("bottom")}
+    </>
+  );
+}
+
 function MemberView() {
-  const { editing, savedFlash, saveError, cancelEdit, registerSaveHook } = useContent();
+  const { editing, savedFlash, saveError, cancelEdit, registerSaveHook, applyFraternalYear } = useContent();
   const { logout: signOut, user, refresh } = useAuth();
   const path = usePath();
   const onSettings = path === "/member/settings";
@@ -347,6 +421,7 @@ function MemberView() {
 
   useEffect(() => {
     return registerSaveHook(async () => {
+      applyFraternalYear();
       const officer = roleDrafts.current.officer;
       const director = roleDrafts.current.director;
       if (!officer || !director) return;
@@ -373,7 +448,7 @@ function MemberView() {
         /* The assignment is saved. The name updates on the next visit. */
       }
     });
-  }, [registerSaveHook, refresh]);
+  }, [registerSaveHook, refresh, applyFraternalYear]);
 
   useEffect(() => {
     if (onSettings) return undefined;
@@ -559,8 +634,8 @@ function MemberView() {
         <div className="container">
           <section id="about" aria-labelledby="aboutHeading">
             <div className="section-head">
-              <Eyebrow id="about.eyebrow" />
-              <Block id="about.title" as="h2" htmlId="aboutHeading" />
+              <FixedText id="about.eyebrow" as="div" className="eyebrow" />
+              <FixedText id="about.title" as="h2" htmlId="aboutHeading" />
             </div>
             <div className="schedule">
               {range(4).map((index) => (
@@ -587,9 +662,9 @@ function MemberView() {
 
           <section className="block" id="officers" aria-labelledby="officersHeading">
             <div className="section-head">
-              <Eyebrow id="officers.eyebrow" />
+              <YearText id="officers.eyebrow" as="div" className="eyebrow" />
               <Block id="officers.title" as="h2" htmlId="officersHeading" locked />
-              <Block id="officers.intro" as="p" htmlId="headlineIntro" />
+              <YearText id="officers.intro" as="p" htmlId="headlineIntro" />
             </div>
             <div className="officer-grid" id="officerGrid">
               <RoleGrid
@@ -604,9 +679,9 @@ function MemberView() {
 
           <section className="block" id="directors" aria-labelledby="directorsHeading">
             <div className="section-head">
-              <Eyebrow id="directors.eyebrow" />
+              <YearText id="directors.eyebrow" as="div" className="eyebrow" />
               <Block id="directors.title" as="h2" htmlId="directorsHeading" locked />
-              <Block id="directors.intro" as="p" htmlId="directorIntro" />
+              <YearText id="directors.intro" as="p" htmlId="directorIntro" />
             </div>
             <div className="officer-grid" id="directorGrid">
               <RoleGrid
@@ -621,7 +696,7 @@ function MemberView() {
 
           <section className="block" id="events" aria-labelledby="eventsHeading">
             <div className="section-head">
-              <Eyebrow id="events.eyebrow" />
+              <FixedText id="events.eyebrow" as="div" className="eyebrow" />
               <Block id="events.title" as="h2" htmlId="eventsHeading" locked />
             </div>
             <EventsSection />
@@ -631,8 +706,8 @@ function MemberView() {
         <section className="on-navy" id="blood">
           <div className="container split">
             <div>
-              <Eyebrow id="blood.eyebrow" />
-              <Block
+              <FixedText id="blood.eyebrow" as="div" className="eyebrow" />
+              <FixedText
                 id="blood.title"
                 as="h2"
                 className="serif"
@@ -665,9 +740,9 @@ function MemberView() {
         <div className="container tools" id="links">
           <section id="quickLinks" aria-labelledby="qlHeading">
             <div className="section-head" style={{ marginTop: "1rem" }}>
-              <Eyebrow id="links.eyebrow" />
-              <Block id="links.title" as="h2" htmlId="qlHeading" />
-              <Block id="links.intro" as="p" />
+              <FixedText id="links.eyebrow" as="div" className="eyebrow" />
+              <FixedText id="links.title" as="h2" htmlId="qlHeading" />
+              <FixedText id="links.intro" as="p" />
             </div>
             <div className="link-grid">
               {LINK_CARDS.map((card) => {
@@ -698,7 +773,14 @@ function MemberView() {
                     )}
                     {card.panel ? (
                       <div className="detail" id={card.panel} hidden={!shown}>
-                        {card.hours ? (
+                        {card.panel === "panel-birthdays" ? (
+                          <BirthdayList
+                            roster={roster}
+                            ready={rosterReady}
+                            editing={editing}
+                            onHide={() => setOpenPanels((current) => ({ ...current, [card.panel]: false }))}
+                          />
+                        ) : card.hours ? (
                           <p>
                             <Block id="links.9.before" />{" "}
                             <Block
@@ -730,19 +812,20 @@ function MemberView() {
             <div className="footer-brand">
               <img className="hero-medallion-navbar" src={logoSrc} alt="" onError={keepExampleLogo} />
               <span>
-                <Block id="footer.name" className="name" />
-                <Block id="footer.sub" className="sub" />
+                <Block id="footer.name" className="name" locked />
+                <Block id="footer.sub" className="sub" locked />
               </span>
             </div>
             <nav className="footer-nav" aria-label="Footer">
-              <Block id="footer.nav.about" {...sectionProps("about")} />
-              <Block id="footer.nav.officers" {...sectionProps("officers")} />
-              <Block id="footer.nav.directors" {...sectionProps("directors")} />
-              <Block id="footer.nav.events" {...sectionProps("events")} />
-              <Block id="footer.nav.blood" {...sectionProps("blood")} />
-              <Block id="footer.nav.links" {...sectionProps("links")} />
+              <Block id="footer.nav.about" locked {...sectionProps("about")} />
+              <Block id="footer.nav.officers" locked {...sectionProps("officers")} />
+              <Block id="footer.nav.directors" locked {...sectionProps("directors")} />
+              <Block id="footer.nav.events" locked {...sectionProps("events")} />
+              <Block id="footer.nav.blood" locked {...sectionProps("blood")} />
+              <Block id="footer.nav.links" locked {...sectionProps("links")} />
               <Block
                 id="footer.nav.public"
+                locked
                 href="/"
                 htmlId="publicLink"
                 onClick={(event) => {
@@ -753,8 +836,8 @@ function MemberView() {
             </nav>
           </div>
           <div className="footer-bottom">
-            <Block id="footer.copy" />
-            <Block id="footer.principles" />
+            <Block id="footer.copy" locked />
+            <Block id="footer.principles" locked />
           </div>
         </div>
       </footer>

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPage, saveMember } from "../api";
 import { memberBlocks, publicBlocks, serialize, toMap } from "./seed";
+import { DEFAULT_YEAR, YEAR_KEY, withFraternalYear } from "./year";
 
 const StateContext = createContext(null);
 const ActionsContext = createContext(null);
@@ -126,6 +127,21 @@ export function ContentProvider({ slug, canEdit = false, children }) {
       },
       setDraft(id, value) {
         draftRef.current = { ...draftRef.current, [id]: value };
+      },
+      setFraternalYear(raw) {
+        const trimmed = String(raw ?? "").slice(0, 9);
+        const next = withFraternalYear(draftRef.current, trimmed);
+        draftRef.current = next || { ...draftRef.current, [YEAR_KEY]: trimmed };
+        setEpoch((value) => value + 1);
+      },
+      applyFraternalYear() {
+        const raw = Object.prototype.hasOwnProperty.call(draftRef.current, YEAR_KEY)
+          ? draftRef.current[YEAR_KEY]
+          : DEFAULT_YEAR;
+        const next = withFraternalYear(draftRef.current, raw);
+        if (!next) throw new Error("Use a fraternal year such as 2026\u201327.");
+        draftRef.current = next;
+        setEpoch((value) => value + 1);
       },
       registerSaveHook(fn) {
         saveHooksRef.current.add(fn);

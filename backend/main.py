@@ -112,6 +112,8 @@ class MemberOut(BaseModel):
     crop_x: float = 0
     crop_y: float = 0
     crop_scale: float = 1
+    birth_month: int | None = None
+    birth_day: int | None = None
 
 
 class TitleIn(BaseModel):
@@ -138,11 +140,18 @@ class AdminIn(BaseModel):
     is_admin: bool
 
 
+class BirthdayIn(BaseModel):
+    birth_month: int | None = None
+    birth_day: int | None = None
+
+
 class MemberCreateIn(BaseModel):
     memberid: str = Field(min_length=1, max_length=32)
     password: str = Field(min_length=1, max_length=128)
     display_name: str = Field(min_length=1, max_length=80)
     title: str | None = None
+    birth_month: int | None = None
+    birth_day: int | None = None
 
     @field_validator("memberid")
     @classmethod
@@ -474,7 +483,14 @@ def delete_my_photo(member: dict = Depends(get_current_member)) -> MemberOut:
 def create_member(body: MemberCreateIn, member: dict = Depends(require_admin)) -> MemberOut:
     del member
     try:
-        created = store.create_member(body.memberid, body.password, body.display_name, body.title)
+        created = store.create_member(
+            body.memberid,
+            body.password,
+            body.display_name,
+            body.title,
+            body.birth_month,
+            body.birth_day,
+        )
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
     return MemberOut(**created)
@@ -509,6 +525,20 @@ def update_member_admin(
     del member
     try:
         updated = store.set_admin(memberid, body.is_admin)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return MemberOut(**updated)
+
+
+@api.patch("/members/{memberid}/birthday", response_model=MemberOut)
+def update_member_birthday(
+    memberid: str,
+    body: BirthdayIn,
+    member: dict = Depends(require_admin),
+) -> MemberOut:
+    del member
+    try:
+        updated = store.set_birthday(memberid, body.birth_month, body.birth_day)
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
     return MemberOut(**updated)
