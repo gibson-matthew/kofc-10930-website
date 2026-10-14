@@ -138,6 +138,54 @@ class AdminIn(BaseModel):
     is_admin: bool
 
 
+class MemberCreateIn(BaseModel):
+    memberid: str = Field(min_length=1, max_length=32)
+    password: str = Field(min_length=1, max_length=128)
+    display_name: str = Field(min_length=1, max_length=80)
+    title: str | None = None
+
+    @field_validator("memberid")
+    @classmethod
+    def normalize_memberid(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned.isdigit():
+            raise ValueError("Membership ID must contain only digits")
+        return cleaned
+
+    @field_validator("password")
+    @classmethod
+    def password_within_bcrypt_limit(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password is too long")
+        return value
+
+
+class EventIn(BaseModel):
+    title: str = ""
+    event_date: str = ""
+    event_time: str | None = None
+    location: str | None = None
+    description: str = ""
+
+
+class HonorOut(BaseModel):
+    id: int
+    category: str
+    name: str
+    period: str
+    note: str = ""
+    photo_url: str | None = None
+
+
+class EventOut(BaseModel):
+    id: int
+    title: str
+    event_date: str
+    event_time: str | None = None
+    location: str | None = None
+    description: str = ""
+
+
 class ImageOut(BaseModel):
     id: int
     url: str
@@ -422,6 +470,16 @@ def delete_my_photo(member: dict = Depends(get_current_member)) -> MemberOut:
     return MemberOut(**updated)
 
 
+@api.post("/members", response_model=MemberOut, status_code=status.HTTP_201_CREATED)
+def create_member(body: MemberCreateIn, member: dict = Depends(require_admin)) -> MemberOut:
+    del member
+    try:
+        created = store.create_member(body.memberid, body.password, body.display_name, body.title)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return MemberOut(**created)
+
+
 @api.get("/members", response_model=list[MemberOut])
 def list_members(member: dict = Depends(require_admin)) -> list[MemberOut]:
     del member
@@ -481,6 +539,151 @@ def save_assignments(body: AssignmentsIn, member: dict = Depends(require_admin))
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
     return [MemberOut(**row) for row in rows]
+
+
+def _honor_fields(category: str, name: str, note: str, year: str, month: str, period: str) -> dict:
+    return {
+        "category": category,
+        "name": name,
+        "note": note,
+        "year": year,
+        "month": month,
+        "period": period,
+    }
+
+
+async def _optional_image(upload: UploadFile | None) -> tuple[str, str] | None:
+    if upload is None or not (upload.filename or "").strip():
+        return None
+    data, content_type, ext, _original = await _read_upload(upload)
+    return write_upload(data, ext), content_type
+
+
+@api.get("/honors", response_model=list[HonorOut])
+def list_honors(member: dict = Depends(get_current_member)) -> list[HonorOut]:
+    del member
+    try:
+        rows = store.list_honors()
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return [HonorOut(**row) for row in rows]
+
+
+@api.post("/honors", response_model=HonorOut, status_code=status.HTTP_201_CREATED)
+async def create_honor(
+    member: dict = Depends(require_admin),
+    category: str = Form(...),
+    name: str = Form(...),
+    note: str = Form(""),
+    year: str = Form(""),
+    month: str = Form(""),
+    period: str = Form(""),
+    file: UploadFile | None = File(None),
+) -> HonorOut:
+    del member
+    photo = await _optional_image(file)
+    try:
+        created = store.create_honor(_honor_fields(category, name, note, year, month, period), photo)
+    except (StoreError, MediaError) as exc:
+        if photo:
+            delete_stored_file(photo[0])
+        _raise_store(exc)
+    return HonorOut(**created)
+
+
+@api.get("/honors/{honor_id}/photo")
+def honor_photo(honor_id: int, member: dict = Depends(get_current_member)) -> FileResponse:
+    del member
+    found = store.honor_file(honor_id)
+    if found is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo was not found.")
+    path, content_type = found
+    try:
+        full = absolute_path(path)
+    except MediaError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo was not found.") from exc
+    if not full.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo was not found.")
+    return FileResponse(full, media_type=content_type)
+
+
+@api.patch("/honors/{honor_id}", response_model=HonorOut)
+async def update_honor(
+    honor_id: int,
+    member: dict = Depends(require_admin),
+    category: str = Form(...),
+    name: str = Form(...),
+    note: str = Form(""),
+    year: str = Form(""),
+    month: str = Form(""),
+    period: str = Form(""),
+    clear_photo: str = Form("false"),
+    file: UploadFile | None = File(None),
+) -> HonorOut:
+    del member
+    photo = await _optional_image(file)
+    try:
+        updated = store.update_honor(
+            honor_id,
+            _honor_fields(category, name, note, year, month, period),
+            photo,
+            clear_photo.strip().lower() in {"1", "true", "yes", "on"},
+        )
+    except (StoreError, MediaError) as exc:
+        if photo:
+            delete_stored_file(photo[0])
+        _raise_store(exc)
+    return HonorOut(**updated)
+
+
+@api.delete("/honors/{honor_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_honor(honor_id: int, member: dict = Depends(require_admin)) -> Response:
+    del member
+    try:
+        store.delete_honor(honor_id)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@api.get("/events", response_model=list[EventOut])
+def list_events(member: dict = Depends(get_current_member)) -> list[EventOut]:
+    del member
+    try:
+        rows = store.list_events()
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return [EventOut(**row) for row in rows]
+
+
+@api.post("/events", response_model=EventOut, status_code=status.HTTP_201_CREATED)
+def create_event(body: EventIn, member: dict = Depends(require_admin)) -> EventOut:
+    del member
+    try:
+        created = store.create_event(body.model_dump())
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return EventOut(**created)
+
+
+@api.patch("/events/{event_id}", response_model=EventOut)
+def update_event(event_id: int, body: EventIn, member: dict = Depends(require_admin)) -> EventOut:
+    del member
+    try:
+        updated = store.update_event(event_id, body.model_dump())
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return EventOut(**updated)
+
+
+@api.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_event(event_id: int, member: dict = Depends(require_admin)) -> Response:
+    del member
+    try:
+        store.delete_event(event_id)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @api.get("/media/slots", response_model=SlotsOut)

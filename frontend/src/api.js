@@ -232,3 +232,70 @@ export async function assignMediaSlot(id, slot) {
   });
   return readJson(response, "Could not update the image slot.");
 }
+
+export async function createMember(payload) {
+  const response = await send("/api/members", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return readJson(response, "Could not create the member.");
+}
+
+export async function fetchHonors() {
+  const response = await send("/api/honors");
+  return readJson(response, "Could not load past honors.");
+}
+
+function honorBody(fields, file) {
+  const body = new FormData();
+  body.append("category", fields.category);
+  body.append("name", fields.name || "");
+  body.append("note", fields.note || "");
+  body.append("year", fields.year == null ? "" : String(fields.year));
+  body.append("month", fields.month == null ? "" : String(fields.month));
+  body.append("period", fields.period || "");
+  if (fields.clear_photo) body.append("clear_photo", "true");
+  if (file) body.append("file", file);
+  return body;
+}
+
+export async function createHonor(fields, file) {
+  const response = await send("/api/honors", { method: "POST", body: honorBody(fields, file) });
+  return readJson(response, "Could not add the past honor.");
+}
+
+export async function updateHonor(id, fields, file) {
+  const response = await send(`/api/honors/${id}`, { method: "PATCH", body: honorBody(fields, file) });
+  return readJson(response, "Could not save the past honor.");
+}
+
+export async function deleteHonor(id) {
+  const response = await send(`/api/honors/${id}`, { method: "DELETE" });
+  return readJson(response, "Could not remove the past honor.");
+}
+
+export async function fetchEvents() {
+  const response = await send("/api/events");
+  return readJson(response, "Could not load events.");
+}
+
+export async function createEvent(payload) {
+  const response = await send("/api/events", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return readJson(response, "Could not add the event.");
+}
+
+export async function updateEvent(id, payload) {
+  const response = await send(`/api/events/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+  return readJson(response, "Could not save the event.");
+}
+
+export async function deleteEvent(id) {
+  const response = await send(`/api/events/${id}`, { method: "DELETE" });
+  return readJson(response, "Could not remove the event.");
+}

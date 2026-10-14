@@ -275,6 +275,13 @@ section.block { margin-top: 2.2rem; }
   margin-top: 0.35rem;
   color: var(--ink-soft);
   font-size: 0.92rem;
+  white-space: pre-wrap;
+}
+
+.recog .when {
+  color: var(--wine);
+  font-size: 0.76rem;
+  font-weight: 700;
 }
 
 .more {
@@ -755,4 +762,140 @@ button.more {
 .save-status {
   max-width: min(36rem, calc(100% - 2rem));
   text-align: center;
+}
+
+.members-create {
+  margin-bottom: 0.7rem;
+}
+
+#members .officer-grid {
+  margin-top: 0.7rem;
+}
+
+.honor-group > h3 {
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--navy);
+  margin: 1.15rem 0 0.55rem;
+}
+
+.recog-grid > .honor-form,
+.card-grid > .event.is-form,
+.recog-grid > .settings-hint,
+.card-grid > .settings-hint {
+  grid-column: 1 / -1;
+}
+
+.event.is-form {
+  margin: 0.45rem 0 0.6rem;
+}
+
+body.page-member .signin-field select,
+body.page-member .signin-field textarea {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid rgba(26, 23, 20, 0.16);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.45;
+}
+
+body.page-member .signin-field textarea {
+  min-height: 5.5rem;
+  resize: vertical;
+}
+
+.calendar {
+  background: #fff;
+  border: 1px solid rgba(26, 23, 20, 0.16);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.75rem 0.55rem;
+}
+
+.calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.calendar-head .btn {
+  padding: 0.35rem 0.55rem;
+}
+
+.calendar-month {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--navy);
+  text-align: center;
+}
+
+.calendar-week,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.15rem;
+}
+
+.calendar-week {
+  margin-top: 0.55rem;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--wine);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.calendar-day {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.92rem;
+  border-radius: var(--radius);
+  min-height: 2.15rem;
+  padding: 0.2rem;
+  cursor: pointer;
+}
+
+.calendar-day:hover {
+  border-color: var(--gold);
+}
+
+.calendar-day.is-today {
+  border-color: var(--gold);
+}
+
+.calendar-day.is-selected {
+  background: var(--navy);
+  color: var(--gold-soft);
+  border-color: var(--navy);
+}
+
+.calendar-day.is-selected.is-today {
+  border-color: var(--gold);
+}
+
+.calendar-day:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.calendar-chosen {
+  margin: 0.55rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.honor-form .btn:disabled,
+.event.is-form .btn:disabled,
+.calendar .btn:disabled,
+.recog-actions .btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }

@@ -432,6 +432,186 @@ def _image_values_sql() -> str:
     return ",\n".join(rows)
 
 
+# Archive examples used when the honors table is empty on first create,
+# and when PostgreSQL is down.
+HONOR_SEED: tuple[dict, ...] = (
+    {
+        "category": "knight_month",
+        "name": "James Harrington",
+        "period": "October 2025",
+        "sort_year": 2025,
+        "sort_month": 10,
+        "note": "He chaired the Coats for Kids sorting crew.",
+    },
+    {
+        "category": "family_month",
+        "name": "The Nguyen Family",
+        "period": "September 2025",
+        "sort_year": 2025,
+        "sort_month": 9,
+        "note": "They led the parish food pantry weekend.",
+    },
+    {
+        "category": "knight_year",
+        "name": "Robert Hale",
+        "period": "2025",
+        "sort_year": 2025,
+        "sort_month": None,
+        "note": "He logged charity hours each month and mentored new members.",
+    },
+    {
+        "category": "family_year",
+        "name": "The Ortiz Family",
+        "period": "2025",
+        "sort_year": 2025,
+        "sort_month": None,
+        "note": "They hosted monthly rosaries and supported the scholarship fund.",
+    },
+    {
+        "category": "past_gk",
+        "name": "William Grant",
+        "period": "2024–25",
+        "sort_year": 2024,
+        "sort_month": None,
+        "note": "He led the council through the Coats for Kids year.",
+    },
+)
+
+# Same occasions the member page used to keep in content blocks.
+EVENT_SEED: tuple[dict, ...] = (
+    {
+        "title": "Online officers meeting",
+        "event_date": "2026-10-13",
+        "event_time": "7:00 p.m.",
+        "location": None,
+        "description": "Brothers meet online to review the month's business before the council meeting.",
+        "sort_order": 1,
+    },
+    {
+        "title": "Council rosary",
+        "event_date": "2026-10-14",
+        "event_time": "6:40 p.m.",
+        "location": "Parish hall",
+        "description": "The council prays the rosary together in the parish hall before the business meeting.",
+        "sort_order": 2,
+    },
+    {
+        "title": "Council business meeting",
+        "event_date": "2026-10-14",
+        "event_time": "7:00 p.m.",
+        "location": "Parish hall",
+        "description": "Officers report, motions are heard, and brothers plan the next charity work.",
+        "sort_order": 3,
+    },
+    {
+        "title": "Red Cross blood drive",
+        "event_date": "2026-10-24",
+        "event_time": "9:00 a.m. to 3:00 p.m.",
+        "location": "5953 Bowman Roberts Rd",
+        "description": "Give blood at the council hall. Appointments and walk-ins are both welcome.",
+        "sort_order": 4,
+    },
+    {
+        "title": "Coats for Kids distribution",
+        "event_date": "2026-11-14",
+        "event_time": "8:00 a.m.",
+        "location": "Parish",
+        "description": "Sorted coats are handed out to families at the parish from the morning shift.",
+        "sort_order": 5,
+    },
+)
+
+
+def _sql_text(value: str | None) -> str:
+    if value is None:
+        return "NULL"
+    return "'" + value.replace("'", "''") + "'"
+
+
+def records_schema_sql() -> str:
+    honor_rows = ",\n  ".join(
+        "("
+        + ", ".join(
+            [
+                _sql_text(item["category"]),
+                _sql_text(item["name"]),
+                _sql_text(item["period"]),
+                str(item["sort_year"]),
+                "NULL" if item["sort_month"] is None else str(item["sort_month"]),
+                _sql_text(item["note"]),
+            ]
+        )
+        + ")"
+        for item in HONOR_SEED
+    )
+    event_rows = ",\n  ".join(
+        "("
+        + ", ".join(
+            [
+                _sql_text(item["title"]),
+                f"DATE {_sql_text(item['event_date'])}",
+                _sql_text(item["event_time"]),
+                _sql_text(item["location"]),
+                _sql_text(item["description"]),
+                str(item["sort_order"]),
+            ]
+        )
+        + ")"
+        for item in EVENT_SEED
+    )
+    return f"""CREATE TABLE IF NOT EXISTS honors (
+  id SERIAL PRIMARY KEY,
+  category TEXT NOT NULL,
+  name TEXT NOT NULL,
+  period TEXT NOT NULL,
+  sort_year INTEGER NOT NULL,
+  sort_month INTEGER,
+  note TEXT NOT NULL DEFAULT '',
+  photo_path TEXT,
+  photo_type TEXT,
+  CONSTRAINT honors_category_chk CHECK (
+    category IN ('knight_month', 'family_month', 'knight_year', 'family_year', 'past_gk')
+  ),
+  CONSTRAINT honors_month_chk CHECK (
+    (category IN ('knight_month', 'family_month') AND sort_month BETWEEN 1 AND 12)
+    OR (category IN ('knight_year', 'family_year', 'past_gk') AND sort_month IS NULL)
+  )
+);
+
+CREATE INDEX IF NOT EXISTS honors_category_idx
+  ON honors (category, sort_year DESC, sort_month DESC);
+
+CREATE TABLE IF NOT EXISTS council_events (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  event_date DATE NOT NULL,
+  event_time TEXT,
+  location TEXT,
+  description TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS council_events_date_idx
+  ON council_events (event_date, id);
+
+INSERT INTO honors (category, name, period, sort_year, sort_month, note)
+SELECT v.category, v.name, v.period, v.sort_year, v.sort_month, v.note
+FROM (
+  VALUES
+  {honor_rows}
+) AS v(category, name, period, sort_year, sort_month, note)
+WHERE NOT EXISTS (SELECT 1 FROM honors);
+
+INSERT INTO council_events (title, event_date, event_time, location, description, sort_order)
+SELECT v.title, v.event_date, v.event_time, v.location, v.description, v.sort_order
+FROM (
+  VALUES
+  {event_rows}
+) AS v(title, event_date, event_time, location, description, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM council_events);
+"""
+
+
 def render_schema() -> str:
     rows: list[str] = []
     for slug, blocks in PAGES.items():
@@ -454,6 +634,7 @@ def render_schema() -> str:
     title_choices = _title_choices_sql()
     image_values = _image_values_sql()
     slot_check = slot_check_sql()
+    records_sql = records_schema_sql()
     return f"""-- Council 10930 schema and content seed.
 -- Create the database, then run this file:
 --   createdb koc10930
@@ -471,6 +652,9 @@ def render_schema() -> str:
 -- Profile photos store crop_x, crop_y, and crop_scale for the viewing angle.
 -- About photos use slots recog.0 through recog.3.
 -- Membership 1000000 is renamed to David Hernandez when the row still says Test Member.
+-- honors stores past Knights and Families of the Month and Year, and Past Grand Knights.
+-- council_events stores the member-view upcoming events.
+-- Example rows are inserted when honors or council_events is created empty.
 
 BEGIN;
 
@@ -577,6 +761,7 @@ SET is_admin = TRUE,
 WHERE membership_id = '1000000'
   AND NOT EXISTS (SELECT 1 FROM members WHERE is_admin);
 
+{records_sql}
 COMMIT;
 """
 

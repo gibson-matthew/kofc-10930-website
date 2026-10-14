@@ -5,7 +5,9 @@ import { Block, Eyebrow } from "../components/Block";
 import CroppedPhoto from "../components/CroppedPhoto";
 import { Avatar, Portrait, PortraitSm } from "../components/Marks";
 import { ContentProvider, useContent } from "../content/ContentContext";
-import { EVENT_COUNT, LOGO_SRC } from "../content/seed";
+import { LOGO_SRC } from "../content/seed";
+import EventsSection from "./EventsSection";
+import HonorsSection from "./HonorsSection";
 import SettingsView from "./SettingsView";
 import { navigate, usePath } from "../router";
 import { DIRECTOR_ROLES, memberLabel, OFFICER_ROLES } from "../titles";
@@ -221,32 +223,6 @@ function RecogCard({ index, editing, recognition, onReload }) {
           </p>
         ) : null}
       </div>
-    </article>
-  );
-}
-
-function EventCard({ index, editing }) {
-  const { text } = useContent();
-  const [open, setOpen] = useState(false);
-  const showDetail = editing || open;
-  const label = text(`event.${index}.more`) || "Read More...";
-  return (
-    <article className="event">
-      <Block id={`event.${index}.when`} as="div" className="when" />
-      <Block id={`event.${index}.title`} as="strong" />
-      {showDetail ? <Block id={`event.${index}.detail`} as="p" /> : null}
-      {editing ? (
-        <span className="more">{label}</span>
-      ) : (
-        <button
-          type="button"
-          className="more"
-          aria-expanded={open ? "true" : "false"}
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? "Show less" : label}
-        </button>
-      )}
     </article>
   );
 }
@@ -607,6 +583,8 @@ function MemberView() {
             </div>
           </section>
 
+          <HonorsSection />
+
           <section className="block" id="officers" aria-labelledby="officersHeading">
             <div className="section-head">
               <Eyebrow id="officers.eyebrow" />
@@ -646,11 +624,7 @@ function MemberView() {
               <Eyebrow id="events.eyebrow" />
               <Block id="events.title" as="h2" htmlId="eventsHeading" locked />
             </div>
-            <div className="card-grid" id="eventList">
-              {range(EVENT_COUNT).map((index) => (
-                <EventCard key={`event-${index}`} index={index} editing={editing} />
-              ))}
-            </div>
+            <EventsSection />
           </section>
         </div>
 

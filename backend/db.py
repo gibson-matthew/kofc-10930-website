@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from media import RECOG_SLOTS, SEED_IMAGES, delete_stored_file, public_url, slot_check_sql
 from security import hash_password, verify_password, verify_password_dummy
-from seed import PAGES
+from seed import EVENT_SEED, HONOR_SEED, PAGES
 from titles import (
     DIRECTOR_ROLE_SET,
     OFFICER_ROLE_SET,
@@ -59,6 +60,10 @@ class Store:
         self._members: list[dict] = []
         self._images: list[dict] = []
         self._image_seq = 1
+        self._honors = _seed_honor_rows()
+        self._events = _seed_event_rows()
+        self._honor_seq = len(self._honors) + 1
+        self._event_seq = len(self._events) + 1
         self._refresh: dict[str, dict] = {}
         self._prefer_memory = False
 
@@ -85,6 +90,10 @@ class Store:
             ]
             self._images = _seed_image_rows()
             self._image_seq = len(self._images) + 1
+            self._honors = _seed_honor_rows()
+            self._events = _seed_event_rows()
+            self._honor_seq = len(self._honors) + 1
+            self._event_seq = len(self._events) + 1
         conn = _connect()
         if conn is None:
             with self._lock:
@@ -94,6 +103,7 @@ class Store:
             with conn.cursor() as cur:
                 _ensure_schema(cur)
                 _seed_images(cur)
+                _ensure_records(cur)
                 status = _upsert_test_member(cur, hashed)
                 _ensure_sample_member(cur, hashed)
                 _ensure_admin(cur)
@@ -534,6 +544,440 @@ class Store:
             _rollback(conn)
             raise StoreError("Could not save officer assignments.", 503) from exc
         return self.list_members()
+
+    def create_member(self, memberid: str, password: str, display_name: str, title: str | None) -> dict:
+        memberid, name, cleaned = _member_create_fields(memberid, password, display_name, title)
+        hashed = hash_password(password)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                if any(item["membership_id"] == memberid for item in self._members):
+                    raise StoreError("That membership ID is already in use.", 409)
+                if cleaned:
+                    for member in self._members:
+                        if member.get("title") == cleaned:
+                            member["title"] = None
+                self._members.append(
+                    {
+                        "membership_id": memberid,
+                        "password_hash": hashed,
+                        "display_name": name,
+                        "title": cleaned,
+                        "is_admin": False,
+                    }
+                )
+            record = self._memory_member(memberid)
+            if record is None:
+                raise StoreError("Could not create the member.", 503)
+            return self._public_member(record)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT membership_id
+                    FROM members
+                    WHERE membership_id = %s OR (%s IS NOT NULL AND title = %s)
+                    ORDER BY membership_id
+                    FOR UPDATE
+                    """,
+                    (memberid, cleaned, cleaned),
+                )
+                rows = cur.fetchall()
+                if any(row[0] == memberid for row in rows):
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("That membership ID is already in use.", 409)
+                if cleaned:
+                    cur.execute(
+                        "UPDATE members SET title = NULL WHERE title = %s",
+                        (cleaned,),
+                    )
+                cur.execute(
+                    """
+                    INSERT INTO members (membership_id, password_hash, display_name, title, is_admin)
+                    VALUES (%s, %s, %s, %s, FALSE)
+                    """,
+                    (memberid, hashed, name, cleaned),
+                )
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            if getattr(exc, "sqlstate", None) == "23505":
+                raise StoreError("That membership ID is already in use.", 409) from exc
+            raise StoreError("Could not create the member.", 503) from exc
+        member = self.get_member(memberid)
+        if member is None:
+            raise StoreError("Could not create the member.", 503)
+        return member
+
+    def list_honors(self) -> list[dict]:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                rows = [dict(item) for item in self._honors]
+            rows.sort(key=_honor_sort_key)
+            return [_public_honor(item) for item in rows]
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, category, name, period, sort_year, sort_month, note, photo_path, photo_type
+                    FROM honors
+                    ORDER BY category, sort_year DESC, sort_month DESC NULLS LAST, id DESC
+                    """
+                )
+                fetched = cur.fetchall()
+            conn.close()
+        except Exception as exc:
+            log.warning("Honor list failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise StoreError("Could not load past honors.", 503) from exc
+        return [_public_honor(_honor_from_row(row)) for row in fetched]
+
+    def honor_file(self, honor_id: int) -> tuple[str, str] | None:
+        row = self._honor_record(honor_id)
+        if row is None or not row.get("photo_path"):
+            return None
+        path = str(row["photo_path"]).replace("\\", "/")
+        if not path.startswith("backend/uploads/"):
+            return None
+        return path, row.get("photo_type") or "application/octet-stream"
+
+    def create_honor(self, fields: dict, photo: tuple[str, str] | None) -> dict:
+        payload = _honor_fields(fields)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                honor_id = self._honor_seq
+                self._honor_seq += 1
+                self._honors.append(_memory_honor(honor_id, payload, photo))
+            row = self._honor_record(honor_id)
+            if row is None:
+                raise StoreError("Could not save the honor.", 503)
+            return _public_honor(row)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO honors
+                      (category, name, period, sort_year, sort_month, note, photo_path, photo_type)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    _honor_params(payload, photo),
+                )
+                honor_id = cur.fetchone()[0]
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the honor.", 503) from exc
+        row = self._honor_record(honor_id)
+        if row is None:
+            raise StoreError("Could not save the honor.", 503)
+        return _public_honor(row)
+
+    def update_honor(
+        self,
+        honor_id: int,
+        fields: dict,
+        photo: tuple[str, str] | None,
+        clear_photo: bool,
+    ) -> dict:
+        payload = _honor_fields(fields)
+        previous = self._honor_record(honor_id)
+        if previous is None:
+            raise StoreError("Honor was not found.", 404)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                target = next((item for item in self._honors if item["id"] == honor_id), None)
+                if target is None:
+                    raise StoreError("Honor was not found.", 404)
+                old_path = target.get("photo_path")
+                target.update(payload)
+                if photo is not None:
+                    target["photo_path"] = photo[0]
+                    target["photo_type"] = photo[1]
+                elif clear_photo:
+                    target["photo_path"] = None
+                    target["photo_type"] = None
+            if photo is not None or clear_photo:
+                if old_path and old_path != (photo[0] if photo else None):
+                    delete_stored_file(old_path)
+            row = self._honor_record(honor_id)
+            if row is None:
+                raise StoreError("Honor was not found.", 404)
+            return _public_honor(row)
+        next_path = previous.get("photo_path")
+        next_type = previous.get("photo_type")
+        if photo is not None:
+            next_path, next_type = photo
+        elif clear_photo:
+            next_path, next_type = None, None
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM honors WHERE id = %s FOR UPDATE", (honor_id,))
+                if cur.fetchone() is None:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Honor was not found.", 404)
+                cur.execute(
+                    """
+                    UPDATE honors
+                    SET category = %s, name = %s, period = %s, sort_year = %s,
+                        sort_month = %s, note = %s, photo_path = %s, photo_type = %s
+                    WHERE id = %s
+                    """,
+                    (*_honor_params(payload, (next_path, next_type) if next_path else None), honor_id),
+                )
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the honor.", 503) from exc
+        if (photo is not None or clear_photo) and previous.get("photo_path") and previous.get("photo_path") != next_path:
+            delete_stored_file(str(previous["photo_path"]))
+        row = self._honor_record(honor_id)
+        if row is None:
+            raise StoreError("Honor was not found.", 404)
+        return _public_honor(row)
+
+    def delete_honor(self, honor_id: int) -> None:
+        previous = self._honor_record(honor_id)
+        if previous is None:
+            raise StoreError("Honor was not found.", 404)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                self._honors = [item for item in self._honors if item["id"] != honor_id]
+            if previous.get("photo_path"):
+                delete_stored_file(str(previous["photo_path"]))
+            return
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM honors WHERE id = %s", (honor_id,))
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Honor was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not remove the honor.", 503) from exc
+        if previous.get("photo_path"):
+            delete_stored_file(str(previous["photo_path"]))
+
+    def list_events(self) -> list[dict]:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                rows = [dict(item) for item in self._events]
+            rows.sort(key=lambda item: (item["event_date"], item["id"]))
+            return [_public_event(item) for item in rows]
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, title, event_date, event_time, location, description
+                    FROM council_events
+                    ORDER BY event_date, id
+                    """
+                )
+                fetched = cur.fetchall()
+            conn.close()
+        except Exception as exc:
+            log.warning("Event list failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise StoreError("Could not load events.", 503) from exc
+        return [_public_event(_event_from_row(row)) for row in fetched]
+
+    def create_event(self, fields: dict) -> dict:
+        payload = _event_fields(fields)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                event_id = self._event_seq
+                self._event_seq += 1
+                self._events.append({"id": event_id, **payload})
+            row = self._event_record(event_id)
+            if row is None:
+                raise StoreError("Could not save the event.", 503)
+            return _public_event(row)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO council_events
+                      (title, event_date, event_time, location, description, sort_order)
+                    VALUES (%s, %s, %s, %s, %s, 0)
+                    RETURNING id
+                    """,
+                    (
+                        payload["title"],
+                        date.fromisoformat(payload["event_date"]),
+                        payload["event_time"],
+                        payload["location"],
+                        payload["description"],
+                    ),
+                )
+                event_id = cur.fetchone()[0]
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the event.", 503) from exc
+        row = self._event_record(event_id)
+        if row is None:
+            raise StoreError("Could not save the event.", 503)
+        return _public_event(row)
+
+    def update_event(self, event_id: int, fields: dict) -> dict:
+        payload = _event_fields(fields)
+        if self._event_record(event_id) is None:
+            raise StoreError("Event was not found.", 404)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                target = next((item for item in self._events if item["id"] == event_id), None)
+                if target is None:
+                    raise StoreError("Event was not found.", 404)
+                target.update(payload)
+            row = self._event_record(event_id)
+            if row is None:
+                raise StoreError("Event was not found.", 404)
+            return _public_event(row)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE council_events
+                    SET title = %s, event_date = %s, event_time = %s, location = %s, description = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        payload["title"],
+                        date.fromisoformat(payload["event_date"]),
+                        payload["event_time"],
+                        payload["location"],
+                        payload["description"],
+                        event_id,
+                    ),
+                )
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Event was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the event.", 503) from exc
+        row = self._event_record(event_id)
+        if row is None:
+            raise StoreError("Event was not found.", 404)
+        return _public_event(row)
+
+    def delete_event(self, event_id: int) -> None:
+        if self._event_record(event_id) is None:
+            raise StoreError("Event was not found.", 404)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                self._events = [item for item in self._events if item["id"] != event_id]
+            return
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM council_events WHERE id = %s", (event_id,))
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Event was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not remove the event.", 503) from exc
+
+    def _honor_record(self, honor_id: int) -> dict | None:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                for item in self._honors:
+                    if item["id"] == honor_id:
+                        return dict(item)
+            return None
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, category, name, period, sort_year, sort_month, note, photo_path, photo_type
+                    FROM honors
+                    WHERE id = %s
+                    """,
+                    (honor_id,),
+                )
+                row = cur.fetchone()
+            conn.close()
+        except Exception as exc:
+            log.warning("Honor lookup failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return None
+        if row is None:
+            return None
+        return _honor_from_row(row)
+
+    def _event_record(self, event_id: int) -> dict | None:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                for item in self._events:
+                    if item["id"] == event_id:
+                        return dict(item)
+            return None
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, title, event_date, event_time, location, description
+                    FROM council_events
+                    WHERE id = %s
+                    """,
+                    (event_id,),
+                )
+                row = cur.fetchone()
+            conn.close()
+        except Exception as exc:
+            log.warning("Event lookup failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return None
+        if row is None:
+            return None
+        return _event_from_row(row)
 
     def list_images(self, purpose: str | None = "library") -> list[dict]:
         conn = self._open()
@@ -1221,6 +1665,345 @@ def _public_image(image: dict) -> dict:
 
 def _sorted_images(images: list[dict]) -> list[dict]:
     return sorted(images, key=lambda image: (image.get("slot") is None, image.get("slot") or "", image["id"]))
+
+
+MONTH_NAMES = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+HONOR_CATEGORIES = (
+    "knight_month",
+    "family_month",
+    "knight_year",
+    "family_year",
+    "past_gk",
+)
+MONTH_HONORS = frozenset({"knight_month", "family_month"})
+YEAR_HONORS = frozenset({"knight_year", "family_year"})
+_PGK_PERIOD = re.compile(r"^(\d{4})(?:[–-](\d{2}))?$")
+_CATEGORY_ORDER = {name: index for index, name in enumerate(HONOR_CATEGORIES)}
+
+
+def _member_create_fields(memberid: str, password: str, display_name: str, title: str | None):
+    cleaned_id = str(memberid or "").strip()
+    if not cleaned_id.isdigit() or len(cleaned_id) > 32:
+        raise StoreError("Membership ID must contain only digits.", 400)
+    if len(password) < 8 or len(password.encode("utf-8")) > 72:
+        raise StoreError("Password must be 8 to 72 characters.", 400)
+    name = " ".join(str(display_name or "").split())
+    if not name or len(name) > 80:
+        raise StoreError("Enter the member's name.", 400)
+    try:
+        cleaned = normalize_title(title)
+    except ValueError as exc:
+        raise StoreError(str(exc), 400) from exc
+    return cleaned_id, name, cleaned
+
+
+def _require_year(value) -> int:
+    try:
+        year = int(str(value).strip())
+    except (TypeError, ValueError) as exc:
+        raise StoreError("Enter a year.", 400) from exc
+    if year < 1900 or year > 2100:
+        raise StoreError("Enter a year between 1900 and 2100.", 400)
+    return year
+
+
+def _clean_line(value, limit: int, label: str, required: bool) -> str:
+    text = " ".join(str(value or "").split())
+    if required and not text:
+        raise StoreError(f"{label} is required.", 400)
+    if len(text) > limit:
+        raise StoreError(f"{label} is too long.", 400)
+    return text
+
+
+def _honor_fields(fields: dict) -> dict:
+    category = str(fields.get("category") or "").strip()
+    if category not in HONOR_CATEGORIES:
+        raise StoreError("Choose a past-honor list.", 400)
+    name = _clean_line(fields.get("name"), 80, "Name", True)
+    note = _clean_line(fields.get("note"), 280, "Note", False)
+    if category in MONTH_HONORS:
+        try:
+            month = int(str(fields.get("month")).strip())
+        except (TypeError, ValueError) as exc:
+            raise StoreError("Choose a month.", 400) from exc
+        if month < 1 or month > 12:
+            raise StoreError("Choose a month.", 400)
+        year = _require_year(fields.get("year"))
+        return {
+            "category": category,
+            "name": name,
+            "period": f"{MONTH_NAMES[month - 1]} {year}",
+            "sort_year": year,
+            "sort_month": month,
+            "note": note,
+        }
+    if category in YEAR_HONORS:
+        year = _require_year(fields.get("year"))
+        return {
+            "category": category,
+            "name": name,
+            "period": str(year),
+            "sort_year": year,
+            "sort_month": None,
+            "note": note,
+        }
+    match = _PGK_PERIOD.fullmatch(_clean_line(fields.get("period"), 12, "Year", True))
+    if match is None:
+        raise StoreError("Enter a year, such as 2024 or 2024–25.", 400)
+    year = int(match.group(1))
+    if year < 1900 or year > 2100:
+        raise StoreError("Enter a year between 1900 and 2100.", 400)
+    end = match.group(2)
+    period = str(year) if end is None else f"{year}–{end}"
+    return {
+        "category": category,
+        "name": name,
+        "period": period,
+        "sort_year": year,
+        "sort_month": None,
+        "note": note,
+    }
+
+
+def _event_fields(fields: dict) -> dict:
+    title = _clean_line(fields.get("title"), 120, "Title", True)
+    raw_date = str(fields.get("event_date") or "").strip()
+    try:
+        parsed = date.fromisoformat(raw_date)
+    except ValueError as exc:
+        raise StoreError("Choose a date on the calendar.", 400) from exc
+    if parsed.year < 1900 or parsed.year > 2100:
+        raise StoreError("Choose a date on the calendar.", 400)
+    event_time = _clean_line(fields.get("event_time"), 40, "Time", False) or None
+    location = _clean_line(fields.get("location"), 120, "Location", False) or None
+    description = str(fields.get("description") or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not description:
+        raise StoreError("Description is required.", 400)
+    if len(description) > 2000:
+        raise StoreError("Description is too long.", 400)
+    return {
+        "title": title,
+        "event_date": parsed.isoformat(),
+        "event_time": event_time,
+        "location": location,
+        "description": description,
+    }
+
+
+def _honor_params(payload: dict, photo: tuple[str, str] | None):
+    path, content_type = photo if photo else (None, None)
+    return (
+        payload["category"],
+        payload["name"],
+        payload["period"],
+        payload["sort_year"],
+        payload["sort_month"],
+        payload["note"],
+        path,
+        content_type,
+    )
+
+
+def _memory_honor(honor_id: int, payload: dict, photo: tuple[str, str] | None) -> dict:
+    path, content_type = photo if photo else (None, None)
+    return {"id": honor_id, **payload, "photo_path": path, "photo_type": content_type}
+
+
+def _public_honor(row: dict) -> dict:
+    photo_url = f"/api/honors/{row['id']}/photo" if row.get("photo_path") else None
+    return {
+        "id": int(row["id"]),
+        "category": row["category"],
+        "name": row["name"],
+        "period": row["period"],
+        "note": row.get("note") or "",
+        "photo_url": photo_url,
+    }
+
+
+def _honor_from_row(row) -> dict:
+    event_month = row[5]
+    return {
+        "id": row[0],
+        "category": row[1],
+        "name": row[2],
+        "period": row[3],
+        "sort_year": row[4],
+        "sort_month": event_month,
+        "note": row[6] or "",
+        "photo_path": row[7],
+        "photo_type": row[8],
+    }
+
+
+def _honor_sort_key(item: dict):
+    return (
+        _CATEGORY_ORDER.get(item["category"], 99),
+        -int(item["sort_year"]),
+        -(int(item["sort_month"] or 0)),
+        -int(item["id"]),
+    )
+
+
+def _public_event(row: dict) -> dict:
+    return {
+        "id": int(row["id"]),
+        "title": row["title"],
+        "event_date": row["event_date"] if isinstance(row["event_date"], str) else row["event_date"].isoformat(),
+        "event_time": row.get("event_time") or None,
+        "location": row.get("location") or None,
+        "description": row.get("description") or "",
+    }
+
+
+def _event_from_row(row) -> dict:
+    return {
+        "id": row[0],
+        "title": row[1],
+        "event_date": row[2],
+        "event_time": row[3],
+        "location": row[4],
+        "description": row[5] or "",
+    }
+
+
+def _seed_honor_rows() -> list[dict]:
+    rows = []
+    for index, item in enumerate(HONOR_SEED, start=1):
+        rows.append(
+            {
+                "id": index,
+                "category": item["category"],
+                "name": item["name"],
+                "period": item["period"],
+                "sort_year": item["sort_year"],
+                "sort_month": item["sort_month"],
+                "note": item["note"],
+                "photo_path": None,
+                "photo_type": None,
+            }
+        )
+    return rows
+
+
+def _seed_event_rows() -> list[dict]:
+    rows = []
+    for index, item in enumerate(EVENT_SEED, start=1):
+        rows.append(
+            {
+                "id": index,
+                "title": item["title"],
+                "event_date": item["event_date"],
+                "event_time": item["event_time"],
+                "location": item["location"],
+                "description": item["description"],
+            }
+        )
+    return rows
+
+
+def _table_exists(cur, name: str) -> bool:
+    cur.execute("SELECT to_regclass(%s)", (f"public.{name}",))
+    return cur.fetchone()[0] is not None
+
+
+def _ensure_records(cur) -> None:
+    honors_new = not _table_exists(cur, "honors")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS honors (
+          id SERIAL PRIMARY KEY,
+          category TEXT NOT NULL,
+          name TEXT NOT NULL,
+          period TEXT NOT NULL,
+          sort_year INTEGER NOT NULL,
+          sort_month INTEGER,
+          note TEXT NOT NULL DEFAULT '',
+          photo_path TEXT,
+          photo_type TEXT,
+          CONSTRAINT honors_category_chk CHECK (
+            category IN ('knight_month', 'family_month', 'knight_year', 'family_year', 'past_gk')
+          ),
+          CONSTRAINT honors_month_chk CHECK (
+            (category IN ('knight_month', 'family_month') AND sort_month BETWEEN 1 AND 12)
+            OR (category IN ('knight_year', 'family_year', 'past_gk') AND sort_month IS NULL)
+          )
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS honors_category_idx
+        ON honors (category, sort_year DESC, sort_month DESC)
+        """
+    )
+    if honors_new:
+        for item in HONOR_SEED:
+            cur.execute(
+                """
+                INSERT INTO honors (category, name, period, sort_year, sort_month, note)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    item["category"],
+                    item["name"],
+                    item["period"],
+                    item["sort_year"],
+                    item["sort_month"],
+                    item["note"],
+                ),
+            )
+    events_new = not _table_exists(cur, "council_events")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS council_events (
+          id SERIAL PRIMARY KEY,
+          title TEXT NOT NULL,
+          event_date DATE NOT NULL,
+          event_time TEXT,
+          location TEXT,
+          description TEXT NOT NULL DEFAULT '',
+          sort_order INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS council_events_date_idx
+        ON council_events (event_date, id)
+        """
+    )
+    if events_new:
+        for item in EVENT_SEED:
+            cur.execute(
+                """
+                INSERT INTO council_events
+                  (title, event_date, event_time, location, description, sort_order)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    item["title"],
+                    date.fromisoformat(item["event_date"]),
+                    item["event_time"],
+                    item["location"],
+                    item["description"],
+                    item["sort_order"],
+                ),
+            )
 
 
 def _title_constraint_sql() -> str:
