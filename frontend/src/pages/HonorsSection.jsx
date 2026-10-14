@@ -5,6 +5,7 @@ import { useContent } from "../content/ContentContext";
 import { HONOR_FALLBACK, HONOR_GROUPS, MONTHS, collapse } from "../content/records";
 
 const ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
+const VISIBLE_HONORS = 6;
 const MONTH_CATEGORIES = new Set(["knight_month", "family_month"]);
 const YEAR_CATEGORIES = new Set(["knight_year", "family_year"]);
 
@@ -129,7 +130,7 @@ function HonorForm({ category, initial, pending, onSave, onCancel, onError }) {
   }
 
   return (
-    <article className="card honor-form">
+    <div className="honor-form">
       <form onSubmit={submit}>
         <div className="settings-photo-row">
           <HonorPhoto src={shownPhoto} />
@@ -236,7 +237,7 @@ function HonorForm({ category, initial, pending, onSave, onCancel, onError }) {
           </button>
         </div>
       </form>
-    </article>
+    </div>
   );
 }
 
@@ -249,6 +250,7 @@ export default function HonorsSection() {
   const [pending, setPending] = useState(false);
   const [editor, setEditor] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
+  const [expanded, setExpanded] = useState({});
   const canManage = Boolean(editing) && !fallback;
 
   useEffect(() => {
@@ -337,11 +339,19 @@ export default function HonorsSection() {
         </p>
       ) : null}
       {!loaded ? <p className="settings-hint">Loading…</p> : null}
-      {HONOR_GROUPS.map(([category, label]) => {
+      <div className="schedule honor-board">
+      {HONOR_GROUPS.map(([category, label], index) => {
         const items = honors.filter((item) => item.category === category);
+        const open = Boolean(expanded[category]);
+        let shown = open ? items : items.slice(0, VISIBLE_HONORS);
+        if (editor?.mode === "edit" && editor.category === category && !shown.some((item) => item.id === editor.id)) {
+          const editingItem = items.find((item) => item.id === editor.id);
+          if (editingItem) shown = [...shown, editingItem];
+        }
         const adding = editor?.mode === "add" && editor.category === category;
+        const wide = index === HONOR_GROUPS.length - 1 && HONOR_GROUPS.length % 2 === 1;
         return (
-          <div className="honor-group" key={category}>
+          <article className={wide ? "sched wide honor-group" : "sched honor-group"} key={category}>
             <h3>{label}</h3>
             {canManage && !adding ? (
               <div className="signin-actions recog-actions">
@@ -359,18 +369,18 @@ export default function HonorsSection() {
                 </button>
               </div>
             ) : null}
-            <div className="recog-grid">
-              {adding ? (
-                <HonorForm
-                  category={category}
-                  pending={pending}
-                  onError={setError}
-                  onCancel={() => setEditor(null)}
-                  onSave={(fields, file) => onSave(fields, file)}
-                />
-              ) : null}
-              {loaded && items.length === 0 && !adding ? <p className="settings-hint">None recorded yet.</p> : null}
-              {items.map((honor) => {
+            {adding ? (
+              <HonorForm
+                category={category}
+                pending={pending}
+                onError={setError}
+                onCancel={() => setEditor(null)}
+                onSave={(fields, file) => onSave(fields, file)}
+              />
+            ) : null}
+            {loaded && items.length === 0 && !adding ? <p className="settings-hint">None recorded yet.</p> : null}
+            <div className="honor-list">
+              {shown.map((honor) => {
                 if (editor?.mode === "edit" && editor.id === honor.id) {
                   return (
                     <HonorForm
@@ -386,7 +396,7 @@ export default function HonorsSection() {
                 }
                 const confirming = confirmId === honor.id;
                 return (
-                  <article className="recog" key={honor.id}>
+                  <div className="honor-entry" key={honor.id}>
                     <HonorPhoto src={honor.photo_url} />
                     <div>
                       <div className="when">{honor.period}</div>
@@ -436,13 +446,24 @@ export default function HonorsSection() {
                         )
                       ) : null}
                     </div>
-                  </article>
+                  </div>
                 );
               })}
             </div>
-          </div>
+            {loaded && items.length > VISIBLE_HONORS ? (
+              <button
+                type="button"
+                className="more"
+                aria-expanded={open ? "true" : "false"}
+                onClick={() => setExpanded((current) => ({ ...current, [category]: !current[category] }))}
+              >
+                {open ? "View less" : "View more"}
+              </button>
+            ) : null}
+          </article>
         );
       })}
+      </div>
     </section>
   );
 }

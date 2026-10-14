@@ -405,6 +405,7 @@ memberList.push(
 export const memberBlocks = withOrder(memberList);
 
 export const LOGO_SRC = "/images/kofc-logo.png";
+export const SITE_TITLE = "Council 10930 | Knights of Columbus";
 
 export const slides = [1, 2, 3, 4].map((n) => ({
   slot: `carousel.${n}`,

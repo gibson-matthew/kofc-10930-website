@@ -521,6 +521,22 @@ body.page-member .on-navy {
   font-weight: 600;
 }
 
+.settings-notice.is-confirm,
+.members-create .signin-error {
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius);
+}
+
+.settings-notice.is-confirm {
+  background: var(--gold-muted);
+  border: 1px solid var(--hairline);
+}
+
+.members-create .signin-error {
+  background: rgba(110, 20, 35, 0.06);
+  border: 1px solid rgba(110, 20, 35, 0.22);
+}
+
 .settings-stack {
   display: grid;
   gap: 0.7rem;
@@ -772,11 +788,64 @@ button.more {
   margin-top: 0.7rem;
 }
 
+.honor-board.schedule {
+  margin-bottom: 0;
+}
+
+.honor-group {
+  min-width: 0;
+}
+
 .honor-group > h3 {
-  font-size: 1.35rem;
+  font-size: 1.28rem;
   font-weight: 600;
   color: var(--navy);
-  margin: 1.15rem 0 0.55rem;
+  margin: 0 0 0.35rem;
+}
+
+.honor-list {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.honor-entry {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.55rem 0;
+  min-width: 0;
+}
+
+.honor-entry + .honor-entry {
+  border-top: 1px solid rgba(26, 23, 20, 0.08);
+}
+
+.honor-entry h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--navy);
+  margin: 0;
+}
+
+.honor-entry .when {
+  color: var(--wine);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.honor-entry p {
+  margin-top: 0.25rem;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.honor-group .honor-form {
+  margin: 0.45rem 0 0.65rem;
+}
+
+.honor-group .more {
+  margin-top: 0.55rem;
 }
 
 .recog-grid > .honor-form,

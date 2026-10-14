@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { ContentProvider, useContent } from "../content/ContentContext";
+import { SITE_TITLE } from "../content/seed";
 import { navigate, safeNext } from "../router";
 
-const TITLE = "Member sign in — Council 10930";
+const TITLE = SITE_TITLE;
 
 function LoginForm() {
   const { text } = useContent();

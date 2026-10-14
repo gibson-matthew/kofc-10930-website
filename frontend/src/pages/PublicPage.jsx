@@ -4,10 +4,10 @@ import { useAuth } from "../auth/AuthContext";
 import { Block, Eyebrow } from "../components/Block";
 import { SvgSprite } from "../components/Marks";
 import { ContentProvider, useContent } from "../content/ContentContext";
-import { LOGO_SRC, slides } from "../content/seed";
+import { LOGO_SRC, SITE_TITLE, slides } from "../content/seed";
 import { navigate } from "../router";
 
-const TITLE = "Knights of Columbus — Council 10930 — Fort Worth, TX";
+const TITLE = SITE_TITLE;
 
 function Carousel({ slides: slideList }) {
   const { text } = useContent();

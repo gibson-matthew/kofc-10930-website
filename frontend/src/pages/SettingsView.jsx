@@ -171,6 +171,8 @@ export default function SettingsView() {
   const [loadingAdmin, setLoadingAdmin] = useState(admin);
   const [editor, setEditor] = useState(null);
   const [memberForm, setMemberForm] = useState(EMPTY_MEMBER);
+  const [memberNotice, setMemberNotice] = useState("");
+  const [memberError, setMemberError] = useState("");
   const editorRef = useRef(null);
   editorRef.current = editor;
 
@@ -349,27 +351,52 @@ export default function SettingsView() {
     }, "Image placement saved.");
   }
 
-  function onCreateMember(event) {
+  async function onCreateMember(event) {
     event.preventDefault();
     const problem = memberProblem(memberForm);
     if (problem) {
-      setError(problem);
-      setNotice("");
+      setMemberError(problem);
+      setMemberNotice("");
       return;
     }
     const memberid = memberForm.memberid.trim();
     const displayName = collapse(memberForm.display_name);
-    run(async () => {
-      await createMember({
-        memberid,
-        password: memberForm.password,
-        display_name: displayName,
-        title: memberForm.title || null,
-      });
+    const payload = {
+      memberid,
+      password: memberForm.password,
+      display_name: displayName,
+      title: memberForm.title || null,
+    };
+    setPending(true);
+    setError("");
+    setNotice("");
+    setMemberError("");
+    setMemberNotice("");
+    try {
+      const created = await createMember(payload);
       setMemberForm(EMPTY_MEMBER);
-      setMembers(await fetchMembers());
-      await refresh();
-    }, "Member created. They can sign in with that membership ID.");
+      setMemberNotice("Member created. They can sign in with that membership ID.");
+      setMembers((current) => {
+        const next = current.filter((item) => item.memberid !== created.memberid);
+        next.push(created);
+        next.sort(
+          (a, b) =>
+            String(a.display_name || "").localeCompare(String(b.display_name || "")) ||
+            String(a.memberid).localeCompare(String(b.memberid)),
+        );
+        return next;
+      });
+      try {
+        setMembers(await fetchMembers());
+        await refresh();
+      } catch {
+        /* The new member is already in the directory. */
+      }
+    } catch (err) {
+      setMemberError(err instanceof Error ? err.message : "Could not create the member.");
+    } finally {
+      setPending(false);
+    }
   }
 
   function onAdmin(member, next) {
@@ -455,6 +482,16 @@ export default function SettingsView() {
           </div>
           <article className="card settings-card members-create">
             <h3>New member</h3>
+            {memberNotice ? (
+              <p className="settings-notice is-confirm" role="status">
+                {memberNotice}
+              </p>
+            ) : null}
+            {memberError ? (
+              <p className="signin-error" role="alert">
+                {memberError}
+              </p>
+            ) : null}
             <form autoComplete="off" onSubmit={onCreateMember}>
               <label className="signin-field">
                 <span>Membership ID</span>

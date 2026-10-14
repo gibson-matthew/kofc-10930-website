@@ -545,6 +545,28 @@ class Store:
             raise StoreError("Could not save officer assignments.", 503) from exc
         return self.list_members()
 
+    def _remember_member(self, memberid: str, hashed: str, name: str, cleaned: str | None) -> None:
+        with self._lock:
+            if cleaned:
+                for member in self._members:
+                    if member.get("title") == cleaned and member["membership_id"] != memberid:
+                        member["title"] = None
+            for member in self._members:
+                if member["membership_id"] == memberid:
+                    member["password_hash"] = hashed
+                    member["display_name"] = name
+                    member["title"] = cleaned
+                    return
+            self._members.append(
+                {
+                    "membership_id": memberid,
+                    "password_hash": hashed,
+                    "display_name": name,
+                    "title": cleaned,
+                    "is_admin": False,
+                }
+            )
+
     def create_member(self, memberid: str, password: str, display_name: str, title: str | None) -> dict:
         memberid, name, cleaned = _member_create_fields(memberid, password, display_name, title)
         hashed = hash_password(password)
@@ -571,47 +593,60 @@ class Store:
                 raise StoreError("Could not create the member.", 503)
             return self._public_member(record)
         try:
+            # A failed id repair aborts the Postgres transaction. Roll that
+            # work back so the insert itself still runs.
+            _guard_member_ids(conn)
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT membership_id
-                    FROM members
-                    WHERE membership_id = %s OR (%s IS NOT NULL AND title = %s)
-                    ORDER BY membership_id
-                    FOR UPDATE
-                    """,
-                    (memberid, cleaned, cleaned),
-                )
-                rows = cur.fetchall()
-                if any(row[0] == memberid for row in rows):
-                    conn.rollback()
-                    conn.close()
-                    raise StoreError("That membership ID is already in use.", 409)
-                if cleaned:
-                    cur.execute(
-                        "UPDATE members SET title = NULL WHERE title = %s",
-                        (cleaned,),
-                    )
-                cur.execute(
-                    """
-                    INSERT INTO members (membership_id, password_hash, display_name, title, is_admin)
-                    VALUES (%s, %s, %s, %s, FALSE)
-                    """,
-                    (memberid, hashed, name, cleaned),
-                )
+                row = _insert_member_row(cur, memberid, hashed, name, cleaned)
             conn.commit()
-            conn.close()
         except StoreError:
+            _rollback(conn)
             raise
         except Exception as exc:
             _rollback(conn)
-            if getattr(exc, "sqlstate", None) == "23505":
-                raise StoreError("That membership ID is already in use.", 409) from exc
-            raise StoreError("Could not create the member.", 503) from exc
-        member = self.get_member(memberid)
-        if member is None:
+            if not _member_id_fault(exc):
+                raise _member_create_error(exc) from exc
+            conn = self._open()
+            if conn is None:
+                raise _member_create_error(exc) from exc
+            try:
+                with conn.cursor() as cur:
+                    _ensure_member_id_default(cur)
+                    _sync_member_id_sequence(cur)
+                    row = _insert_member_row(cur, memberid, hashed, name, cleaned)
+                conn.commit()
+            except StoreError:
+                _rollback(conn)
+                raise
+            except Exception as retry_exc:
+                _rollback(conn)
+                raise _member_create_error(retry_exc) from retry_exc
+            else:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        else:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        if row is None:
             raise StoreError("Could not create the member.", 503)
-        return member
+        self._remember_member(memberid, hashed, name, cleaned)
+        saved_title = row[2]
+        if isinstance(saved_title, str):
+            saved_title = saved_title.strip() or None
+        return {
+            "memberid": str(row[0]),
+            "display_name": row[1],
+            "title": saved_title,
+            "is_admin": bool(row[3]),
+            "photo_url": None,
+            "crop_x": 0.0,
+            "crop_y": 0.0,
+            "crop_scale": 1.0,
+        }
 
     def list_honors(self) -> list[dict]:
         conn = self._open()
@@ -2006,6 +2041,127 @@ def _ensure_records(cur) -> None:
             )
 
 
+def _pg_sqlstate(exc: Exception) -> str | None:
+    state = getattr(exc, "sqlstate", None)
+    return str(state) if state else None
+
+
+def _member_id_fault(exc: Exception) -> bool:
+    """True when members.id blocked the insert, not the membership id."""
+    state = _pg_sqlstate(exc)
+    diag = getattr(exc, "diag", None)
+    column = getattr(diag, "column_name", None) if diag is not None else None
+    constraint = getattr(diag, "constraint_name", None) if diag is not None else None
+    if state == "23502":
+        return column in (None, "id")
+    if state == "23505":
+        return bool(constraint) and str(constraint).endswith("_pkey")
+    return False
+
+
+def _member_create_error(exc: Exception) -> StoreError:
+    state = _pg_sqlstate(exc)
+    diag = getattr(exc, "diag", None)
+    column = getattr(diag, "column_name", None) if diag is not None else None
+    if state == "23505" and not _member_id_fault(exc):
+        return StoreError("That membership ID is already in use.", 409)
+    if state == "23514" or (state == "23502" and column == "title"):
+        return StoreError("Choose a title from the list.", 400)
+    log.warning("Could not create the member: %s", exc)
+    return StoreError("Could not create the member.", 503)
+
+
+def _insert_member_row(cur, memberid: str, hashed: str, name: str, cleaned: str | None):
+    cur.execute(
+        "SELECT membership_id FROM members WHERE membership_id = %s",
+        (memberid,),
+    )
+    if cur.fetchone() is not None:
+        raise StoreError("That membership ID is already in use.", 409)
+    if cleaned:
+        cur.execute(
+            "UPDATE members SET title = NULL WHERE title = %s",
+            (cleaned,),
+        )
+    cur.execute(
+        """
+        INSERT INTO members (membership_id, password_hash, display_name, title, is_admin)
+        VALUES (%s, %s, %s, %s, FALSE)
+        RETURNING membership_id, display_name, title, is_admin
+        """,
+        (memberid, hashed, name, cleaned),
+    )
+    return cur.fetchone()
+
+
+def _guard_member_ids(conn) -> None:
+    """Repair members.id and optional title, then leave a usable transaction.
+
+    Sequence statements are not always transactional. A failed one aborts the
+    connection until rollback, which would turn a later insert into a 503.
+    """
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SAVEPOINT member_title_null")
+            try:
+                cur.execute("ALTER TABLE members ALTER COLUMN title DROP NOT NULL")
+                cur.execute("RELEASE SAVEPOINT member_title_null")
+            except Exception as exc:
+                log.warning("Could not make member title optional: %s", exc)
+                cur.execute("ROLLBACK TO SAVEPOINT member_title_null")
+            _ensure_member_id_default(cur)
+            cur.execute("SAVEPOINT member_id_seq")
+            try:
+                _sync_member_id_sequence(cur)
+                cur.execute("RELEASE SAVEPOINT member_id_seq")
+            except Exception as exc:
+                log.warning("Could not sync member ids: %s", exc)
+                cur.execute("ROLLBACK TO SAVEPOINT member_id_seq")
+        conn.commit()
+    except Exception as exc:
+        log.warning("Could not prepare member ids: %s", exc)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+
+
+def _ensure_member_id_default(cur) -> None:
+    """Give members.id a sequence when an older table has no default."""
+    cur.execute(
+        """
+        SELECT column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'members' AND column_name = 'id'
+        """
+    )
+    found = cur.fetchone()
+    if found is None or found[0]:
+        return
+    cur.execute("CREATE SEQUENCE IF NOT EXISTS members_id_seq")
+    cur.execute("ALTER SEQUENCE members_id_seq OWNED BY members.id")
+    cur.execute("ALTER TABLE members ALTER COLUMN id SET DEFAULT nextval('members_id_seq')")
+
+
+def _sync_member_id_sequence(cur) -> None:
+    """Keep the members id sequence ahead of existing rows so INSERT can succeed."""
+    cur.execute("SELECT pg_get_serial_sequence('members', 'id')")
+    found = cur.fetchone()
+    seq = found[0] if found else None
+    if not seq:
+        return
+    cur.execute(
+        """
+        SELECT setval(
+            %s::regclass,
+            GREATEST(COALESCE((SELECT MAX(id) FROM members), 1), 1),
+            TRUE
+        )
+        """,
+        (seq,),
+    )
+
+
 def _title_constraint_sql() -> str:
     for abbrev in TITLE_ABBREVS:
         if not abbrev.isascii() or not abbrev.isalnum() or abbrev != abbrev.upper():
@@ -2017,11 +2173,26 @@ def _title_constraint_sql() -> str:
 def _ensure_schema(cur) -> None:
     cur.execute(_MEMBER_COLUMNS)
     cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS title TEXT")
+    cur.execute("SAVEPOINT member_title_null")
+    try:
+        cur.execute("ALTER TABLE members ALTER COLUMN title DROP NOT NULL")
+        cur.execute("RELEASE SAVEPOINT member_title_null")
+    except Exception as exc:
+        log.warning("Could not make member title optional: %s", exc)
+        cur.execute("ROLLBACK TO SAVEPOINT member_title_null")
     cur.execute(
         "ALTER TABLE members ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE"
     )
     cur.execute("ALTER TABLE members DROP CONSTRAINT IF EXISTS members_title_abbrev")
     cur.execute(f"ALTER TABLE members ADD CONSTRAINT members_title_abbrev {_title_constraint_sql()}")
+    cur.execute("SAVEPOINT member_id_seq")
+    try:
+        _ensure_member_id_default(cur)
+        _sync_member_id_sequence(cur)
+        cur.execute("RELEASE SAVEPOINT member_id_seq")
+    except Exception as exc:
+        log.warning("Could not sync member ids: %s", exc)
+        cur.execute("ROLLBACK TO SAVEPOINT member_id_seq")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS refresh_tokens (

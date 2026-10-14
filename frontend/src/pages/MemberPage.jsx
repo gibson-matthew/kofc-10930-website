@@ -5,14 +5,14 @@ import { Block, Eyebrow } from "../components/Block";
 import CroppedPhoto from "../components/CroppedPhoto";
 import { Avatar, Portrait, PortraitSm } from "../components/Marks";
 import { ContentProvider, useContent } from "../content/ContentContext";
-import { LOGO_SRC } from "../content/seed";
+import { LOGO_SRC, SITE_TITLE } from "../content/seed";
 import EventsSection from "./EventsSection";
 import HonorsSection from "./HonorsSection";
 import SettingsView from "./SettingsView";
 import { navigate, usePath } from "../router";
 import { DIRECTOR_ROLES, memberLabel, OFFICER_ROLES } from "../titles";
 
-const TITLE = "Members Area — Council 10930 — Knights of Columbus";
+const TITLE = SITE_TITLE;
 
 const LINK_CARDS = [
   {
@@ -289,7 +289,7 @@ function MemberView() {
   useLayoutEffect(() => {
     document.body.className = "page-member";
     document.body.dataset.page = "member";
-    document.title = onSettings ? "Settings — Council 10930" : TITLE;
+    document.title = TITLE;
   }, [onSettings]);
 
   useEffect(() => {
