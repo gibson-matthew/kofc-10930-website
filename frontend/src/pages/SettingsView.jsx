@@ -546,6 +546,7 @@ export default function SettingsView() {
           <p>{memberLabel(user)}</p>
           {admin ? (
             <p className="settings-jump">
+              <a href="#new-member">New member</a>
               <a href="#members">Members</a>
               <a href="#admin-access">Admin access</a>
               <a href="#media">Media</a>
@@ -608,7 +609,7 @@ export default function SettingsView() {
             <h2 id="membersHeading">Members</h2>
             <p>Create a member, then they can sign in. Titles come from the officer list.</p>
           </div>
-          <article className="card settings-card members-create">
+          <article className="card settings-card members-create" id="new-member">
             <h3>New member</h3>
             {memberNotice ? (
               <p className="settings-notice is-confirm" role="status">

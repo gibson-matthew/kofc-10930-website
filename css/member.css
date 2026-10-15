@@ -55,11 +55,15 @@ body.page-member .footer-brand > .hero-medallion-navbar {
 }
 
 nav.site-nav {
-  order: 2;
-  margin-left: auto;
+  order: 3;
+  flex: 1 0 100%;
+  margin-left: 0;
   display: flex;
   align-items: center;
-  gap: 1.15rem;
+  flex-wrap: wrap;
+  gap: 0.45rem 1.15rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(248, 244, 236, 0.14);
 }
 
 nav.site-nav a:hover { color: var(--gold-soft); }
@@ -67,9 +71,20 @@ nav.site-nav a:hover { color: var(--gold-soft); }
 .head-right {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.7rem;
-  order: 3;
-  flex: 0 0 auto;
+  order: 2;
+  margin-left: auto;
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+.admin-cluster {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.7rem;
 }
 
 .year-field {
@@ -157,7 +172,8 @@ nav.site-nav a:hover { color: var(--gold-soft); }
 }
 
 section[id],
-.tools { scroll-margin-top: 4.5rem; }
+.tools,
+#birthdays { scroll-margin-top: 9rem; }
 
 .member-hero {
   background:
@@ -330,6 +346,16 @@ body.page-member .on-navy {
   gap: 0.55rem;
 }
 
+.on-navy .blood-edit {
+  margin-top: 0.75rem;
+  color: var(--ink);
+}
+
+.stats > .blood-edit {
+  grid-column: 1 / -1;
+  text-align: left;
+}
+
 .stat {
   text-align: center;
   border: 1px solid var(--hairline);
@@ -385,6 +411,10 @@ body.page-member .on-navy {
 .link-card .btn {
   margin-left: auto;
   white-space: nowrap;
+}
+
+.link-card > .honor-form {
+  flex: 1 0 100%;
 }
 
 .detail {
@@ -498,6 +528,7 @@ body.page-member .on-navy {
 @media (min-width: 680px) {
   .officer-grid { grid-template-columns: 1fr 1fr 1fr; }
   .card-grid { grid-template-columns: 1fr 1fr; }
+  .link-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 
 @media (min-width: 700px) {
@@ -529,6 +560,8 @@ body.page-member .on-navy {
     border-color: rgba(248, 244, 236, 0.28);
   }
 
+  .admin-cluster { display: contents; }
+
   .edit-toggle { margin-left: 0.7rem; }
 
   .year-field {
@@ -542,40 +575,25 @@ body.page-member .on-navy {
     margin: 0.45rem 0 0;
   }
 
-  body.page-member.is-editing header.site:not(.nav-hidden) .head-right {
-    max-height: 14rem;
-  }
-
   .head-right {
+    position: sticky;
+    top: 3.4rem;
+    z-index: 70;
     order: 2;
     flex: 1 0 100%;
-    margin: 0.7rem 0 0.15rem;
-    padding: 0.55rem 0;
+    margin: 0.45rem 0 0.15rem;
+    padding: 0.4rem 0;
     gap: 0;
     align-items: center;
     flex-wrap: wrap;
     border-top: 1px solid rgba(248, 244, 236, 0.16);
     border-bottom: 1px solid rgba(248, 244, 236, 0.16);
-    max-height: 9rem;
-    overflow: hidden;
-    transition:
-      max-height 0.28s var(--ease),
-      opacity 0.28s var(--ease),
-      margin 0.28s var(--ease),
-      padding 0.28s var(--ease),
-      border-color 0.28s var(--ease);
+    background: var(--navy-deep);
   }
 
-  header.site.nav-hidden .head-right {
-    max-height: 0;
-    opacity: 0;
-    margin-top: 0;
-    margin-bottom: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    border-color: transparent;
-    pointer-events: none;
-  }
+  section[id],
+  .tools,
+  #birthdays { scroll-margin-top: 8rem; }
 
   .profile {
     flex: 1;
@@ -976,6 +994,11 @@ button.more {
 
 .honor-group .more {
   margin-top: 0.55rem;
+}
+
+.honor-group .more.is-top {
+  margin-top: 0.35rem;
+  margin-bottom: 0.15rem;
 }
 
 .recog-grid > .honor-form,

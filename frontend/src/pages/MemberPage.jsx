@@ -152,13 +152,42 @@ function RoleGrid({ roles, roster, ready, editing, onDraft }) {
 }
 
 function RecogCard({ index, editing, recognition, onReload }) {
-  const { text } = useContent();
+  const { text, draftText, setDraft } = useContent();
   const [open, setOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [snapshot, setSnapshot] = useState(null);
   const [busy, setBusy] = useState(false);
   const [photoError, setPhotoError] = useState("");
+  const titleId = `recog.${index}.title`;
+  const bodyId = `recog.${index}.body`;
+  const detailId = `recog.${index}.detail`;
   const slot = (recognition || []).find((item) => item.slot === `recog.${index}`) || null;
   const src = slot?.url || "";
-  const showDetail = editing || open;
+  const title = editing ? draftText(titleId) : text(titleId);
+  const body = editing ? draftText(bodyId) : text(bodyId);
+  const detail = editing ? draftText(detailId) : text(detailId);
+
+  useEffect(() => {
+    if (!editing) setFormOpen(false);
+  }, [editing]);
+
+  function beginEdit() {
+    setSnapshot({
+      title: draftText(titleId),
+      body: draftText(bodyId),
+      detail: draftText(detailId),
+    });
+    setFormOpen(true);
+  }
+
+  function revertCopy() {
+    if (snapshot) {
+      setDraft(titleId, snapshot.title);
+      setDraft(bodyId, snapshot.body);
+      setDraft(detailId, snapshot.detail);
+    }
+    setFormOpen(false);
+  }
 
   async function onFile(event) {
     const file = event.target.files && event.target.files[0];
@@ -189,28 +218,48 @@ function RecogCard({ index, editing, recognition, onReload }) {
     <article className="recog">
       {src ? <img className="portrait" src={src} alt="" /> : <Portrait />}
       <div>
-        <Block id={`recog.${index}.title`} as="h3" />
-        <p>
-          <Block id={`recog.${index}.body`} />
-          {showDetail ? (
-            <>
-              {" "}
-              <Block id={`recog.${index}.detail`} />
-            </>
-          ) : null}{" "}
-          {editing ? (
-            <span className="more">Read More...</span>
-          ) : (
-            <button
-              type="button"
-              className="more"
-              aria-expanded={open ? "true" : "false"}
-              onClick={() => setOpen((value) => !value)}
-            >
-              {open ? "Show less" : "Read More..."}
-            </button>
-          )}
-        </p>
+        {editing && formOpen ? (
+          <>
+            <DraftFields
+              fields={[
+                { id: titleId, label: "Title" },
+                { id: bodyId, label: "Summary", long: true },
+                { id: detailId, label: "Details", long: true },
+              ]}
+            />
+            <div className="signin-actions recog-actions">
+              <button type="button" className="btn btn-quiet" onClick={() => setFormOpen(false)}>
+                Done
+              </button>
+              <button type="button" className="btn btn-quiet" onClick={revertCopy}>
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3>{title}</h3>
+            <p>
+              {body}{" "}
+              {open ? <>{detail} </> : null}
+              <button
+                type="button"
+                className="more"
+                aria-expanded={open ? "true" : "false"}
+                onClick={() => setOpen((value) => !value)}
+              >
+                {open ? "Show less" : "Read More..."}
+              </button>
+            </p>
+            {editing ? (
+              <div className="signin-actions recog-actions">
+                <button type="button" className="btn btn-quiet" onClick={beginEdit}>
+                  Edit
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
         {editing ? (
           <div className="signin-actions recog-actions">
             <label className="btn btn-quiet">
@@ -289,14 +338,170 @@ function FixedText({ id, as: Tag = "p", className, htmlId, style }) {
   );
 }
 
-function BirthdayList({ roster, ready, editing, onHide }) {
+function DraftFields({ fields }) {
+  const { draftText, setDraft, editing } = useContent();
+  const idKey = fields.map((field) => field.id).join("|");
+  const [values, setValues] = useState(() =>
+    Object.fromEntries(fields.map((field) => [field.id, draftText(field.id)])),
+  );
+
+  useEffect(() => {
+    setValues(Object.fromEntries(fields.map((field) => [field.id, draftText(field.id)])));
+  }, [editing, idKey]);
+
+  function update(id, value, long) {
+    const next = long ? String(value).replace(/\r?\n/g, " ") : value;
+    setValues((current) => ({ ...current, [id]: next }));
+    setDraft(id, next);
+  }
+
+  return (
+    <div className="honor-form">
+      {fields.map((field) => (
+        <label className="signin-field" key={field.id}>
+          <span>{field.label}</span>
+          {field.lines || field.long ? (
+            <textarea
+              value={values[field.id] ?? ""}
+              onChange={(event) => update(field.id, event.target.value, field.long && !field.lines)}
+            />
+          ) : (
+            <input
+              type="text"
+              value={values[field.id] ?? ""}
+              onChange={(event) => update(field.id, event.target.value, false)}
+            />
+          )}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function ScheduleCard({ index }) {
+  const { editing, text, draftText, setDraft } = useContent();
+  const [open, setOpen] = useState(false);
+  const [snapshot, setSnapshot] = useState(null);
+  const titleId = `sched.${index}.title`;
+  const bodyId = `sched.${index}.body`;
+  const lines = index === 3;
+
+  useEffect(() => {
+    if (!editing) setOpen(false);
+  }, [editing]);
+
+  const title = editing ? draftText(titleId) : text(titleId);
+  const body = editing ? draftText(bodyId) : text(bodyId);
+
+  function beginEdit() {
+    setSnapshot({ title: draftText(titleId), body: draftText(bodyId) });
+    setOpen(true);
+  }
+
+  function revert() {
+    if (snapshot) {
+      setDraft(titleId, snapshot.title);
+      setDraft(bodyId, snapshot.body);
+    }
+    setOpen(false);
+  }
+
+  return (
+    <article className={index === 3 ? "sched wide" : "sched"}>
+      {editing && open ? (
+        <>
+          <DraftFields
+            fields={[
+              { id: titleId, label: "Title" },
+              { id: bodyId, label: "Details", lines },
+            ]}
+          />
+          <div className="signin-actions recog-actions">
+            <button type="button" className="btn btn-quiet" onClick={() => setOpen(false)}>
+              Done
+            </button>
+            <button type="button" className="btn btn-quiet" onClick={revert}>
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <h3>{title}</h3>
+          <p>
+            {String(body)
+              .split("\n")
+              .map((line, lineIndex) => (
+                <span key={`${bodyId}-${lineIndex}`}>
+                  {lineIndex > 0 ? <br /> : null}
+                  {line}
+                </span>
+              ))}
+          </p>
+          {editing ? (
+            <div className="signin-actions recog-actions">
+              <button type="button" className="btn btn-quiet" onClick={beginEdit}>
+                Edit
+              </button>
+            </div>
+          ) : null}
+        </>
+      )}
+    </article>
+  );
+}
+
+function linkFields(card) {
+  if (card.panel === "panel-birthdays") return [];
+  const fields = [];
+  if (card.body) fields.push({ id: card.body, label: "Summary", long: true });
+  if (card.hours) {
+    fields.push(
+      { id: "links.9.before", label: "Link lead-in" },
+      { id: "links.9.link", label: "Link label" },
+      { id: "links.9.after", label: "Link ending" },
+    );
+  } else if (card.detail) {
+    fields.push({ id: card.detail, label: "Details", long: true });
+  }
+  return fields;
+}
+
+function LinkAction({ card, shown, onToggle }) {
+  const { text } = useContent();
+  const label = card.panel === "panel-birthdays" ? (shown ? "View less" : "View more") : text(card.action);
+  if (card.href) {
+    return (
+      <a
+        className="btn"
+        href={card.href}
+        target={card.external ? "_blank" : undefined}
+        rel={card.external ? "noopener noreferrer" : undefined}
+      >
+        {label}
+      </a>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="btn"
+      aria-expanded={card.panel ? (shown ? "true" : "false") : undefined}
+      aria-controls={card.panel || undefined}
+      onClick={onToggle}
+    >
+      {label}
+    </button>
+  );
+}
+
+function BirthdayList({ roster, ready, onHide }) {
   const groups = birthdayGroups(roster);
   const total = groups.reduce((count, group) => count + group.people.length, 0);
   function hideControl(key) {
-    if (editing) return null;
     return (
       <button type="button" className="more birthday-hide" onClick={onHide} key={key}>
-        Hide birthdays
+        View less
       </button>
     );
   }
@@ -454,7 +659,10 @@ function MemberView() {
     if (onSettings) return undefined;
     const id = window.location.hash.replace(/^#/, "");
     if (!id) return undefined;
-    const node = document.getElementById(id);
+    if (id === "birthdays" || id === "panel-birthdays") {
+      setOpenPanels((current) => ({ ...current, "panel-birthdays": true }));
+    }
+    const node = document.getElementById(id === "panel-birthdays" ? "birthdays" : id);
     if (node) node.scrollIntoView();
     return undefined;
   }, [onSettings]);
@@ -517,8 +725,21 @@ function MemberView() {
   }
 
   function togglePanel(panel) {
-    if (editing) return;
     setOpenPanels((current) => ({ ...current, [panel]: !current[panel] }));
+  }
+
+  function openBirthdays(event) {
+    closeNav();
+    if (onSettings) {
+      event.preventDefault();
+      navigate("/member#birthdays");
+      return;
+    }
+    event.preventDefault();
+    setOpenPanels((current) => ({ ...current, "panel-birthdays": true }));
+    window.requestAnimationFrame(() => {
+      document.getElementById("birthdays")?.scrollIntoView();
+    });
   }
 
   async function logout() {
@@ -580,7 +801,11 @@ function MemberView() {
             <span />
             <span />
           </button>
-          {user?.is_admin && !onSettings ? <EditBar /> : null}
+          {user?.is_admin && !onSettings ? (
+            <div className="admin-cluster">
+              <EditBar />
+            </div>
+          ) : null}
           <div className="profile" ref={profileRef}>
             <button
               type="button"
@@ -601,6 +826,17 @@ function MemberView() {
               <button type="button" role="menuitem" id="settingsBtn" onClick={settings}>
                 Settings
               </button>
+              <button
+                type="button"
+                role="menuitem"
+                id="publicLinkMenu"
+                onClick={() => {
+                  setMenuOpen(false);
+                  navigate("/");
+                }}
+              >
+                Public page
+              </button>
               <button type="button" role="menuitem" id="logoutBtn" onClick={logout}>
                 Log out
               </button>
@@ -613,6 +849,12 @@ function MemberView() {
           <Block id="nav.directors" locked {...sectionProps("directors")} />
           <Block id="nav.events" locked {...sectionProps("events")} />
           <Block id="nav.blood" locked {...sectionProps("blood")} />
+          <a href={onSettings ? "/member#honors" : "#honors"} onClick={sectionProps("honors").onClick}>
+            Honors
+          </a>
+          <a href={onSettings ? "/member#birthdays" : "#birthdays"} onClick={openBirthdays}>
+            Birthdays
+          </a>
           <Block id="nav.links" locked {...sectionProps("links")} />
         </nav>
       </header>
@@ -639,10 +881,7 @@ function MemberView() {
             </div>
             <div className="schedule">
               {range(4).map((index) => (
-                <article className={index === 3 ? "sched wide" : "sched"} key={`sched-${index}`}>
-                  <Block id={`sched.${index}.title`} as="h3" />
-                  <Block id={`sched.${index}.body`} as="p" lines={index === 3} />
-                </article>
+                <ScheduleCard index={index} key={`sched-${index}`} />
               ))}
             </div>
             <div className="recog-grid">
@@ -657,8 +896,6 @@ function MemberView() {
               ))}
             </div>
           </section>
-
-          <HonorsSection />
 
           <section className="block" id="officers" aria-labelledby="officersHeading">
             <div className="section-head">
@@ -713,29 +950,61 @@ function MemberView() {
                 className="serif"
                 style={{ fontSize: "2.1rem", fontWeight: 600, margin: "0.3rem 0 0.4rem" }}
               />
-              <Block id="blood.place" as="p" className="muted" />
-              <Block id="blood.when" as="p" className="muted" />
-              <p className="muted">
-                <Block id="blood.before" />{" "}
-                <Block
-                  id="blood.link"
-                  href="https://www.redcrossblood.org"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                />
-                <Block id="blood.after" />
-              </p>
+              {editing ? (
+                <div className="card blood-edit">
+                  <DraftFields
+                    fields={[
+                      { id: "blood.place", label: "Location" },
+                      { id: "blood.when", label: "Date and time" },
+                      { id: "blood.before", label: "Link lead-in" },
+                      { id: "blood.link", label: "Link label" },
+                      { id: "blood.after", label: "Link ending" },
+                    ]}
+                  />
+                </div>
+              ) : (
+                <>
+                  <Block id="blood.place" as="p" className="muted" locked />
+                  <Block id="blood.when" as="p" className="muted" locked />
+                  <p className="muted">
+                    <Block id="blood.before" locked />{" "}
+                    <Block
+                      id="blood.link"
+                      href="https://www.redcrossblood.org"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      locked
+                    />
+                    <Block id="blood.after" locked />
+                  </p>
+                </>
+              )}
             </div>
             <div className="stats" aria-label="Donation statistics">
-              {range(3).map((index) => (
-                <div className="stat" key={`stat-${index}`}>
-                  <Block id={`stat.${index}.value`} as="b" />
-                  <Block id={`stat.${index}.label`} />
+              {editing ? (
+                <div className="card blood-edit">
+                  <DraftFields
+                    fields={range(3).flatMap((index) => [
+                      { id: `stat.${index}.value`, label: `Stat ${index + 1} number` },
+                      { id: `stat.${index}.label`, label: `Stat ${index + 1} label` },
+                    ])}
+                  />
                 </div>
-              ))}
+              ) : (
+                range(3).map((index) => (
+                  <div className="stat" key={`stat-${index}`}>
+                    <Block id={`stat.${index}.value`} as="b" locked />
+                    <Block id={`stat.${index}.label`} locked />
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </section>
+
+        <div className="container">
+          <HonorsSection />
+        </div>
 
         <div className="container tools" id="links">
           <section id="quickLinks" aria-labelledby="qlHeading">
@@ -746,53 +1015,46 @@ function MemberView() {
             </div>
             <div className="link-grid">
               {LINK_CARDS.map((card) => {
-                const shown = Boolean(editing || (card.panel && openPanels[card.panel]));
+                const shown = Boolean(card.panel && openPanels[card.panel]);
+                const birthdays = card.panel === "panel-birthdays";
+                const fields = linkFields(card);
+                const showForm = editing && fields.length > 0 && (shown || !card.panel);
                 return (
-                  <article className="link-card" key={card.title}>
+                  <article className="link-card" id={birthdays ? "birthdays" : undefined} key={card.title}>
                     <div className="link-copy">
-                      <Block id={card.title} as="h3" />
-                      {card.body ? <Block id={card.body} as="p" /> : null}
+                      <Block id={card.title} as="h3" locked />
+                      {card.body && !showForm ? <Block id={card.body} as="p" locked /> : null}
                     </div>
-                    {card.href ? (
-                      <Block
-                        id={card.action}
-                        className="btn"
-                        href={card.href}
-                        target={card.external ? "_blank" : undefined}
-                        rel={card.external ? "noopener noreferrer" : undefined}
-                      />
-                    ) : (
-                      <Block
-                        id={card.action}
-                        className="btn"
-                        control
-                        ariaExpanded={shown ? "true" : "false"}
-                        ariaControls={card.panel}
-                        onClick={() => togglePanel(card.panel)}
-                      />
-                    )}
+                    <LinkAction
+                      card={card}
+                      shown={shown}
+                      onToggle={card.panel ? () => togglePanel(card.panel) : undefined}
+                    />
+                    {showForm && !card.panel ? <DraftFields fields={fields} /> : null}
                     {card.panel ? (
                       <div className="detail" id={card.panel} hidden={!shown}>
-                        {card.panel === "panel-birthdays" ? (
+                        {birthdays ? (
                           <BirthdayList
                             roster={roster}
                             ready={rosterReady}
-                            editing={editing}
                             onHide={() => setOpenPanels((current) => ({ ...current, [card.panel]: false }))}
                           />
+                        ) : showForm ? (
+                          <DraftFields fields={fields} />
                         ) : card.hours ? (
                           <p>
-                            <Block id="links.9.before" />{" "}
+                            <Block id="links.9.before" locked />{" "}
                             <Block
                               id="links.9.link"
                               href="https://www.UKnightMobile.org"
                               target="_blank"
                               rel="noopener noreferrer"
+                              locked
                             />
-                            <Block id="links.9.after" />
+                            <Block id="links.9.after" locked />
                           </p>
                         ) : (
-                          <Block id={card.detail} as="p" />
+                          <Block id={card.detail} as="p" locked />
                         )}
                       </div>
                     ) : null}
@@ -822,6 +1084,12 @@ function MemberView() {
               <Block id="footer.nav.directors" locked {...sectionProps("directors")} />
               <Block id="footer.nav.events" locked {...sectionProps("events")} />
               <Block id="footer.nav.blood" locked {...sectionProps("blood")} />
+              <a href={onSettings ? "/member#honors" : "#honors"} onClick={sectionProps("honors").onClick}>
+                Honors
+              </a>
+              <a href={onSettings ? "/member#birthdays" : "#birthdays"} onClick={openBirthdays}>
+                Birthdays
+              </a>
               <Block id="footer.nav.links" locked {...sectionProps("links")} />
               <Block
                 id="footer.nav.public"

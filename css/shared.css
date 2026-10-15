@@ -114,7 +114,7 @@ img, svg { display: block; max-width: 100%; }
 }
 
 nav.primary-nav a,
-nav.primary-nav .nav-signin,
+button.nav-signin,
 nav.site-nav a {
   font-size: 0.74rem;
   font-weight: 600;

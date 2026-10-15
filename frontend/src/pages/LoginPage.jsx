@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useState } from "react";
+import { fetchMediaSlots } from "../api";
 import { useAuth } from "../auth/AuthContext";
+import { Block } from "../components/Block";
 import { ContentProvider, useContent } from "../content/ContentContext";
-import { SITE_TITLE } from "../content/seed";
+import { LOGO_SRC, SITE_TITLE } from "../content/seed";
 import { navigate, safeNext } from "../router";
 
 const TITLE = SITE_TITLE;
@@ -13,7 +15,22 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [logoSrc, setLogoSrc] = useState(LOGO_SRC);
   const destination = safeNext();
+
+  useEffect(() => {
+    let cancel = false;
+    fetchMediaSlots()
+      .then((data) => {
+        if (!cancel && data?.logo) setLogoSrc(data.logo);
+      })
+      .catch(() => {
+        /* The header logo stays in place. */
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
 
   useLayoutEffect(() => {
     document.body.className = "page-login";
@@ -50,6 +67,21 @@ function LoginForm() {
 
   return (
     <main className="login-screen">
+      <a
+        className="brand login-brand"
+        href="/"
+        onClick={(event) => {
+          event.preventDefault();
+          navigate("/");
+        }}
+      >
+        <img className="hero-medallion-navbar" src={logoSrc} alt="" />
+        <span className="brand-text">
+          <Block id="brand.name" className="name" />
+          <br />
+          <Block id="brand.sub" className="sub" />
+        </span>
+      </a>
       <div className="signin-dialog login-card">
         <h1 id="signInTitle">{text("signin.title") || "Member sign in"}</h1>
         <form id="signInForm" onSubmit={onSubmit}>

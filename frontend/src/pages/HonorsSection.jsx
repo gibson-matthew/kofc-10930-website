@@ -379,6 +379,16 @@ export default function HonorsSection() {
               />
             ) : null}
             {loaded && items.length === 0 && !adding ? <p className="settings-hint">None recorded yet.</p> : null}
+            {loaded && open && items.length > VISIBLE_HONORS ? (
+              <button
+                type="button"
+                className="more is-top"
+                aria-expanded="true"
+                onClick={() => setExpanded((current) => ({ ...current, [category]: false }))}
+              >
+                View less
+              </button>
+            ) : null}
             <div className="honor-list">
               {shown.map((honor) => {
                 if (editor?.mode === "edit" && editor.id === honor.id) {

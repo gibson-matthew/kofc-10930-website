@@ -224,22 +224,25 @@ function PublicView() {
           <Block id="nav.what" href="#what" locked onClick={closeNav} />
           <Block id="nav.why" href="#why" locked onClick={closeNav} />
           <Block id="nav.join" href="#join" locked onClick={closeNav} />
+        </nav>
+        <div className="header-tools">
           <button type="button" className="nav-signin" id="signInBtn" onClick={openSignIn}>
             {user ? "Members" : text("nav.signin")}
           </button>
-        </nav>
-        <button
-          className="nav-toggle"
-          id="navToggle"
-          type="button"
-          aria-label="Toggle navigation"
-          aria-expanded={navOpen ? "true" : "false"}
-          onClick={() => setNavOpen((open) => !open)}
-        >
-          <span />
-          <span />
-          <span />
-        </button>
+          <button
+            className="nav-toggle"
+            id="navToggle"
+            type="button"
+            aria-label="Toggle navigation"
+            aria-expanded={navOpen ? "true" : "false"}
+            aria-controls="primaryNav"
+            onClick={() => setNavOpen((open) => !open)}
+          >
+            <span />
+            <span />
+            <span />
+          </button>
+        </div>
       </header>
 
       <section id="top" className="hero">
@@ -386,7 +389,7 @@ function PublicView() {
             <img className="hero-medallion-end" src={logoSrc} alt="" onError={keepExampleLogo} />
             <Block id="join.title" as="h2" />
             <Block id="join.body" as="p" />
-            <Block id="join.cta" className="btn btn-lg" href="#" />
+            <Block id="join.cta" className="btn btn-lg" href="#join" />
           </div>
         </div>
       </section>
@@ -406,6 +409,9 @@ function PublicView() {
               <Block id="footer.nav.what" href="#what" locked />
               <Block id="footer.nav.why" href="#why" locked />
               <Block id="footer.nav.join" href="#join" locked />
+              <button type="button" className="footer-signin" onClick={openSignIn}>
+                {user ? "Members" : text("nav.signin")}
+              </button>
             </nav>
           </div>
           <div className="footer-bottom">

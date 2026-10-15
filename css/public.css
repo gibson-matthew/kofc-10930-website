@@ -45,14 +45,21 @@ nav.primary-nav {
   gap: 2rem;
 }
 
+.header-tools {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-left: 1rem;
+}
+
 nav.primary-nav a,
-nav.primary-nav .nav-signin {
+button.nav-signin {
   position: relative;
   padding: 0.35rem 0;
   transition: color 0.3s var(--ease);
 }
 
-nav.primary-nav .nav-signin {
+button.nav-signin {
   background: none;
   border: 0;
   border-radius: 0;
@@ -66,7 +73,7 @@ nav.primary-nav .nav-signin {
 }
 
 nav.primary-nav a::after,
-nav.primary-nav .nav-signin::after {
+button.nav-signin::after {
   content: "";
   position: absolute;
   left: 0;
@@ -78,10 +85,26 @@ nav.primary-nav .nav-signin::after {
 }
 
 nav.primary-nav a:hover,
-nav.primary-nav .nav-signin:hover { color: var(--ivory); }
+button.nav-signin:hover { color: var(--ivory); }
 
 nav.primary-nav a:hover::after,
-nav.primary-nav .nav-signin:hover::after { width: 100%; }
+button.nav-signin:hover::after { width: 100%; }
+
+.footer-nav button.footer-signin {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: rgba(248, 244, 236, 0.65);
+}
+
+.footer-nav button.footer-signin:hover { color: var(--gold-soft); }
 
 .hero {
   position: relative;
@@ -560,13 +583,18 @@ body.page-public .section-head p {
 
 .login-screen {
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.35rem;
   padding: 1.5rem;
   background:
     radial-gradient(ellipse at top, rgba(201, 162, 39, 0.16), transparent 55%),
     var(--navy-deep);
 }
+
+.login-brand { text-decoration: none; }
 
 .login-card {
   width: min(420px, 100%);
@@ -607,7 +635,14 @@ body.page-public .section-head p {
     padding-right: 4.25rem;
   }
 
-  body.page-public .nav-toggle { display: block; margin-left: auto; }
+  body.page-public .header-tools {
+    margin-left: auto;
+    position: relative;
+    z-index: 110;
+    gap: 0.65rem;
+  }
+
+  body.page-public .nav-toggle { display: block; margin-left: 0; }
 
   nav.primary-nav {
     position: fixed;
@@ -628,16 +663,14 @@ body.page-public .section-head p {
 
   nav.primary-nav.open { transform: translateX(0); }
 
-  nav.primary-nav a,
-  nav.primary-nav .nav-signin {
+  nav.primary-nav a {
     width: 100%;
     padding: 0.9rem 0;
     border-bottom: 1px solid rgba(248, 244, 236, 0.06);
     font-size: 0.82rem;
   }
 
-  nav.primary-nav a::after,
-  nav.primary-nav .nav-signin::after { display: none; }
+  nav.primary-nav a::after { display: none; }
 }
 
 @media (max-width: 780px) {
