@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from media import SEED_IMAGES, slot_check_sql
+from media import SEED_DOCUMENTS, SEED_IMAGES, slot_check_sql
 from test_seed import HONOR_SEED
 from titles import TITLE_ABBREVS
 
@@ -536,6 +536,58 @@ WHERE NOT EXISTS (
 """
 
 
+def documents_schema_sql() -> str:
+    """Library table and example rows. A later schema load can restore a deleted example title."""
+    value_rows = ",\n  ".join(
+        "("
+        + ", ".join(
+            [
+                _sql_text(item["library"]),
+                _sql_text(item["title"]),
+                _sql_text(item["description"]),
+                _sql_text(item["file_path"]),
+                _sql_text(item["original_name"]),
+                _sql_text(item["content_type"]),
+                _sql_text(item["uploaded_by"]),
+                f"TIMESTAMPTZ {_sql_text(item['uploaded_at'])}",
+            ]
+        )
+        + ")"
+        for item in SEED_DOCUMENTS
+    )
+    return f"""CREATE TABLE IF NOT EXISTS documents (
+  id SERIAL PRIMARY KEY,
+  library TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  file_path TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  uploaded_by TEXT,
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT documents_library_chk CHECK (
+    library IN ('treasurer', 'financial_secretary')
+  )
+);
+
+CREATE INDEX IF NOT EXISTS documents_library_idx
+  ON documents (library, uploaded_at DESC, id DESC);
+
+INSERT INTO documents (
+  library, title, description, file_path, original_name, content_type, uploaded_by, uploaded_at
+)
+SELECT v.library, v.title, v.description, v.file_path, v.original_name, v.content_type, v.uploaded_by, v.uploaded_at
+FROM (
+  VALUES
+  {value_rows}
+) AS v(library, title, description, file_path, original_name, content_type, uploaded_by, uploaded_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM documents d
+  WHERE d.library = v.library AND d.title = v.title
+);
+"""
+
+
 def records_schema_sql() -> str:
     event_rows = ",\n  ".join(
         "("
@@ -603,6 +655,8 @@ FROM (
   {event_rows}
 ) AS v(title, event_date, event_time, location, description, sort_order)
 WHERE NOT EXISTS (SELECT 1 FROM council_events);
+
+{documents_schema_sql().rstrip()}
 """
 
 
@@ -674,6 +728,12 @@ def render_schema() -> str:
 -- A cleared honor photo is not filled back in.
 -- council_events stores the member-view upcoming events.
 -- council_events example rows are inserted when that table is empty.
+-- documents stores treasurer and financial secretary library files.
+-- library is treasurer or financial_secretary. uploaded_by is a membership id
+-- with no foreign key, so example rows can be stored before members exist.
+-- Example rows are inserted when that library and title are not already stored.
+-- The API inserts those examples only when the documents table is first created.
+-- Files are backend/uploads/treasurer/ and backend/uploads/financial-secretary/.
 
 BEGIN;
 

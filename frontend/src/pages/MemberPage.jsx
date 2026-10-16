@@ -9,6 +9,7 @@ import { ContentProvider, useContent } from "../content/ContentContext";
 import { birthdayGroups } from "../birthdays";
 import { LOGO_SRC, SITE_TITLE } from "../content/seed";
 import { DEFAULT_YEAR, FIXED_CHROME, YEAR_KEY, fraternalPhrases, normalizeFraternalYear } from "../content/year";
+import DocumentLibrary from "./DocumentLibrary";
 import EventsSection from "./EventsSection";
 import HonorsSection from "./HonorsSection";
 import SettingsView from "./SettingsView";
@@ -42,8 +43,8 @@ const LINK_CARDS = [
     panel: "panel-goal",
   },
   { title: "links.11.title", action: "links.11.action", detail: "links.11.detail", panel: "panel-nominate" },
-  { title: "links.12.title", action: "links.12.action", detail: "links.12.detail", panel: "panel-fs" },
-  { title: "links.13.title", action: "links.13.action", detail: "links.13.detail", panel: "panel-treasurer" },
+  { title: "links.12.title", action: "links.12.action", panel: "panel-fs", library: "financial_secretary" },
+  { title: "links.13.title", action: "links.13.action", panel: "panel-treasurer", library: "treasurer" },
   { title: "links.14.title", action: "links.14.action", detail: "links.14.detail", panel: "panel-budget" },
   { title: "links.15.title", action: "links.15.action", href: "mailto:webmaster@council10930.example" },
 ];
@@ -530,7 +531,7 @@ function ScheduleCard({ index }) {
 }
 
 function linkFields(card) {
-  if (card.panel === "panel-birthdays") return [];
+  if (card.panel === "panel-birthdays" || card.library) return [];
   const fields = [];
   if (card.body) fields.push({ id: card.body, label: "Summary", long: true });
   if (card.hours) {
@@ -1111,7 +1112,14 @@ function MemberView() {
                     {showForm && !card.panel ? <DraftFields fields={fields} /> : null}
                     {card.panel ? (
                       <div className="detail" id={card.panel} hidden={!shown}>
-                        {birthdays ? (
+                        {card.library ? (
+                          shown ? (
+                            <DocumentLibrary
+                              library={card.library}
+                              canManage={Boolean(editing && user?.is_admin)}
+                            />
+                          ) : null
+                        ) : birthdays ? (
                           <BirthdayList
                             roster={roster}
                             ready={rosterReady}

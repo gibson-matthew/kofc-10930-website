@@ -30,6 +30,12 @@
 -- A cleared honor photo is not filled back in.
 -- council_events stores the member-view upcoming events.
 -- council_events example rows are inserted when that table is empty.
+-- documents stores treasurer and financial secretary library files.
+-- library is treasurer or financial_secretary. uploaded_by is a membership id
+-- with no foreign key, so example rows can be stored before members exist.
+-- Example rows are inserted when that library and title are not already stored.
+-- The API inserts those examples only when the documents table is first created.
+-- Files are backend/uploads/treasurer/ and backend/uploads/financial-secretary/.
 
 BEGIN;
 
@@ -598,5 +604,39 @@ FROM (
   ('Coats for Kids distribution', DATE '2026-11-14', '8:00 a.m.', 'Parish', 'Sorted coats are handed out to families at the parish from the morning shift.', 5)
 ) AS v(title, event_date, event_time, location, description, sort_order)
 WHERE NOT EXISTS (SELECT 1 FROM council_events);
+
+CREATE TABLE IF NOT EXISTS documents (
+  id SERIAL PRIMARY KEY,
+  library TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  file_path TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  uploaded_by TEXT,
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT documents_library_chk CHECK (
+    library IN ('treasurer', 'financial_secretary')
+  )
+);
+
+CREATE INDEX IF NOT EXISTS documents_library_idx
+  ON documents (library, uploaded_at DESC, id DESC);
+
+INSERT INTO documents (
+  library, title, description, file_path, original_name, content_type, uploaded_by, uploaded_at
+)
+SELECT v.library, v.title, v.description, v.file_path, v.original_name, v.content_type, v.uploaded_by, v.uploaded_at
+FROM (
+  VALUES
+  ('treasurer', 'September 2026 statement', 'Receipts and disbursements for September.', 'backend/uploads/treasurer/seed-september-2026.pdf', 'september-2026-statement.pdf', 'application/pdf', '1000000', TIMESTAMPTZ '2026-10-02T17:00:00+00:00'),
+  ('treasurer', 'August 2026 statement', 'Receipts and disbursements for August.', 'backend/uploads/treasurer/seed-august-2026.pdf', 'august-2026-statement.pdf', 'application/pdf', '1000000', TIMESTAMPTZ '2026-09-04T17:00:00+00:00'),
+  ('financial_secretary', 'September 2026 membership report', 'New members, transfers, and suspensions.', 'backend/uploads/financial-secretary/seed-membership-september-2026.pdf', 'september-2026-membership-report.pdf', 'application/pdf', '1000000', TIMESTAMPTZ '2026-10-03T17:00:00+00:00'),
+  ('financial_secretary', 'Dues notes, September 2026', 'Brothers with dues still open this month.', 'backend/uploads/financial-secretary/seed-dues-notes-september-2026.pdf', 'dues-notes-september-2026.pdf', 'application/pdf', '1000000', TIMESTAMPTZ '2026-09-15T17:00:00+00:00')
+) AS v(library, title, description, file_path, original_name, content_type, uploaded_by, uploaded_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM documents d
+  WHERE d.library = v.library AND d.title = v.title
+);
 
 COMMIT;

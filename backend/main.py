@@ -15,15 +15,22 @@ from pydantic import BaseModel, Field, field_validator
 
 from db import StoreError, store
 from media import (
+    MAX_DOCUMENT_BYTES,
     MAX_IMAGE_BYTES,
     RECOG_SLOTS,
     MediaError,
     absolute_path,
+    clean_document_description,
+    clean_document_title,
     delete_stored_file,
     normalize_crop,
+    normalize_library,
     normalize_slot,
+    safe_document_name,
     safe_original_name,
+    validate_document,
     validate_image,
+    write_library_file,
     write_upload,
 )
 from security import (
@@ -189,6 +196,16 @@ class HonorOut(BaseModel):
     crop_scale: float = 1
 
 
+class DocumentOut(BaseModel):
+    id: int
+    library: str
+    title: str
+    description: str = ""
+    original_name: str
+    content_type: str
+    uploaded_on: str
+
+
 class EventOut(BaseModel):
     id: int
     title: str
@@ -333,6 +350,15 @@ async def _read_upload(upload: UploadFile) -> tuple[bytes, str, str, str]:
     except MediaError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return data, content_type, ext, safe_original_name(upload.filename or "", ext)
+
+
+async def _read_document(upload: UploadFile) -> tuple[bytes, str, str, str]:
+    data = await upload.read(MAX_DOCUMENT_BYTES + 1)
+    try:
+        content_type, ext = validate_document(upload.filename or "", upload.content_type, data)
+    except MediaError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return data, content_type, ext, safe_document_name(upload.filename or "", ext)
 
 
 def get_current_member(request: Request) -> dict:
@@ -855,6 +881,85 @@ def delete_media(image_id: int, member: dict = Depends(require_admin)) -> Respon
     del member
     try:
         store.delete_image(image_id)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@api.get("/documents", response_model=list[DocumentOut])
+def list_documents(library: str, member: dict = Depends(get_current_member)) -> list[DocumentOut]:
+    del member
+    try:
+        rows = store.list_documents(library)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return [DocumentOut(**row) for row in rows]
+
+
+@api.get("/documents/{document_id}/file")
+def document_file(document_id: int, member: dict = Depends(get_current_member)) -> FileResponse:
+    del member
+    try:
+        found = store.document_file(document_id)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    if found is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document was not found.")
+    path, content_type, original_name = found
+    try:
+        full = absolute_path(path)
+    except MediaError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document was not found.") from exc
+    if not full.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document was not found.")
+    disposition = "inline" if content_type == "application/pdf" else "attachment"
+    return FileResponse(
+        full,
+        media_type=content_type,
+        filename=original_name,
+        content_disposition_type=disposition,
+    )
+
+
+@api.post("/documents", response_model=DocumentOut, status_code=status.HTTP_201_CREATED)
+async def create_document(
+    member: dict = Depends(require_admin),
+    library: str = Form(...),
+    title: str = Form(...),
+    description: str = Form(""),
+    file: UploadFile = File(...),
+) -> DocumentOut:
+    try:
+        cleaned_library = normalize_library(library)
+        cleaned_title = clean_document_title(title)
+        cleaned_description = clean_document_description(description)
+    except MediaError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if not (file.filename or "").strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose a document.")
+    data, content_type, ext, original_name = await _read_document(file)
+    stored = write_library_file(cleaned_library, data, ext)
+    try:
+        created = store.create_document(
+            cleaned_library,
+            cleaned_title,
+            cleaned_description,
+            stored,
+            original_name,
+            content_type,
+            member.get("memberid"),
+        )
+    except (StoreError, MediaError) as exc:
+        delete_stored_file(stored)
+        _raise_store(exc)
+    return DocumentOut(**created)
+
+
+@api.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(document_id: int, member: dict = Depends(require_admin)) -> Response:
+    del member
+    try:
+        store.delete_document(document_id)
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -1,9 +1,10 @@
-"""Image checks, seed files, and upload paths."""
+"""Image and document checks, seed files, and upload paths."""
 
 from __future__ import annotations
 
 import math
 import re
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -39,6 +40,81 @@ ALLOWED_EXT = {
     "webp": "image/webp",
 }
 JPEG_DECLARED = {"image/jpeg", "image/jpg", "image/pjpeg"}
+
+MAX_DOCUMENT_BYTES = 16 * 1024 * 1024
+DOCUMENT_LIBRARIES = ("treasurer", "financial_secretary")
+DOCUMENT_LIBRARY_SET = frozenset(DOCUMENT_LIBRARIES)
+LIBRARY_FOLDERS = {
+    "treasurer": "treasurer",
+    "financial_secretary": "financial-secretary",
+}
+DOCUMENT_TYPES = {
+    "pdf": "application/pdf",
+    "doc": "application/msword",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xls": "application/vnd.ms-excel",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+DOCUMENT_CONTENT_TYPES = frozenset(DOCUMENT_TYPES.values())
+DOCUMENT_DECLARED_OK = DOCUMENT_CONTENT_TYPES | {
+    "",
+    "application/octet-stream",
+    "binary/octet-stream",
+    "application/x-download",
+    "application/x-pdf",
+    "application/vnd.ms-word",
+    "application/excel",
+    "application/x-excel",
+    "application/x-msexcel",
+    "application/vnd.ms-office",
+}
+OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+ZIP_MAGIC = b"PK\x03\x04"
+
+# Example library files. The API inserts these rows only when the documents
+# table is first created. Memory fallback always starts from this list.
+SEED_DOCUMENTS: tuple[dict[str, str], ...] = (
+    {
+        "library": "treasurer",
+        "title": "September 2026 statement",
+        "description": "Receipts and disbursements for September.",
+        "uploaded_at": "2026-10-02T17:00:00+00:00",
+        "file_path": "backend/uploads/treasurer/seed-september-2026.pdf",
+        "original_name": "september-2026-statement.pdf",
+        "content_type": "application/pdf",
+        "uploaded_by": "1000000",
+    },
+    {
+        "library": "treasurer",
+        "title": "August 2026 statement",
+        "description": "Receipts and disbursements for August.",
+        "uploaded_at": "2026-09-04T17:00:00+00:00",
+        "file_path": "backend/uploads/treasurer/seed-august-2026.pdf",
+        "original_name": "august-2026-statement.pdf",
+        "content_type": "application/pdf",
+        "uploaded_by": "1000000",
+    },
+    {
+        "library": "financial_secretary",
+        "title": "September 2026 membership report",
+        "description": "New members, transfers, and suspensions.",
+        "uploaded_at": "2026-10-03T17:00:00+00:00",
+        "file_path": "backend/uploads/financial-secretary/seed-membership-september-2026.pdf",
+        "original_name": "september-2026-membership-report.pdf",
+        "content_type": "application/pdf",
+        "uploaded_by": "1000000",
+    },
+    {
+        "library": "financial_secretary",
+        "title": "Dues notes, September 2026",
+        "description": "Brothers with dues still open this month.",
+        "uploaded_at": "2026-09-15T17:00:00+00:00",
+        "file_path": "backend/uploads/financial-secretary/seed-dues-notes-september-2026.pdf",
+        "original_name": "dues-notes-september-2026.pdf",
+        "content_type": "application/pdf",
+        "uploaded_by": "1000000",
+    },
+)
 
 
 class MediaError(ValueError):
@@ -160,3 +236,174 @@ def delete_stored_file(path: str) -> None:
         absolute_path(normalized).unlink(missing_ok=True)
     except Exception:
         return
+
+
+def _collapse(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def normalize_library(value: str) -> str:
+    cleaned = str(value or "").strip()
+    if cleaned not in DOCUMENT_LIBRARY_SET:
+        raise MediaError("Unknown library.")
+    return cleaned
+
+
+def clean_document_title(value: str) -> str:
+    title = _collapse(value)
+    if not title:
+        raise MediaError("Enter a title.")
+    if len(title) > 120:
+        raise MediaError("Title must be 120 characters or fewer.")
+    return title
+
+
+def clean_document_description(value: str) -> str:
+    description = _collapse(value)
+    if len(description) > 280:
+        raise MediaError("Description must be 280 characters or fewer.")
+    return description
+
+
+def library_prefix(library: str) -> str:
+    cleaned = normalize_library(library)
+    return f"backend/uploads/{LIBRARY_FOLDERS[cleaned]}/"
+
+
+def document_path_allowed(library: str, path: str) -> bool:
+    try:
+        prefix = library_prefix(library)
+    except MediaError:
+        return False
+    normalized = str(path or "").replace("\\", "/")
+    if not normalized.startswith(prefix):
+        return False
+    return ".." not in normalized.split("/")
+
+
+def detect_document(ext: str, data: bytes) -> bool:
+    if ext == "pdf":
+        return data.startswith(b"%PDF")
+    if ext in {"docx", "xlsx"}:
+        return data.startswith(ZIP_MAGIC)
+    if ext in {"doc", "xls"}:
+        return data.startswith(OLE_MAGIC)
+    return False
+
+
+def validate_document(filename: str, declared: str | None, data: bytes) -> tuple[str, str]:
+    ext = ""
+    if filename and "." in filename:
+        ext = filename.rsplit(".", 1)[-1].lower()
+    if ext not in DOCUMENT_TYPES:
+        raise MediaError("Only PDF, DOC, DOCX, XLS, and XLSX files are accepted.")
+    if not data:
+        raise MediaError("The document file is empty.")
+    if len(data) > MAX_DOCUMENT_BYTES:
+        raise MediaError("Document must be 16 MB or smaller.")
+    if not detect_document(ext, data):
+        raise MediaError("Only PDF, DOC, DOCX, XLS, and XLSX files are accepted.")
+    declared_type = (declared or "").split(";")[0].strip().lower()
+    if declared_type not in DOCUMENT_DECLARED_OK:
+        raise MediaError("Only PDF, DOC, DOCX, XLS, and XLSX files are accepted.")
+    return DOCUMENT_TYPES[ext], ext
+
+
+def safe_document_name(filename: str, ext: str) -> str:
+    base = Path(filename or "").name
+    base = re.sub(r"[^A-Za-z0-9._ -]", "", base).strip().strip(".")
+    if not base:
+        base = f"document.{ext}"
+    if not base.lower().endswith(f".{ext}"):
+        stem = base.rsplit(".", 1)[0] if "." in base else base
+        base = f"{stem}.{ext}"
+    return base[:120]
+
+
+def write_library_file(library: str, data: bytes, ext: str) -> str:
+    cleaned = normalize_library(library)
+    if ext not in DOCUMENT_TYPES:
+        raise MediaError("Only PDF, DOC, DOCX, XLS, and XLSX files are accepted.")
+    folder = UPLOAD_DIR / LIBRARY_FOLDERS[cleaned]
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"{uuid4().hex}.{ext}"
+    target = folder / name
+    target.write_bytes(data)
+    return f"backend/uploads/{LIBRARY_FOLDERS[cleaned]}/{name}"
+
+
+def _as_utc(value: datetime | str) -> datetime:
+    if isinstance(value, datetime):
+        moment = value
+    else:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
+
+
+def _nth_sunday(year: int, month: int, n: int) -> date:
+    first = date(year, month, 1)
+    offset = (6 - first.weekday()) % 7
+    return date(year, month, 1 + offset + 7 * (n - 1))
+
+
+def _chicago_date(moment: datetime) -> date:
+    """Calendar date in America/Chicago. Falls back if the zone database is missing."""
+    utc = _as_utc(moment)
+    try:
+        from zoneinfo import ZoneInfo
+
+        return utc.astimezone(ZoneInfo("America/Chicago")).date()
+    except Exception:
+        start_day = _nth_sunday(utc.year, 3, 2)
+        end_day = _nth_sunday(utc.year, 11, 1)
+        start = datetime(start_day.year, start_day.month, start_day.day, 8, 0, tzinfo=timezone.utc)
+        end = datetime(end_day.year, end_day.month, end_day.day, 7, 0, tzinfo=timezone.utc)
+        hours = -5 if start <= utc < end else -6
+        return (utc + timedelta(hours=hours)).date()
+
+
+def uploaded_on(value: datetime | str) -> str:
+    return _chicago_date(value).isoformat()
+
+
+def minimal_pdf(message: str) -> bytes:
+    """A one-page PDF whose text is the document title. Used for example files."""
+    safe = "".join(
+        ch if 32 <= ord(ch) < 127 and ch not in "()\\" else " " for ch in message
+    ).strip() or "Council 10930"
+    safe = safe[:90]
+    stream = f"BT /F1 14 Tf 72 720 Td ({safe}) Tj ET".encode("ascii")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Count 1 /Kids [3 0 R] >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+        b"<< /Length " + str(len(stream)).encode("ascii") + b" >>\nstream\n" + stream + b"\nendstream",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    parts: list[bytes] = [b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"]
+    offsets = [0]
+    for index, body in enumerate(objects, start=1):
+        offsets.append(sum(len(part) for part in parts))
+        parts.append(f"{index} 0 obj\n".encode("ascii") + body + b"\nendobj\n")
+    xref_at = sum(len(part) for part in parts)
+    lines = [f"xref\n0 {len(objects) + 1}\n", "0000000000 65535 f \n"]
+    for offset in offsets[1:]:
+        lines.append(f"{offset:010d} 00000 n \n")
+    lines.append(
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF\n"
+    )
+    parts.append("".join(lines).encode("ascii"))
+    return b"".join(parts)
+
+
+def ensure_seed_documents() -> None:
+    """Write the example PDFs when they are missing. Does not insert database rows."""
+    for item in SEED_DOCUMENTS:
+        target = absolute_path(item["file_path"])
+        if target.is_file():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(minimal_pdf(item["title"]))

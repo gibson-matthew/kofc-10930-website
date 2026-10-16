@@ -431,6 +431,47 @@ body.page-member .on-navy {
   text-decoration: underline;
 }
 
+.detail .doc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.detail .doc-list li + li {
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(26, 23, 20, 0.08);
+}
+
+.detail .doc-list h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--navy);
+  margin: 0.1rem 0 0;
+}
+
+.detail .doc-list p {
+  margin: 0.2rem 0 0;
+}
+
+.detail .btn {
+  margin-left: 0;
+}
+
+.detail .doc-form {
+  margin-bottom: 0.7rem;
+}
+
+.detail .doc-list a.btn {
+  color: var(--navy-deep);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.detail .doc-list a.btn:hover {
+  color: var(--navy);
+}
+
 .birthday-month {
   margin: 0.55rem 0 0.2rem;
   color: var(--wine);

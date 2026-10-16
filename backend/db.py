@@ -9,7 +9,20 @@ import threading
 from copy import deepcopy
 from datetime import date, datetime, timezone
 
-from media import RECOG_SLOTS, SEED_IMAGES, delete_stored_file, public_url, slot_check_sql
+from media import (
+    RECOG_SLOTS,
+    SEED_DOCUMENTS,
+    SEED_IMAGES,
+    clean_document_description,
+    clean_document_title,
+    delete_stored_file,
+    document_path_allowed,
+    ensure_seed_documents,
+    normalize_library,
+    public_url,
+    slot_check_sql,
+    uploaded_on,
+)
 from security import hash_password, verify_password, verify_password_dummy
 from seed import EVENT_SEED, HONOR_SEED, PAGES
 from test_seed import MEMBER_SEED, ensure_seed_photos, member_photo_path
@@ -58,6 +71,7 @@ def _connect():
 class Store:
     def __init__(self) -> None:
         ensure_seed_photos()
+        ensure_seed_documents()
         self._lock = threading.Lock()
         self._memory = {slug: deepcopy(blocks) for slug, blocks in PAGES.items()}
         self._members: list[dict] = []
@@ -65,14 +79,17 @@ class Store:
         self._image_seq = len(self._images) + 1
         self._honors = _seed_honor_rows()
         self._events = _seed_event_rows()
+        self._documents = _seed_document_rows()
         self._honor_seq = len(self._honors) + 1
         self._event_seq = len(self._events) + 1
+        self._document_seq = len(self._documents) + 1
         self._refresh: dict[str, dict] = {}
         self._prefer_memory = False
 
     def prepare(self) -> str:
         """Create auth tables, the webmaster, the test roster, and example images."""
         ensure_seed_photos()
+        ensure_seed_documents()
         hashed = hash_password(TEST_MEMBER_PASSWORD)
         with self._lock:
             self._prefer_memory = False
@@ -81,8 +98,10 @@ class Store:
             self._image_seq = len(self._images) + 1
             self._honors = _seed_honor_rows()
             self._events = _seed_event_rows()
+            self._documents = _seed_document_rows()
             self._honor_seq = len(self._honors) + 1
             self._event_seq = len(self._events) + 1
+            self._document_seq = len(self._documents) + 1
         conn = _connect()
         if conn is None:
             with self._lock:
@@ -1043,6 +1062,176 @@ class Store:
         except Exception as exc:
             _rollback(conn)
             raise StoreError("Could not remove the event.", 503) from exc
+
+    def list_documents(self, library: str) -> list[dict]:
+        cleaned = normalize_library(library)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                rows = _sorted_documents(self._documents, cleaned)
+            return [_public_document(item) for item in rows]
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    _DOCUMENT_SELECT
+                    + """
+                    WHERE library = %s
+                    ORDER BY uploaded_at DESC, id DESC
+                    """,
+                    (cleaned,),
+                )
+                fetched = cur.fetchall()
+            conn.close()
+        except Exception as exc:
+            log.warning("Document list failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise StoreError("Could not load documents.", 503) from exc
+        return [_public_document(_document_from_row(row)) for row in fetched]
+
+    def document_file(self, document_id: int) -> tuple[str, str, str] | None:
+        row = self._document_record(document_id)
+        if row is None:
+            return None
+        path = str(row.get("file_path") or "").replace("\\", "/")
+        if not document_path_allowed(str(row.get("library") or ""), path):
+            return None
+        return path, row.get("content_type") or "application/octet-stream", row.get("original_name") or "document"
+
+    def create_document(
+        self,
+        library: str,
+        title: str,
+        description: str,
+        file_path: str,
+        original_name: str,
+        content_type: str,
+        uploaded_by: str | None,
+    ) -> dict:
+        cleaned = normalize_library(library)
+        cleaned_title = clean_document_title(title)
+        cleaned_description = clean_document_description(description)
+        stored_path = str(file_path or "").replace("\\", "/")
+        if not document_path_allowed(cleaned, stored_path):
+            raise StoreError("Document path is not allowed.", 400)
+        stored_name = str(original_name or "").strip()
+        stored_type = str(content_type or "").strip().lower()
+        if not stored_name or not stored_type:
+            raise StoreError("Choose a document.", 400)
+        uploaded_at = datetime.now(timezone.utc)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                document_id = self._document_seq
+                self._document_seq += 1
+                self._documents.append(
+                    {
+                        "id": document_id,
+                        "library": cleaned,
+                        "title": cleaned_title,
+                        "description": cleaned_description,
+                        "file_path": stored_path,
+                        "original_name": stored_name,
+                        "content_type": stored_type,
+                        "uploaded_by": uploaded_by,
+                        "uploaded_at": uploaded_at,
+                    }
+                )
+            return _public_document(
+                {
+                    "id": document_id,
+                    "library": cleaned,
+                    "title": cleaned_title,
+                    "description": cleaned_description,
+                    "original_name": stored_name,
+                    "content_type": stored_type,
+                    "uploaded_at": uploaded_at,
+                }
+            )
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO documents (
+                      library, title, description, file_path, original_name,
+                      content_type, uploaded_by, uploaded_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id, library, title, description, file_path,
+                              original_name, content_type, uploaded_by, uploaded_at
+                    """,
+                    (
+                        cleaned,
+                        cleaned_title,
+                        cleaned_description,
+                        stored_path,
+                        stored_name,
+                        stored_type,
+                        uploaded_by,
+                        uploaded_at,
+                    ),
+                )
+                row = cur.fetchone()
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the document.", 503) from exc
+        if row is None:
+            raise StoreError("Could not save the document.", 503)
+        return _public_document(_document_from_row(row))
+
+    def delete_document(self, document_id: int) -> None:
+        previous = self._document_record(document_id)
+        if previous is None:
+            raise StoreError("Document was not found.", 404)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                self._documents = [item for item in self._documents if item["id"] != document_id]
+            delete_stored_file(str(previous.get("file_path") or ""))
+            return
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM documents WHERE id = %s", (document_id,))
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Document was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not remove the document.", 503) from exc
+        delete_stored_file(str(previous.get("file_path") or ""))
+
+    def _document_record(self, document_id: int) -> dict | None:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                for item in self._documents:
+                    if item["id"] == document_id:
+                        return dict(item)
+            return None
+        try:
+            with conn.cursor() as cur:
+                cur.execute(_DOCUMENT_SELECT + " WHERE id = %s", (document_id,))
+                row = cur.fetchone()
+            conn.close()
+        except Exception as exc:
+            log.warning("Document lookup failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise StoreError("Could not load the document.", 503) from exc
+        if row is None:
+            return None
+        return _document_from_row(row)
 
     def _honor_record(self, honor_id: int) -> dict | None:
         conn = self._open()
@@ -2225,6 +2414,74 @@ def _seed_honor_rows() -> list[dict]:
     return rows
 
 
+_DOCUMENT_SELECT = """
+SELECT id, library, title, description, file_path, original_name, content_type, uploaded_by, uploaded_at
+FROM documents
+"""
+
+
+def _seed_document_rows() -> list[dict]:
+    rows = []
+    for index, item in enumerate(SEED_DOCUMENTS, start=1):
+        rows.append(
+            {
+                "id": index,
+                "library": item["library"],
+                "title": item["title"],
+                "description": item["description"],
+                "file_path": item["file_path"],
+                "original_name": item["original_name"],
+                "content_type": item["content_type"],
+                "uploaded_by": item["uploaded_by"],
+                "uploaded_at": item["uploaded_at"],
+            }
+        )
+    return rows
+
+
+def _document_moment(row: dict) -> datetime:
+    value = row["uploaded_at"]
+    if isinstance(value, datetime):
+        moment = value
+    else:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment
+
+
+def _sorted_documents(rows: list[dict], library: str) -> list[dict]:
+    chosen = [dict(item) for item in rows if item["library"] == library]
+    chosen.sort(key=lambda item: (_document_moment(item), int(item["id"])), reverse=True)
+    return chosen
+
+
+def _document_from_row(row) -> dict:
+    return {
+        "id": row[0],
+        "library": row[1],
+        "title": row[2],
+        "description": row[3] or "",
+        "file_path": row[4],
+        "original_name": row[5],
+        "content_type": row[6],
+        "uploaded_by": row[7],
+        "uploaded_at": row[8],
+    }
+
+
+def _public_document(row: dict) -> dict:
+    return {
+        "id": int(row["id"]),
+        "library": row["library"],
+        "title": row["title"],
+        "description": row.get("description") or "",
+        "original_name": row["original_name"],
+        "content_type": row["content_type"],
+        "uploaded_on": uploaded_on(row["uploaded_at"]),
+    }
+
+
 def _seed_event_rows() -> list[dict]:
     rows = []
     for index, item in enumerate(EVENT_SEED, start=1):
@@ -2349,6 +2606,58 @@ def _ensure_records(cur) -> None:
                     item["sort_order"],
                 ),
             )
+    _ensure_documents(cur)
+
+
+def _ensure_documents(cur) -> None:
+    """Create the library table. Example rows are inserted only on first create."""
+    documents_new = not _table_exists(cur, "documents")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS documents (
+          id SERIAL PRIMARY KEY,
+          library TEXT NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          file_path TEXT NOT NULL,
+          original_name TEXT NOT NULL,
+          content_type TEXT NOT NULL,
+          uploaded_by TEXT,
+          uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CONSTRAINT documents_library_chk CHECK (
+            library IN ('treasurer', 'financial_secretary')
+          )
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS documents_library_idx
+        ON documents (library, uploaded_at DESC, id DESC)
+        """
+    )
+    if not documents_new:
+        return
+    for item in SEED_DOCUMENTS:
+        cur.execute(
+            """
+            INSERT INTO documents (
+              library, title, description, file_path, original_name,
+              content_type, uploaded_by, uploaded_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                item["library"],
+                item["title"],
+                item["description"],
+                item["file_path"],
+                item["original_name"],
+                item["content_type"],
+                item["uploaded_by"],
+                datetime.fromisoformat(item["uploaded_at"]),
+            ),
+        )
 
 
 def _pg_sqlstate(exc: Exception) -> str | None:

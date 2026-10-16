@@ -329,3 +329,47 @@ export async function deleteEvent(id) {
   const response = await send(`/api/events/${id}`, { method: "DELETE" });
   return readJson(response, "Could not remove the event.");
 }
+
+const DOCUMENT_EXTENSIONS = ["pdf", "doc", "docx", "xls", "xlsx"];
+
+export const DOCUMENT_ACCEPT =
+  ".pdf,.doc,.docx,.xls,.xlsx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+export function documentFileError(file) {
+  if (!file) return "Choose a document.";
+  const ext = file.name.includes(".") ? file.name.split(".").pop().toLowerCase() : "";
+  if (!DOCUMENT_EXTENSIONS.includes(ext)) {
+    return "Only PDF, DOC, DOCX, XLS, and XLSX files are accepted.";
+  }
+  if (file.size > 16 * 1024 * 1024) return "Document must be 16 MB or smaller.";
+  return "";
+}
+
+export function documentFileUrl(id) {
+  return `/api/documents/${id}/file`;
+}
+
+export async function fetchDocuments(library) {
+  let response;
+  try {
+    response = await send(`/api/documents?library=${encodeURIComponent(library)}`);
+  } catch {
+    throw new Error("Could not load documents.");
+  }
+  return readJson(response, "Could not load documents.");
+}
+
+export async function uploadDocument(library, fields, file) {
+  const body = new FormData();
+  body.append("library", library);
+  body.append("title", fields.title || "");
+  body.append("description", fields.description || "");
+  body.append("file", file);
+  const response = await send("/api/documents", { method: "POST", body });
+  return readJson(response, "Could not add the document.");
+}
+
+export async function deleteDocument(id) {
+  const response = await send(`/api/documents/${id}`, { method: "DELETE" });
+  return readJson(response, "Could not remove the document.");
+}
