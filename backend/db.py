@@ -43,6 +43,23 @@ TEST_MEMBER_TITLE = "GK"
 # Second local account so the webmaster can grant admin access to someone else.
 SAMPLE_MEMBER_ID = "1000001"
 SAMPLE_MEMBER_NAME = "Sample Brother"
+# Quick-link cards removed from Members Quick Links. Deleted on startup so an
+# existing database cannot merge them back onto the member page.
+_RETIRED_MEMBER_LINK_KEYS = (
+    "links.5.title",
+    "links.5.action",
+    "links.5.detail",
+    "links.7.title",
+    "links.7.action",
+    "links.7.detail",
+    "links.8.title",
+    "links.8.action",
+    "links.8.detail",
+    "links.10.title",
+    "links.10.body",
+    "links.10.action",
+    "links.10.detail",
+)
 
 log = logging.getLogger("koc10930")
 
@@ -110,6 +127,7 @@ class Store:
         try:
             with conn.cursor() as cur:
                 _ensure_schema(cur)
+                _remove_retired_link_blocks(cur)
                 _seed_images(cur)
                 _ensure_records(cur)
                 status = _upsert_test_member(cur, hashed)
@@ -1803,6 +1821,8 @@ class Store:
                 return self._page_payload(slug, self._memory[slug])
         merged = {block["key"]: deepcopy(block) for block in PAGES[slug]}
         for row in rows:
+            if row["key"] in _RETIRED_MEMBER_LINK_KEYS:
+                continue
             merged[row["key"]] = row
         blocks = sorted(merged.values(), key=lambda block: (block["sort_order"], block["key"]))
         with self._lock:
@@ -1812,8 +1832,14 @@ class Store:
     def save_member(self, blocks: list[dict]) -> dict:
         normalized = self._normalize(blocks)
         with self._lock:
-            current = {block["key"]: deepcopy(block) for block in self._memory["member"]}
+            current = {
+                block["key"]: deepcopy(block)
+                for block in self._memory["member"]
+                if block["key"] not in _RETIRED_MEMBER_LINK_KEYS
+            }
             for block in normalized:
+                if block["key"] in _RETIRED_MEMBER_LINK_KEYS:
+                    continue
                 current[block["key"]] = block
             ordered = sorted(current.values(), key=lambda block: (block["sort_order"], block["key"]))
             self._memory["member"] = ordered
@@ -2798,6 +2824,26 @@ def _title_constraint_sql() -> str:
             raise RuntimeError(f"Unexpected title abbreviation: {abbrev}")
     choices = ", ".join(f"'{abbrev}'" for abbrev in TITLE_ABBREVS)
     return f"CHECK (title IS NULL OR title IN ({choices}))"
+
+
+def _remove_retired_link_blocks(cur) -> None:
+    """Drop member quick-link blocks that no longer have cards."""
+    cur.execute("SAVEPOINT retired_link_blocks")
+    try:
+        cur.execute(
+            """
+            DELETE FROM content_blocks AS b
+            USING pages AS p
+            WHERE b.page_id = p.id
+              AND p.slug = 'member'
+              AND b."key" = ANY(%s)
+            """,
+            (list(_RETIRED_MEMBER_LINK_KEYS),),
+        )
+        cur.execute("RELEASE SAVEPOINT retired_link_blocks")
+    except Exception as exc:
+        log.warning("Could not remove retired member link blocks: %s", exc)
+        cur.execute("ROLLBACK TO SAVEPOINT retired_link_blocks")
 
 
 def _ensure_schema(cur) -> None:
