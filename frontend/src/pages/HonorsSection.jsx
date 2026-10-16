@@ -58,6 +58,10 @@ function honorCrop(honor) {
   return clampCrop(honor?.crop_x, honor?.crop_y, honor?.crop_scale ?? 1);
 }
 
+function honorSearchText(value) {
+  return collapse(value).toLowerCase().replace(/[\u2013\u2014-]/g, "-");
+}
+
 function HonorPhoto({ src, crop }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -252,6 +256,7 @@ export default function HonorsSection() {
   const [editor, setEditor] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
   const [expanded, setExpanded] = useState({});
+  const [queries, setQueries] = useState({});
   const canManage = Boolean(editing) && !fallback;
 
   useEffect(() => {
@@ -325,6 +330,77 @@ export default function HonorsSection() {
     }
   }
 
+  function toggleGroup(category) {
+    const next = !expanded[category];
+    setExpanded((current) => ({ ...current, [category]: next }));
+    if (!next) setQueries((current) => ({ ...current, [category]: "" }));
+  }
+
+  function renderEntry(honor, category) {
+    if (editor?.mode === "edit" && editor.id === honor.id) {
+      return (
+        <HonorForm
+          key={honor.id}
+          category={category}
+          initial={honor}
+          pending={pending}
+          onError={setError}
+          onCancel={() => setEditor(null)}
+          onSave={(fields, file) => onSave(fields, file, honor.id)}
+        />
+      );
+    }
+    const confirming = confirmId === honor.id;
+    return (
+      <div className="honor-entry" key={honor.id}>
+        <HonorPhoto src={honor.photo_url} crop={honor} />
+        <div>
+          <div className="when">{honor.period}</div>
+          <h3>{honor.name}</h3>
+          {honor.note ? <p>{honor.note}</p> : null}
+          {canManage ? (
+            confirming ? (
+              <div className="signin-actions recog-actions">
+                <button type="button" className="btn" disabled={pending} onClick={() => onRemove(honor.id)}>
+                  Remove
+                </button>
+                <button type="button" className="btn btn-quiet" disabled={pending} onClick={() => setConfirmId(null)}>
+                  Keep
+                </button>
+              </div>
+            ) : (
+              <div className="signin-actions recog-actions">
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  disabled={pending}
+                  onClick={() => {
+                    setError("");
+                    setConfirmId(null);
+                    setEditor({ mode: "edit", category, id: honor.id });
+                  }}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  disabled={pending}
+                  onClick={() => {
+                    setEditor(null);
+                    setConfirmId(honor.id);
+                  }}
+                >
+                  Remove
+                </button>
+              </div>
+            )
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <section className="block" id="honors" aria-labelledby="honorsHeading">
       <div className="section-head">
@@ -343,14 +419,22 @@ export default function HonorsSection() {
       <div className="schedule honor-board">
       {HONOR_GROUPS.map(([category, label], index) => {
         const items = honors.filter((item) => item.category === category);
-        const open = Boolean(expanded[category]);
+        const canExpand = items.length > VISIBLE_HONORS;
+        const open = canExpand && Boolean(expanded[category]);
+        const needle = honorSearchText(queries[category] || "");
         let shown = open ? items : items.slice(0, VISIBLE_HONORS);
+        if (open && needle) {
+          shown = items.filter((honor) =>
+            honorSearchText(`${honor.name || ""} ${honor.period || ""} ${honor.note || ""}`).includes(needle),
+          );
+        }
         if (editor?.mode === "edit" && editor.category === category && !shown.some((item) => item.id === editor.id)) {
           const editingItem = items.find((item) => item.id === editor.id);
           if (editingItem) shown = [...shown, editingItem];
         }
         const adding = editor?.mode === "add" && editor.category === category;
         const wide = index === HONOR_GROUPS.length - 1 && HONOR_GROUPS.length % 2 === 1;
+        const noMatches = open && needle.length > 0 && shown.length === 0;
         return (
           <article className={wide ? "sched wide honor-group" : "sched honor-group"} key={category}>
             <h3>{label}</h3>
@@ -380,93 +464,44 @@ export default function HonorsSection() {
               />
             ) : null}
             {loaded && items.length === 0 && !adding ? <p className="settings-hint">None recorded yet.</p> : null}
-            {loaded && open && items.length > VISIBLE_HONORS ? (
-              <button
-                type="button"
-                className="more is-top"
-                aria-expanded="true"
-                onClick={() => setExpanded((current) => ({ ...current, [category]: false }))}
-              >
+            {loaded && open ? (
+              <button type="button" className="more is-top" aria-expanded="true" onClick={() => toggleGroup(category)}>
                 View less
               </button>
             ) : null}
-            <div className="honor-list">
-              {shown.map((honor) => {
-                if (editor?.mode === "edit" && editor.id === honor.id) {
-                  return (
-                    <HonorForm
-                      key={honor.id}
-                      category={category}
-                      initial={honor}
-                      pending={pending}
-                      onError={setError}
-                      onCancel={() => setEditor(null)}
-                      onSave={(fields, file) => onSave(fields, file, honor.id)}
-                    />
-                  );
-                }
-                const confirming = confirmId === honor.id;
-                return (
-                  <div className="honor-entry" key={honor.id}>
-                    <HonorPhoto src={honor.photo_url} crop={honor} />
-                    <div>
-                      <div className="when">{honor.period}</div>
-                      <h3>{honor.name}</h3>
-                      {honor.note ? <p>{honor.note}</p> : null}
-                      {canManage ? (
-                        confirming ? (
-                          <div className="signin-actions recog-actions">
-                            <button type="button" className="btn" disabled={pending} onClick={() => onRemove(honor.id)}>
-                              Remove
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-quiet"
-                              disabled={pending}
-                              onClick={() => setConfirmId(null)}
-                            >
-                              Keep
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="signin-actions recog-actions">
-                            <button
-                              type="button"
-                              className="btn btn-quiet"
-                              disabled={pending}
-                              onClick={() => {
-                                setError("");
-                                setConfirmId(null);
-                                setEditor({ mode: "edit", category, id: honor.id });
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-quiet"
-                              disabled={pending}
-                              onClick={() => {
-                                setEditor(null);
-                                setConfirmId(honor.id);
-                              }}
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        )
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {loaded && items.length > VISIBLE_HONORS ? (
+            {open ? (
+              <label className="signin-field honor-search">
+                <span>Search</span>
+                <input
+                  type="search"
+                  value={queries[category] || ""}
+                  placeholder="Name, year, or note"
+                  autoComplete="off"
+                  onChange={(event) =>
+                    setQueries((current) => ({ ...current, [category]: event.target.value }))
+                  }
+                />
+              </label>
+            ) : null}
+            {open ? (
+              <div className="honor-scroll">
+                {noMatches ? (
+                  <p className="settings-hint" role="status">
+                    No matches.
+                  </p>
+                ) : (
+                  <div className="honor-list">{shown.map((honor) => renderEntry(honor, category))}</div>
+                )}
+              </div>
+            ) : (
+              <div className="honor-list">{shown.map((honor) => renderEntry(honor, category))}</div>
+            )}
+            {loaded && canExpand ? (
               <button
                 type="button"
                 className="more"
                 aria-expanded={open ? "true" : "false"}
-                onClick={() => setExpanded((current) => ({ ...current, [category]: !current[category] }))}
+                onClick={() => toggleGroup(category)}
               >
                 {open ? "View less" : "View more"}
               </button>

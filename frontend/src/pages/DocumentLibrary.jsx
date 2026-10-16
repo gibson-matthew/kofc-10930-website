@@ -52,6 +52,13 @@ function formatUploadedOn(value) {
   return `${month} ${Number(match[3])}, ${match[1]}`;
 }
 
+function librarySearchText(doc) {
+  const shownDate = formatUploadedOn(doc.uploaded_on);
+  return collapse(`${doc.title || ""} ${doc.description || ""} ${shownDate} ${doc.uploaded_on || ""}`)
+    .toLowerCase()
+    .replace(/[\u2013\u2014-]/g, "-");
+}
+
 function DocumentForm({ pending, onSave, onCancel, onError }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -146,6 +153,7 @@ export default function DocumentLibrary({ library, canManage }) {
   const [pending, setPending] = useState(false);
   const [adding, setAdding] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
+  const [query, setQuery] = useState("");
   const manage = Boolean(canManage) && !fallback;
 
   useEffect(() => {
@@ -256,8 +264,61 @@ export default function DocumentLibrary({ library, canManage }) {
       ) : null}
       {loaded && documents.length === 0 ? <p className="settings-hint">None recorded yet.</p> : null}
       {documents.length > 0 ? (
+        <label className="signin-field doc-search">
+          <span>Search</span>
+          <input
+            type="search"
+            value={query}
+            placeholder="Title, date, or description"
+            autoComplete="off"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+      ) : null}
+      {documents.length > 0 ? (
+        <DocumentList
+          documents={documents}
+          query={query}
+          fallback={fallback}
+          manage={manage}
+          pending={pending}
+          confirmId={confirmId}
+          onConfirm={setConfirmId}
+          onRemove={onRemove}
+          onStartRemove={(id) => {
+            setAdding(false);
+            setConfirmId(id);
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function DocumentList({
+  documents,
+  query,
+  fallback,
+  manage,
+  pending,
+  confirmId,
+  onConfirm,
+  onRemove,
+  onStartRemove,
+}) {
+  const needle = librarySearchText({ title: query, description: "", uploaded_on: "" });
+  const shown = needle
+    ? documents.filter((doc) => librarySearchText(doc).includes(needle))
+    : documents;
+  return (
+    <div className="doc-scroll">
+      {needle && shown.length === 0 ? (
+        <p className="settings-hint" role="status">
+          No matches.
+        </p>
+      ) : (
         <ul className="doc-list">
-          {documents.map((doc) => {
+          {shown.map((doc) => {
             const confirming = confirmId === doc.id;
             const downloadable = !fallback && Number.isInteger(doc.id);
             const pdf = doc.content_type === "application/pdf";
@@ -289,7 +350,7 @@ export default function DocumentLibrary({ library, canManage }) {
                             type="button"
                             className="btn btn-quiet"
                             disabled={pending}
-                            onClick={() => setConfirmId(null)}
+                            onClick={() => onConfirm(null)}
                           >
                             Keep
                           </button>
@@ -299,10 +360,7 @@ export default function DocumentLibrary({ library, canManage }) {
                           type="button"
                           className="btn btn-quiet"
                           disabled={pending}
-                          onClick={() => {
-                            setAdding(false);
-                            setConfirmId(doc.id);
-                          }}
+                          onClick={() => onStartRemove(doc.id)}
                         >
                           Remove
                         </button>
@@ -314,7 +372,7 @@ export default function DocumentLibrary({ library, canManage }) {
             );
           })}
         </ul>
-      ) : null}
-    </>
+      )}
+    </div>
   );
 }

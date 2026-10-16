@@ -462,6 +462,22 @@ body.page-member .on-navy {
   margin-bottom: 0.7rem;
 }
 
+.detail .doc-search {
+  margin-top: 0.35rem;
+  margin-bottom: 0.4rem;
+}
+
+.detail .doc-scroll {
+  max-height: min(70vh, 36rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gold) transparent;
+  border-top: 1px solid rgba(201, 162, 39, 0.28);
+  border-bottom: 1px solid rgba(201, 162, 39, 0.28);
+  padding: 0.15rem 0.35rem 0.15rem 0;
+}
+
 .detail .doc-list a.btn {
   color: var(--navy-deep);
   font-weight: 700;
@@ -1045,6 +1061,22 @@ button.more {
 .honor-group .more.is-top {
   margin-top: 0.35rem;
   margin-bottom: 0.15rem;
+}
+
+.honor-group .honor-search {
+  margin-top: 0.45rem;
+  margin-bottom: 0.4rem;
+}
+
+.honor-scroll {
+  max-height: min(70vh, 36rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gold) transparent;
+  border-top: 1px solid rgba(201, 162, 39, 0.28);
+  border-bottom: 1px solid rgba(201, 162, 39, 0.28);
+  padding: 0.15rem 0.35rem 0.15rem 0;
 }
 
 .recog-grid > .honor-form,
