@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { createHonor, deleteHonor, fetchHonors, imageFileError, updateHonor } from "../api";
+import CroppedPhoto from "../components/CroppedPhoto";
 import { Portrait } from "../components/Marks";
+import PhotoEditor from "../components/PhotoEditor";
 import { useContent } from "../content/ContentContext";
+import { clampCrop } from "../crop";
 import { HONOR_FALLBACK, HONOR_GROUPS, MONTHS, collapse } from "../content/records";
 
-const ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
-const VISIBLE_HONORS = 6;
+const VISIBLE_HONORS = 2;
 const MONTH_CATEGORIES = new Set(["knight_month", "family_month"]);
 const YEAR_CATEGORIES = new Set(["knight_year", "family_year"]);
 
@@ -52,13 +54,17 @@ function fieldsFromHonor(honor) {
   return fields;
 }
 
-function HonorPhoto({ src }) {
+function honorCrop(honor) {
+  return clampCrop(honor?.crop_x, honor?.crop_y, honor?.crop_scale ?? 1);
+}
+
+function HonorPhoto({ src, crop }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     setFailed(false);
   }, [src]);
   if (src && !failed) {
-    return <img className="portrait" src={src} alt="" onError={() => setFailed(true)} />;
+    return <CroppedPhoto className="portrait" src={src} crop={crop} onError={() => setFailed(true)} />;
   }
   return <Portrait />;
 }
@@ -68,6 +74,7 @@ function HonorForm({ category, initial, pending, onSave, onCancel, onError }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState("");
   const [clearPhoto, setClearPhoto] = useState(false);
+  const [crop, setCrop] = useState(() => honorCrop(initial));
   const previewRef = useRef("");
 
   useEffect(() => {
@@ -95,6 +102,7 @@ function HonorForm({ category, initial, pending, onSave, onCancel, onError }) {
     setFile(chosen);
     setPreview(url);
     setClearPhoto(false);
+    setCrop({ x: 0, y: 0, scale: 1 });
     onError("");
   }
 
@@ -106,6 +114,12 @@ function HonorForm({ category, initial, pending, onSave, onCancel, onError }) {
   }
 
   const shownPhoto = preview || (!clearPhoto && initial?.photo_url) || "";
+
+  function onRemovePhoto() {
+    clearChosenFile();
+    if (initial?.photo_url) setClearPhoto(true);
+    setCrop({ x: 0, y: 0, scale: 1 });
+  }
 
   function submit(event) {
     event.preventDefault();
@@ -124,6 +138,7 @@ function HonorForm({ category, initial, pending, onSave, onCancel, onError }) {
         month: fields.month,
         period: collapse(fields.period),
         clear_photo: clearPhoto && !file,
+        crop,
       },
       file,
     );
@@ -132,30 +147,16 @@ function HonorForm({ category, initial, pending, onSave, onCancel, onError }) {
   return (
     <div className="honor-form">
       <form onSubmit={submit}>
-        <div className="settings-photo-row">
-          <HonorPhoto src={shownPhoto} />
-          <div className="signin-actions recog-actions">
-            <label className="btn btn-quiet">
-              {shownPhoto ? "Replace photo" : "Add photo"}
-              <input type="file" accept={ACCEPT} hidden disabled={pending} onChange={onFile} />
-            </label>
-            {file ? (
-              <button type="button" className="btn btn-quiet" disabled={pending} onClick={clearChosenFile}>
-                Undo image
-              </button>
-            ) : null}
-            {!file && initial?.photo_url && !clearPhoto ? (
-              <button type="button" className="btn btn-quiet" disabled={pending} onClick={() => setClearPhoto(true)}>
-                Remove photo
-              </button>
-            ) : null}
-            {!file && clearPhoto && initial?.photo_url ? (
-              <button type="button" className="btn btn-quiet" disabled={pending} onClick={() => setClearPhoto(false)}>
-                Keep photo
-              </button>
-            ) : null}
-          </div>
-        </div>
+        <PhotoEditor
+          key={shownPhoto || "empty"}
+          src={shownPhoto}
+          initial={crop}
+          pending={pending}
+          embedded
+          onSwap={onFile}
+          onChange={setCrop}
+          onRemove={shownPhoto ? onRemovePhoto : undefined}
+        />
         <label className="signin-field">
           <span>Name</span>
           <input
@@ -407,7 +408,7 @@ export default function HonorsSection() {
                 const confirming = confirmId === honor.id;
                 return (
                   <div className="honor-entry" key={honor.id}>
-                    <HonorPhoto src={honor.photo_url} />
+                    <HonorPhoto src={honor.photo_url} crop={honor} />
                     <div>
                       <div className="when">{honor.period}</div>
                       <h3>{honor.name}</h3>

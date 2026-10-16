@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import CroppedPhoto from "../components/CroppedPhoto";
 import { PortraitSm } from "../components/Marks";
+import PhotoEditor, { PHOTO_ACCEPT } from "../components/PhotoEditor";
 import { daysInMonth } from "../birthdays";
-import { clampCrop } from "../crop";
 import { MONTHS } from "../content/records";
 import {
   assignMediaSlot,
@@ -35,7 +35,6 @@ const SLOTS = [
   ["recog.3", "Knight of the Year"],
 ];
 
-const ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
 const EMPTY_MEMBER = { memberid: "", password: "", display_name: "", title: "", birth_month: "", birth_day: "" };
 
 function collapse(value) {
@@ -192,95 +191,6 @@ function Photo({ user, className }) {
   return <PortraitSm />;
 }
 
-function PhotoEditor({ src, initial, pending, onSave, onCancel, onSwap }) {
-  const [crop, setCrop] = useState(() => clampCrop(initial?.x, initial?.y, initial?.scale ?? 1));
-  const stageRef = useRef(null);
-  const windowRef = useRef(null);
-  const dragRef = useRef(null);
-
-  useEffect(() => {
-    const stage = stageRef.current;
-    if (!stage || !src) return undefined;
-    function onWheel(event) {
-      event.preventDefault();
-      const delta = event.deltaY > 0 ? -0.08 : 0.08;
-      setCrop((current) => clampCrop(current.x, current.y, current.scale + delta));
-    }
-    stage.addEventListener("wheel", onWheel, { passive: false });
-    return () => stage.removeEventListener("wheel", onWheel);
-  }, [src]);
-
-  function onPointerDown(event) {
-    if (!src || event.button !== 0) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { x: event.clientX, y: event.clientY, crop };
-  }
-
-  function onPointerMove(event) {
-    const drag = dragRef.current;
-    const frame = windowRef.current;
-    if (!drag || !frame || !frame.clientWidth || !frame.clientHeight) return;
-    const dx = (event.clientX - drag.x) / frame.clientWidth;
-    const dy = (event.clientY - drag.y) / frame.clientHeight;
-    setCrop(clampCrop(drag.crop.x + dx, drag.crop.y + dy, drag.crop.scale));
-  }
-
-  function onPointerUp() {
-    dragRef.current = null;
-  }
-
-  return (
-    <div className="photo-editor">
-      <div
-        className={src ? "photo-editor-stage" : "photo-editor-stage is-empty"}
-        ref={stageRef}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-      >
-        <div className="photo-editor-window" ref={windowRef}>
-          {src ? (
-            <img
-              src={src}
-              alt=""
-              draggable={false}
-              style={{ transform: `translate(${crop.x * 100}%, ${crop.y * 100}%) scale(${crop.scale})` }}
-            />
-          ) : (
-            <span className="photo-editor-empty">Choose an image</span>
-          )}
-        </div>
-        <div className="photo-editor-ring" aria-hidden="true" />
-      </div>
-      <label className="signin-field">
-        <span>Zoom</span>
-        <input
-          type="range"
-          min="1"
-          max="3"
-          step="0.01"
-          value={crop.scale}
-          disabled={pending || !src}
-          onChange={(event) => setCrop((current) => clampCrop(current.x, current.y, event.target.value))}
-        />
-      </label>
-      <div className="signin-actions">
-        <label className="btn btn-quiet">
-          {src ? "Swap image" : "Choose image"}
-          <input type="file" accept={ACCEPT} hidden disabled={pending} onChange={onSwap} />
-        </label>
-        <button type="button" className="btn" disabled={pending || !src} onClick={() => onSave(crop)}>
-          Save photo
-        </button>
-        <button type="button" className="btn btn-quiet" disabled={pending} onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function SettingsView() {
   const { user, refresh } = useAuth();
   const admin = Boolean(user?.is_admin);
@@ -398,12 +308,32 @@ export default function SettingsView() {
     }, "Profile photo saved.");
   }
 
+  function showEmptyEditor() {
+    setEditor((current) => {
+      if (current?.ownedUrl) URL.revokeObjectURL(current.src);
+      return { src: "", file: null, ownedUrl: false, crop: { x: 0, y: 0, scale: 1 } };
+    });
+  }
+
   function onRemovePhoto() {
     closeEditor();
     run(async () => {
       const updated = await deleteMyPhoto();
       await refresh();
       rememberMember(updated);
+    }, "Profile photo removed.");
+  }
+
+  function onRemoveInEditor() {
+    if (!user?.photo_url) {
+      showEmptyEditor();
+      return;
+    }
+    run(async () => {
+      const updated = await deleteMyPhoto();
+      await refresh();
+      rememberMember(updated);
+      showEmptyEditor();
     }, "Profile photo removed.");
   }
 
@@ -577,6 +507,7 @@ export default function SettingsView() {
                 onSave={onSavePhoto}
                 onCancel={closeEditor}
                 onSwap={onSwap}
+                onRemove={editor.src || user?.photo_url ? onRemoveInEditor : undefined}
               />
             ) : (
               <div className="settings-photo-row">
@@ -769,7 +700,7 @@ export default function SettingsView() {
           <div className="signin-actions">
             <label className="btn">
               Upload image
-              <input type="file" accept={ACCEPT} hidden onChange={onUpload} disabled={pending} />
+              <input type="file" accept={PHOTO_ACCEPT} hidden onChange={onUpload} disabled={pending} />
             </label>
           </div>
           <div className="media-grid">
@@ -797,7 +728,7 @@ export default function SettingsView() {
                     Replace
                     <input
                       type="file"
-                      accept={ACCEPT}
+                      accept={PHOTO_ACCEPT}
                       hidden
                       disabled={pending}
                       onChange={(event) => onReplace(image, event)}

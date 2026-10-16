@@ -889,7 +889,12 @@ button.more {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   text-align: center;
-  padding: 1rem;
+  padding: 0;
+}
+
+.photo-editor-empty .portrait-sm {
+  width: 100%;
+  height: 100%;
 }
 
 .photo-editor .signin-field {

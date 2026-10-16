@@ -35,9 +35,9 @@ Set `DATABASE_URL` if PostgreSQL is not on the default host, user, or password. 
 
 The API creates this member on startup when the row is missing. `backend\seed_member.py` does the same thing and exits with an error if PostgreSQL cannot be reached. If membership id `1000000` already has a different password, the stored password is left as it is.
 
-That same password is used by sample member `1000001` (Sample Brother, no title, not an admin) and by the test roster `1000100` through `1000149`. Starting the API, or running `backend\seed_member.py`, inserts any of those rows that are missing. Each roster member has a profile photo. A few of those accounts are also admins: `1000100`, `1000103`, `1000114`, `1000124`, `1000131`, and `1000140`. David Hernandez remains the known admin.
+That same password is used by sample member `1000001` (Sample Brother, no title, not an admin) and by the test roster `1000100` through `1000149`. Starting the API, or running `backend\seed_member.py`, inserts any of those rows that are missing. Each roster member receives a profile photo when that member row is first created. Removing the photo leaves the default in place. A few of those accounts are also admins: `1000100`, `1000103`, `1000114`, `1000124`, `1000131`, and `1000140`. David Hernandez remains the known admin.
 
-The same step loads past honors: 20 Knights of the Month, 20 Families of the Month, 20 Knights of the Year, 20 Families of the Year, and 20 Past Grand Knights. `backend\schema.sql` inserts any missing honor rows as well. If PostgreSQL is down, the API keeps this same roster and these same honors in memory. Several birthdays fall in October and November. A roster member or past-honor row that is still missing is inserted again the next time the API starts. Edits to an existing row are left in place.
+The same step loads past honors: 20 Knights of the Month, 20 Families of the Month, 20 Knights of the Year, 20 Families of the Year, and 20 Past Grand Knights. `backend\schema.sql` inserts any missing honor rows as well. If PostgreSQL is down, the API keeps this same roster and these same honors in memory. Several birthdays fall in October and November. A roster member or past-honor row that is still missing is inserted again the next time the API starts. Edits to an existing row are left in place, including a cleared photo.
 
 ## Authentication
 

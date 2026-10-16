@@ -726,9 +726,8 @@ class Store:
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    SELECT id, category, name, period, sort_year, sort_month, note, photo_path, photo_type
-                    FROM honors
+                    _HONOR_SELECT
+                    + """
                     ORDER BY category, sort_year DESC, sort_month DESC NULLS LAST, id DESC
                     """
                 )
@@ -752,14 +751,20 @@ class Store:
             return None
         return path, row.get("photo_type") or "application/octet-stream"
 
-    def create_honor(self, fields: dict, photo: tuple[str, str] | None) -> dict:
+    def create_honor(
+        self,
+        fields: dict,
+        photo: tuple[str, str] | None,
+        crop: tuple[float, float, float] | None = None,
+    ) -> dict:
         payload = _honor_fields(fields)
+        stored_crop = crop if crop is not None else (0.0, 0.0, 1.0)
         conn = self._open()
         if conn is None:
             with self._lock:
                 honor_id = self._honor_seq
                 self._honor_seq += 1
-                self._honors.append(_memory_honor(honor_id, payload, photo))
+                self._honors.append(_memory_honor(honor_id, payload, photo, stored_crop))
             row = self._honor_record(honor_id)
             if row is None:
                 raise StoreError("Could not save the honor.", 503)
@@ -769,11 +774,12 @@ class Store:
                 cur.execute(
                     """
                     INSERT INTO honors
-                      (category, name, period, sort_year, sort_month, note, photo_path, photo_type)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                      (category, name, period, sort_year, sort_month, note, photo_path, photo_type,
+                       crop_x, crop_y, crop_scale)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    _honor_params(payload, photo),
+                    _honor_params(payload, photo, stored_crop),
                 )
                 honor_id = cur.fetchone()[0]
             conn.commit()
@@ -792,11 +798,24 @@ class Store:
         fields: dict,
         photo: tuple[str, str] | None,
         clear_photo: bool,
+        crop: tuple[float, float, float] | None = None,
     ) -> dict:
         payload = _honor_fields(fields)
         previous = self._honor_record(honor_id)
         if previous is None:
             raise StoreError("Honor was not found.", 404)
+        if photo is not None:
+            next_crop = crop if crop is not None else (0.0, 0.0, 1.0)
+        elif clear_photo:
+            next_crop = (0.0, 0.0, 1.0)
+        elif crop is not None:
+            next_crop = crop
+        else:
+            next_crop = (
+                float(previous.get("crop_x") or 0),
+                float(previous.get("crop_y") or 0),
+                float(previous.get("crop_scale") or 1),
+            )
         conn = self._open()
         if conn is None:
             with self._lock:
@@ -805,6 +824,7 @@ class Store:
                     raise StoreError("Honor was not found.", 404)
                 old_path = target.get("photo_path")
                 target.update(payload)
+                target["crop_x"], target["crop_y"], target["crop_scale"] = next_crop
                 if photo is not None:
                     target["photo_path"] = photo[0]
                     target["photo_type"] = photo[1]
@@ -835,10 +855,14 @@ class Store:
                     """
                     UPDATE honors
                     SET category = %s, name = %s, period = %s, sort_year = %s,
-                        sort_month = %s, note = %s, photo_path = %s, photo_type = %s
+                        sort_month = %s, note = %s, photo_path = %s, photo_type = %s,
+                        crop_x = %s, crop_y = %s, crop_scale = %s
                     WHERE id = %s
                     """,
-                    (*_honor_params(payload, (next_path, next_type) if next_path else None), honor_id),
+                    (
+                        *_honor_params(payload, (next_path, next_type) if next_path else None, next_crop),
+                        honor_id,
+                    ),
                 )
             conn.commit()
             conn.close()
@@ -1030,14 +1054,7 @@ class Store:
             return None
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT id, category, name, period, sort_year, sort_month, note, photo_path, photo_type
-                    FROM honors
-                    WHERE id = %s
-                    """,
-                    (honor_id,),
-                )
+                cur.execute(_HONOR_SELECT + " WHERE id = %s", (honor_id,))
                 row = cur.fetchone()
             conn.close()
         except Exception as exc:
@@ -1147,10 +1164,25 @@ class Store:
             return None
         return _image_from_row(row)
 
-    def add_library_image(self, path: str, original_name: str, content_type: str, owner: str | None) -> dict:
-        return self._insert_image(path, original_name, content_type, "library", None, owner)
+    def add_library_image(
+        self,
+        path: str,
+        original_name: str,
+        content_type: str,
+        owner: str | None,
+        crop: tuple[float, float, float] | None = None,
+    ) -> dict:
+        stored_crop = crop if crop is not None else (0.0, 0.0, 1.0)
+        return self._insert_image(path, original_name, content_type, "library", None, owner, stored_crop)
 
-    def replace_image(self, image_id: int, path: str, original_name: str, content_type: str) -> dict:
+    def replace_image(
+        self,
+        image_id: int,
+        path: str,
+        original_name: str,
+        content_type: str,
+        crop: tuple[float, float, float] | None = None,
+    ) -> dict:
         current = self.get_image(image_id)
         if current is None:
             delete_stored_file(path)
@@ -1158,6 +1190,7 @@ class Store:
         if current["purpose"] == "profile":
             delete_stored_file(path)
             raise StoreError("Profile photos are replaced from Settings.", 400)
+        crop_x, crop_y, crop_scale = crop if crop is not None else (0.0, 0.0, 1.0)
         conn = self._open()
         if conn is None:
             with self._lock:
@@ -1167,6 +1200,9 @@ class Store:
                         image["path"] = path
                         image["original_name"] = original_name
                         image["content_type"] = content_type
+                        image["crop_x"] = crop_x
+                        image["crop_y"] = crop_y
+                        image["crop_scale"] = crop_scale
                         delete_stored_file(old)
                         return _public_image(image)
             delete_stored_file(path)
@@ -1176,10 +1212,11 @@ class Store:
                 cur.execute(
                     """
                     UPDATE images
-                    SET path = %s, original_name = %s, content_type = %s
+                    SET path = %s, original_name = %s, content_type = %s,
+                        crop_x = %s, crop_y = %s, crop_scale = %s
                     WHERE id = %s AND purpose <> 'profile'
                     """,
-                    (path, original_name, content_type, image_id),
+                    (path, original_name, content_type, crop_x, crop_y, crop_scale, image_id),
                 )
                 if cur.rowcount != 1:
                     conn.rollback()
@@ -1195,6 +1232,51 @@ class Store:
             delete_stored_file(path)
             raise StoreError("Could not replace the image.", 503) from exc
         delete_stored_file(current["path"])
+        updated = self.get_image(image_id)
+        if updated is None:
+            raise StoreError("Image was not found.", 404)
+        return _public_image(updated)
+
+    def update_library_crop(self, image_id: int, crop: tuple[float, float, float]) -> dict:
+        crop_x, crop_y, crop_scale = crop
+        current = self.get_image(image_id)
+        if current is None:
+            raise StoreError("Image was not found.", 404)
+        if current["purpose"] == "profile":
+            raise StoreError("Profile photos are adjusted from Settings.", 400)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                for image in self._images:
+                    if image["id"] == image_id:
+                        if image["purpose"] == "profile":
+                            raise StoreError("Profile photos are adjusted from Settings.", 400)
+                        image["crop_x"] = crop_x
+                        image["crop_y"] = crop_y
+                        image["crop_scale"] = crop_scale
+                        return _public_image(image)
+            raise StoreError("Image was not found.", 404)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE images
+                    SET crop_x = %s, crop_y = %s, crop_scale = %s
+                    WHERE id = %s AND purpose <> 'profile'
+                    """,
+                    (crop_x, crop_y, crop_scale, image_id),
+                )
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Image was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the viewing angle.", 503) from exc
         updated = self.get_image(image_id)
         if updated is None:
             raise StoreError("Image was not found.", 404)
@@ -1474,7 +1556,9 @@ class Store:
         purpose: str,
         slot: str | None,
         owner: str | None,
+        crop: tuple[float, float, float] = (0, 0, 1),
     ) -> dict:
+        crop_x, crop_y, crop_scale = crop
         conn = self._open()
         if conn is None:
             with self._lock:
@@ -1486,9 +1570,9 @@ class Store:
                     "purpose": purpose,
                     "slot": slot,
                     "owner_membership_id": owner,
-                    "crop_x": 0,
-                    "crop_y": 0,
-                    "crop_scale": 1,
+                    "crop_x": crop_x,
+                    "crop_y": crop_y,
+                    "crop_scale": crop_scale,
                 }
                 self._image_seq += 1
                 self._images.append(image)
@@ -1498,11 +1582,12 @@ class Store:
                 cur.execute(
                     """
                     INSERT INTO images
-                      (path, original_name, content_type, purpose, slot, owner_membership_id)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                      (path, original_name, content_type, purpose, slot, owner_membership_id,
+                       crop_x, crop_y, crop_scale)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
-                    (path, original_name, content_type, purpose, slot, owner),
+                    (path, original_name, content_type, purpose, slot, owner, crop_x, crop_y, crop_scale),
                 )
                 image_id = cur.fetchone()[0]
             conn.commit()
@@ -1676,8 +1761,15 @@ class Store:
 
 
 _IMAGE_SELECT = """
-SELECT id, path, original_name, content_type, purpose, slot, owner_membership_id
+SELECT id, path, original_name, content_type, purpose, slot, owner_membership_id,
+       crop_x, crop_y, crop_scale
 FROM images
+"""
+
+_HONOR_SELECT = """
+SELECT id, category, name, period, sort_year, sort_month, note, photo_path, photo_type,
+       crop_x, crop_y, crop_scale
+FROM honors
 """
 
 _BIRTHDAY_CHECK = """
@@ -1848,6 +1940,9 @@ def _image_from_row(row) -> dict:
         "purpose": row[4],
         "slot": row[5],
         "owner_membership_id": row[6],
+        "crop_x": float(row[7]) if len(row) > 7 and row[7] is not None else 0,
+        "crop_y": float(row[8]) if len(row) > 8 and row[8] is not None else 0,
+        "crop_scale": float(row[9]) if len(row) > 9 and row[9] is not None else 1,
     }
 
 
@@ -1860,6 +1955,9 @@ def _public_image(image: dict) -> dict:
         "purpose": image["purpose"],
         "slot": image.get("slot"),
         "owner_membership_id": image.get("owner_membership_id"),
+        "crop_x": float(image.get("crop_x") or 0),
+        "crop_y": float(image.get("crop_y") or 0),
+        "crop_scale": float(image.get("crop_scale") or 1),
     }
 
 
@@ -2004,8 +2102,9 @@ def _event_fields(fields: dict) -> dict:
     }
 
 
-def _honor_params(payload: dict, photo: tuple[str, str] | None):
+def _honor_params(payload: dict, photo: tuple[str, str] | None, crop: tuple[float, float, float]):
     path, content_type = photo if photo else (None, None)
+    crop_x, crop_y, crop_scale = crop
     return (
         payload["category"],
         payload["name"],
@@ -2015,12 +2114,29 @@ def _honor_params(payload: dict, photo: tuple[str, str] | None):
         payload["note"],
         path,
         content_type,
+        crop_x,
+        crop_y,
+        crop_scale,
     )
 
 
-def _memory_honor(honor_id: int, payload: dict, photo: tuple[str, str] | None) -> dict:
+def _memory_honor(
+    honor_id: int,
+    payload: dict,
+    photo: tuple[str, str] | None,
+    crop: tuple[float, float, float] = (0.0, 0.0, 1.0),
+) -> dict:
     path, content_type = photo if photo else (None, None)
-    return {"id": honor_id, **payload, "photo_path": path, "photo_type": content_type}
+    crop_x, crop_y, crop_scale = crop
+    return {
+        "id": honor_id,
+        **payload,
+        "photo_path": path,
+        "photo_type": content_type,
+        "crop_x": crop_x,
+        "crop_y": crop_y,
+        "crop_scale": crop_scale,
+    }
 
 
 def _public_honor(row: dict) -> dict:
@@ -2032,6 +2148,9 @@ def _public_honor(row: dict) -> dict:
         "period": row["period"],
         "note": row.get("note") or "",
         "photo_url": photo_url,
+        "crop_x": float(row.get("crop_x") or 0),
+        "crop_y": float(row.get("crop_y") or 0),
+        "crop_scale": float(row.get("crop_scale") or 1),
     }
 
 
@@ -2047,6 +2166,9 @@ def _honor_from_row(row) -> dict:
         "note": row[6] or "",
         "photo_path": row[7],
         "photo_type": row[8],
+        "crop_x": float(row[9]) if len(row) > 9 and row[9] is not None else 0,
+        "crop_y": float(row[10]) if len(row) > 10 and row[10] is not None else 0,
+        "crop_scale": float(row[11]) if len(row) > 11 and row[11] is not None else 1,
     }
 
 
@@ -2095,6 +2217,9 @@ def _seed_honor_rows() -> list[dict]:
                 "note": item["note"],
                 "photo_path": item.get("photo_path"),
                 "photo_type": item.get("photo_type"),
+                "crop_x": float(item.get("crop_x") or 0),
+                "crop_y": float(item.get("crop_y") or 0),
+                "crop_scale": float(item.get("crop_scale") or 1),
             }
         )
     return rows
@@ -2147,21 +2272,6 @@ def _ensure_honor_seed(cur) -> None:
                 item["period"],
             ),
         )
-        cur.execute(
-            """
-            UPDATE honors
-            SET photo_path = %s, photo_type = %s
-            WHERE category = %s AND name = %s AND period = %s
-              AND photo_path IS NULL
-            """,
-            (
-                item["photo_path"],
-                item["photo_type"],
-                item["category"],
-                item["name"],
-                item["period"],
-            ),
-        )
 
 
 def _ensure_records(cur) -> None:
@@ -2177,6 +2287,9 @@ def _ensure_records(cur) -> None:
           note TEXT NOT NULL DEFAULT '',
           photo_path TEXT,
           photo_type TEXT,
+          crop_x DOUBLE PRECISION NOT NULL DEFAULT 0,
+          crop_y DOUBLE PRECISION NOT NULL DEFAULT 0,
+          crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1,
           CONSTRAINT honors_category_chk CHECK (
             category IN ('knight_month', 'family_month', 'knight_year', 'family_year', 'past_gk')
           ),
@@ -2192,6 +2305,11 @@ def _ensure_records(cur) -> None:
         CREATE INDEX IF NOT EXISTS honors_category_idx
         ON honors (category, sort_year DESC, sort_month DESC)
         """
+    )
+    cur.execute("ALTER TABLE honors ADD COLUMN IF NOT EXISTS crop_x DOUBLE PRECISION NOT NULL DEFAULT 0")
+    cur.execute("ALTER TABLE honors ADD COLUMN IF NOT EXISTS crop_y DOUBLE PRECISION NOT NULL DEFAULT 0")
+    cur.execute(
+        "ALTER TABLE honors ADD COLUMN IF NOT EXISTS crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1"
     )
     _ensure_honor_seed(cur)
     events_new = not _table_exists(cur, "council_events")
@@ -2562,7 +2680,11 @@ def _rename_test_member(cur) -> None:
 
 
 def _ensure_test_roster(cur, hashed: str) -> None:
-    """Insert roster members that are missing, without taking a title already in use."""
+    """Insert roster members that are missing, without taking a title already in use.
+
+    A profile photo is attached only for a member row created on this pass.
+    Clearing a photo stays cleared on the next startup.
+    """
     for member in MEMBER_SEED:
         if member.title:
             cur.execute(
@@ -2574,6 +2696,7 @@ def _ensure_test_roster(cur, hashed: str) -> None:
                     CASE WHEN EXISTS (SELECT 1 FROM members WHERE title = %s) THEN NULL ELSE %s END,
                     %s, %s, %s
                 WHERE NOT EXISTS (SELECT 1 FROM members WHERE membership_id = %s)
+                RETURNING membership_id
                 """,
                 (
                     member.membership_id,
@@ -2595,6 +2718,7 @@ def _ensure_test_roster(cur, hashed: str) -> None:
                 )
                 SELECT %s, %s, %s, NULL, %s, %s, %s
                 WHERE NOT EXISTS (SELECT 1 FROM members WHERE membership_id = %s)
+                RETURNING membership_id
                 """,
                 (
                     member.membership_id,
@@ -2606,18 +2730,19 @@ def _ensure_test_roster(cur, hashed: str) -> None:
                     member.membership_id,
                 ),
             )
+        if cur.fetchone() is None:
+            continue
         path = member_photo_path(member.membership_id)
         cur.execute(
             """
             INSERT INTO images (path, original_name, content_type, purpose, slot, owner_membership_id)
             SELECT %s, %s, 'image/png', 'profile', NULL, %s
-            WHERE EXISTS (SELECT 1 FROM members WHERE membership_id = %s)
-              AND NOT EXISTS (
+            WHERE NOT EXISTS (
                 SELECT 1 FROM images
                 WHERE purpose = 'profile' AND owner_membership_id = %s
-              )
+            )
             """,
-            (path, f"{member.membership_id}.png", member.membership_id, member.membership_id, member.membership_id),
+            (path, f"{member.membership_id}.png", member.membership_id, member.membership_id),
         )
 
 
@@ -2655,7 +2780,14 @@ def _role_plan(officer: list[dict], director: list[dict]) -> tuple[dict[str, str
 def _slot_payload(slot: str, image: dict | None) -> dict:
     if not image:
         return {"slot": slot, "url": None, "id": None}
-    return {"slot": slot, "url": image["url"], "id": image["id"]}
+    return {
+        "slot": slot,
+        "url": image["url"],
+        "id": image["id"],
+        "crop_x": float(image.get("crop_x") or 0),
+        "crop_y": float(image.get("crop_y") or 0),
+        "crop_scale": float(image.get("crop_scale") or 1),
+    }
 
 
 store = Store()

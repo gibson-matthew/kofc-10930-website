@@ -214,18 +214,39 @@ export async function fetchMedia() {
   return readJson(response, "Could not load images.");
 }
 
-export async function uploadMedia(file) {
+function appendCrop(body, crop) {
+  if (!crop) return;
+  body.append("crop_x", String(crop.x ?? crop.crop_x ?? 0));
+  body.append("crop_y", String(crop.y ?? crop.crop_y ?? 0));
+  body.append("crop_scale", String(crop.scale ?? crop.crop_scale ?? 1));
+}
+
+export async function uploadMedia(file, crop) {
   const body = new FormData();
   body.append("file", file);
+  appendCrop(body, crop);
   const response = await send("/api/media", { method: "POST", body });
   return readJson(response, "Could not upload the image.");
 }
 
-export async function replaceMedia(id, file) {
+export async function replaceMedia(id, file, crop) {
   const body = new FormData();
   body.append("file", file);
+  appendCrop(body, crop);
   const response = await send(`/api/media/${id}/replace`, { method: "POST", body });
   return readJson(response, "Could not replace the image.");
+}
+
+export async function updateMediaCrop(id, crop) {
+  const response = await send(`/api/media/${id}/crop`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      crop_x: crop.x ?? crop.crop_x ?? 0,
+      crop_y: crop.y ?? crop.crop_y ?? 0,
+      crop_scale: crop.scale ?? crop.crop_scale ?? 1,
+    }),
+  });
+  return readJson(response, "Could not save the viewing angle.");
 }
 
 export async function deleteMedia(id) {
@@ -263,6 +284,7 @@ function honorBody(fields, file) {
   body.append("month", fields.month == null ? "" : String(fields.month));
   body.append("period", fields.period || "");
   if (fields.clear_photo) body.append("clear_photo", "true");
+  appendCrop(body, fields.crop || { x: 0, y: 0, scale: 1 });
   if (file) body.append("file", file);
   return body;
 }

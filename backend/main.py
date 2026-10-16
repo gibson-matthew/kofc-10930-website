@@ -184,6 +184,9 @@ class HonorOut(BaseModel):
     period: str
     note: str = ""
     photo_url: str | None = None
+    crop_x: float = 0
+    crop_y: float = 0
+    crop_scale: float = 1
 
 
 class EventOut(BaseModel):
@@ -203,6 +206,9 @@ class ImageOut(BaseModel):
     purpose: str
     slot: str | None = None
     owner_membership_id: str | None = None
+    crop_x: float = 0
+    crop_y: float = 0
+    crop_scale: float = 1
 
 
 class SlotIn(BaseModel):
@@ -213,6 +219,9 @@ class SlideOut(BaseModel):
     slot: str
     url: str | None = None
     id: int | None = None
+    crop_x: float = 0
+    crop_y: float = 0
+    crop_scale: float = 1
 
 
 class SlotsOut(BaseModel):
@@ -571,6 +580,24 @@ def save_assignments(body: AssignmentsIn, member: dict = Depends(require_admin))
     return [MemberOut(**row) for row in rows]
 
 
+def _optional_crop(crop_x: str | None, crop_y: str | None, crop_scale: str | None):
+    raw = (crop_x, crop_y, crop_scale)
+    if all(value is None or not str(value).strip() for value in raw):
+        return None
+
+    def number(value, default: float) -> float:
+        if value is None or not str(value).strip():
+            return default
+        return float(str(value).strip())
+
+    try:
+        return normalize_crop(number(crop_x, 0), number(crop_y, 0), number(crop_scale, 1))
+    except MediaError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Viewing angle is not valid.") from exc
+
+
 def _honor_fields(category: str, name: str, note: str, year: str, month: str, period: str) -> dict:
     return {
         "category": category,
@@ -608,12 +635,16 @@ async def create_honor(
     year: str = Form(""),
     month: str = Form(""),
     period: str = Form(""),
+    crop_x: str | None = Form(None),
+    crop_y: str | None = Form(None),
+    crop_scale: str | None = Form(None),
     file: UploadFile | None = File(None),
 ) -> HonorOut:
     del member
+    crop = _optional_crop(crop_x, crop_y, crop_scale)
     photo = await _optional_image(file)
     try:
-        created = store.create_honor(_honor_fields(category, name, note, year, month, period), photo)
+        created = store.create_honor(_honor_fields(category, name, note, year, month, period), photo, crop)
     except (StoreError, MediaError) as exc:
         if photo:
             delete_stored_file(photo[0])
@@ -648,9 +679,13 @@ async def update_honor(
     month: str = Form(""),
     period: str = Form(""),
     clear_photo: str = Form("false"),
+    crop_x: str | None = Form(None),
+    crop_y: str | None = Form(None),
+    crop_scale: str | None = Form(None),
     file: UploadFile | None = File(None),
 ) -> HonorOut:
     del member
+    crop = _optional_crop(crop_x, crop_y, crop_scale)
     photo = await _optional_image(file)
     try:
         updated = store.update_honor(
@@ -658,6 +693,7 @@ async def update_honor(
             _honor_fields(category, name, note, year, month, period),
             photo,
             clear_photo.strip().lower() in {"1", "true", "yes", "on"},
+            crop,
         )
     except (StoreError, MediaError) as exc:
         if photo:
@@ -748,11 +784,15 @@ def list_media(member: dict = Depends(require_admin)) -> list[ImageOut]:
 async def upload_media(
     file: UploadFile = File(...),
     member: dict = Depends(require_admin),
+    crop_x: str | None = Form(None),
+    crop_y: str | None = Form(None),
+    crop_scale: str | None = Form(None),
 ) -> ImageOut:
     data, content_type, ext, original = await _read_upload(file)
+    crop = _optional_crop(crop_x, crop_y, crop_scale)
     path = write_upload(data, ext)
     try:
-        image = store.add_library_image(path, original, content_type, member["memberid"])
+        image = store.add_library_image(path, original, content_type, member["memberid"], crop)
     except (StoreError, MediaError) as exc:
         delete_stored_file(path)
         _raise_store(exc)
@@ -764,14 +804,33 @@ async def replace_media(
     image_id: int,
     file: UploadFile = File(...),
     member: dict = Depends(require_admin),
+    crop_x: str | None = Form(None),
+    crop_y: str | None = Form(None),
+    crop_scale: str | None = Form(None),
 ) -> ImageOut:
     del member
     data, content_type, ext, original = await _read_upload(file)
+    crop = _optional_crop(crop_x, crop_y, crop_scale)
     path = write_upload(data, ext)
     try:
-        image = store.replace_image(image_id, path, original, content_type)
+        image = store.replace_image(image_id, path, original, content_type, crop)
     except (StoreError, MediaError) as exc:
         delete_stored_file(path)
+        _raise_store(exc)
+    return ImageOut(**image)
+
+
+@api.patch("/media/{image_id}/crop", response_model=ImageOut)
+def update_media_crop(
+    image_id: int,
+    body: CropIn,
+    member: dict = Depends(require_admin),
+) -> ImageOut:
+    del member
+    try:
+        crop = normalize_crop(body.crop_x, body.crop_y, body.crop_scale)
+        image = store.update_library_crop(image_id, crop)
+    except (StoreError, MediaError) as exc:
         _raise_store(exc)
     return ImageOut(**image)
 

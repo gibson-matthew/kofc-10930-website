@@ -11,6 +11,7 @@
 -- They share the password Password123! with 1000000 (David Hernandez, GK, admin)
 -- and 1000001 (Sample Brother, not an admin).
 -- Profile photos are images/seed/members/<membership id>.png.
+-- A test-roster profile photo is attached only when that member row is first created.
 -- You can also run:
 --   .\.venv\Scripts\python.exe backend\seed_member.py
 -- members.title stores one officer-title abbreviation, or NULL.
@@ -25,6 +26,8 @@
 -- Each of those five lists is seeded with 20 rows. A row is inserted when that
 -- category, name, and period are not already stored. Photos are
 -- backend/uploads/seed/honors/<category>-NN.png.
+-- honors.crop_x, crop_y, and crop_scale store the viewing angle.
+-- A cleared honor photo is not filled back in.
 -- council_events stores the member-view upcoming events.
 -- council_events example rows are inserted when that table is empty.
 
@@ -430,6 +433,9 @@ CREATE TABLE IF NOT EXISTS honors (
   note TEXT NOT NULL DEFAULT '',
   photo_path TEXT,
   photo_type TEXT,
+  crop_x DOUBLE PRECISION NOT NULL DEFAULT 0,
+  crop_y DOUBLE PRECISION NOT NULL DEFAULT 0,
+  crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1,
   CONSTRAINT honors_category_chk CHECK (
     category IN ('knight_month', 'family_month', 'knight_year', 'family_year', 'past_gk')
   ),
@@ -441,6 +447,10 @@ CREATE TABLE IF NOT EXISTS honors (
 
 CREATE INDEX IF NOT EXISTS honors_category_idx
   ON honors (category, sort_year DESC, sort_month DESC);
+
+ALTER TABLE honors ADD COLUMN IF NOT EXISTS crop_x DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE honors ADD COLUMN IF NOT EXISTS crop_y DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE honors ADD COLUMN IF NOT EXISTS crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS council_events (
   id SERIAL PRIMARY KEY,
@@ -576,14 +586,6 @@ WHERE NOT EXISTS (
   SELECT 1 FROM honors h
   WHERE h.category = s.category AND h.name = s.name AND h.period = s.period
 );
-
-UPDATE honors AS h
-SET photo_path = s.photo_path, photo_type = s.photo_type
-FROM honor_seed_rows s
-WHERE h.category = s.category
-  AND h.name = s.name
-  AND h.period = s.period
-  AND h.photo_path IS NULL;
 
 INSERT INTO council_events (title, event_date, event_time, location, description, sort_order)
 SELECT v.title, v.event_date, v.event_time, v.location, v.description, v.sort_order

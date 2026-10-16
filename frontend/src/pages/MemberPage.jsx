@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { fetchMediaSlots, fetchRoster, imageFileError, replaceMedia, saveRoleAssignments, uploadMedia, assignMediaSlot } from "../api";
+import { fetchMediaSlots, fetchRoster, imageFileError, replaceMedia, saveRoleAssignments, updateMediaCrop, uploadMedia, assignMediaSlot } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { Block, Eyebrow } from "../components/Block";
 import CroppedPhoto from "../components/CroppedPhoto";
 import { Avatar, Portrait, PortraitSm } from "../components/Marks";
+import PhotoEditor, { PHOTO_ACCEPT } from "../components/PhotoEditor";
 import { ContentProvider, useContent } from "../content/ContentContext";
 import { birthdayGroups } from "../birthdays";
 import { LOGO_SRC, SITE_TITLE } from "../content/seed";
@@ -50,8 +51,6 @@ const LINK_CARDS = [
 function range(count) {
   return Array.from({ length: count }, (_, index) => index);
 }
-
-const PHOTO_ACCEPT = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
 
 function MemberAvatar({ user }) {
   const [failed, setFailed] = useState(false);
@@ -158,6 +157,9 @@ function RecogCard({ index, editing, recognition, onReload }) {
   const [snapshot, setSnapshot] = useState(null);
   const [busy, setBusy] = useState(false);
   const [photoError, setPhotoError] = useState("");
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const [photoEditor, setPhotoEditor] = useState(null);
+  const photoRef = useRef(null);
   const titleId = `recog.${index}.title`;
   const bodyId = `recog.${index}.body`;
   const detailId = `recog.${index}.detail`;
@@ -166,9 +168,31 @@ function RecogCard({ index, editing, recognition, onReload }) {
   const title = editing ? draftText(titleId) : text(titleId);
   const body = editing ? draftText(bodyId) : text(bodyId);
   const detail = editing ? draftText(detailId) : text(detailId);
+  photoRef.current = photoEditor;
 
   useEffect(() => {
-    if (!editing) setFormOpen(false);
+    setPhotoFailed(false);
+  }, [src]);
+
+  useEffect(() => {
+    return () => {
+      const current = photoRef.current;
+      if (current?.ownedUrl) URL.revokeObjectURL(current.src);
+    };
+  }, []);
+
+  function closePhotoEditor() {
+    setPhotoEditor((current) => {
+      if (current?.ownedUrl) URL.revokeObjectURL(current.src);
+      return null;
+    });
+  }
+
+  useEffect(() => {
+    if (!editing) {
+      setFormOpen(false);
+      closePhotoEditor();
+    }
   }, [editing]);
 
   function beginEdit() {
@@ -189,24 +213,57 @@ function RecogCard({ index, editing, recognition, onReload }) {
     setFormOpen(false);
   }
 
-  async function onFile(event) {
+  function openExisting() {
+    setPhotoError("");
+    setPhotoEditor((current) => {
+      if (current?.ownedUrl) URL.revokeObjectURL(current.src);
+      return {
+        src,
+        file: null,
+        ownedUrl: false,
+        crop: { x: slot?.crop_x || 0, y: slot?.crop_y || 0, scale: slot?.crop_scale || 1 },
+      };
+    });
+  }
+
+  function onPick(event) {
     const file = event.target.files && event.target.files[0];
     event.target.value = "";
+    if (!file) return;
     const problem = imageFileError(file);
     if (problem) {
       setPhotoError(problem);
       return;
     }
+    const url = URL.createObjectURL(file);
+    setPhotoError("");
+    setPhotoEditor((current) => {
+      if (current?.ownedUrl) URL.revokeObjectURL(current.src);
+      return { src: url, file, ownedUrl: true, crop: { x: 0, y: 0, scale: 1 } };
+    });
+  }
+
+  async function onSavePhoto(crop) {
+    const chosen = photoEditor;
+    if (!chosen?.src) return;
     setBusy(true);
     setPhotoError("");
     try {
-      if (slot?.id) {
-        await replaceMedia(slot.id, file);
+      if (chosen.file) {
+        if (slot?.id) {
+          await replaceMedia(slot.id, chosen.file, crop);
+        } else {
+          const image = await uploadMedia(chosen.file, crop);
+          await assignMediaSlot(image.id, `recog.${index}`);
+        }
+      } else if (slot?.id) {
+        await updateMediaCrop(slot.id, crop);
       } else {
-        const image = await uploadMedia(file);
-        await assignMediaSlot(image.id, `recog.${index}`);
+        setPhotoError("Choose an image file.");
+        return;
       }
       await onReload();
+      closePhotoEditor();
     } catch (err) {
       setPhotoError(err instanceof Error ? err.message : "Could not save the photo.");
     } finally {
@@ -216,7 +273,11 @@ function RecogCard({ index, editing, recognition, onReload }) {
 
   return (
     <article className="recog">
-      {src ? <img className="portrait" src={src} alt="" /> : <Portrait />}
+      {src && !photoFailed ? (
+        <CroppedPhoto className="portrait" src={src} crop={slot} onError={() => setPhotoFailed(true)} />
+      ) : (
+        <Portrait />
+      )}
       <div>
         {editing && formOpen ? (
           <>
@@ -260,12 +321,29 @@ function RecogCard({ index, editing, recognition, onReload }) {
             ) : null}
           </>
         )}
-        {editing ? (
+        {editing && photoEditor ? (
+          <PhotoEditor
+            key={photoEditor.src || "empty"}
+            src={photoEditor.src}
+            initial={photoEditor.crop}
+            pending={busy}
+            onSave={onSavePhoto}
+            onCancel={closePhotoEditor}
+            onSwap={onPick}
+          />
+        ) : null}
+        {editing && !photoEditor ? (
           <div className="signin-actions recog-actions">
-            <label className="btn btn-quiet">
-              {src ? "Replace photo" : "Add photo"}
-              <input type="file" accept={PHOTO_ACCEPT} hidden disabled={busy} onChange={onFile} />
-            </label>
+            {src ? (
+              <button type="button" className="btn btn-quiet" disabled={busy} onClick={openExisting}>
+                Change photo
+              </button>
+            ) : (
+              <label className="btn btn-quiet">
+                Add photo
+                <input type="file" accept={PHOTO_ACCEPT} hidden disabled={busy} onChange={onPick} />
+              </label>
+            )}
           </div>
         ) : null}
         {photoError ? (
