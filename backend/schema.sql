@@ -7,6 +7,10 @@
 -- Passwords are bcrypt hashes. The API creates membership id 1000000
 -- on startup when that row is missing, with officer title GK and admin
 -- access. It also creates membership id 1000001 without admin access.
+-- Test roster ids 1000100 through 1000149 are created the same way.
+-- They share the password Password123! with 1000000 (David Hernandez, GK, admin)
+-- and 1000001 (Sample Brother, not an admin).
+-- Profile photos are images/seed/members/<membership id>.png.
 -- You can also run:
 --   .\.venv\Scripts\python.exe backend\seed_member.py
 -- members.title stores one officer-title abbreviation, or NULL.
@@ -18,8 +22,11 @@
 -- About photos use slots recog.0 through recog.3.
 -- Membership 1000000 is renamed to David Hernandez when the row still says Test Member.
 -- honors stores past Knights and Families of the Month and Year, and Past Grand Knights.
+-- Each of those five lists is seeded with 20 rows. A row is inserted when that
+-- category, name, and period are not already stored. Photos are
+-- backend/uploads/seed/honors/<category>-NN.png.
 -- council_events stores the member-view upcoming events.
--- Example rows are inserted when honors or council_events is created empty.
+-- council_events example rows are inserted when that table is empty.
 
 BEGIN;
 
@@ -448,17 +455,135 @@ CREATE TABLE IF NOT EXISTS council_events (
 CREATE INDEX IF NOT EXISTS council_events_date_idx
   ON council_events (event_date, id);
 
-INSERT INTO honors (category, name, period, sort_year, sort_month, note)
-SELECT v.category, v.name, v.period, v.sort_year, v.sort_month, v.note
-FROM (
-  VALUES
-  ('knight_month', 'James Harrington', 'October 2025', 2025, 10, 'He chaired the Coats for Kids sorting crew.'),
-  ('family_month', 'The Nguyen Family', 'September 2025', 2025, 9, 'They led the parish food pantry weekend.'),
-  ('knight_year', 'Robert Hale', '2025', 2025, NULL, 'He logged charity hours each month and mentored new members.'),
-  ('family_year', 'The Ortiz Family', '2025', 2025, NULL, 'They hosted monthly rosaries and supported the scholarship fund.'),
-  ('past_gk', 'William Grant', '2024–25', 2024, NULL, 'He led the council through the Coats for Kids year.')
-) AS v(category, name, period, sort_year, sort_month, note)
-WHERE NOT EXISTS (SELECT 1 FROM honors);
+CREATE TEMP TABLE IF NOT EXISTS honor_seed_rows (
+  category TEXT,
+  name TEXT,
+  period TEXT,
+  sort_year INTEGER,
+  sort_month INTEGER,
+  note TEXT,
+  photo_path TEXT,
+  photo_type TEXT
+) ON COMMIT DROP;
+
+INSERT INTO honor_seed_rows (category, name, period, sort_year, sort_month, note, photo_path, photo_type)
+VALUES
+  ('knight_month', 'James Harrington', 'October 2025', 2025::integer, 10::integer, 'He chaired the Coats for Kids sorting crew.', 'backend/uploads/seed/honors/knight_month-01.png', 'image/png'),
+  ('knight_month', 'Peter Lang', 'September 2025', 2025::integer, 9::integer, 'He organized the wheelchair mission delivery.', 'backend/uploads/seed/honors/knight_month-02.png', 'image/png'),
+  ('knight_month', 'Marcus Webb', 'August 2025', 2025::integer, 8::integer, 'He recruited three new members at the parish festival.', 'backend/uploads/seed/honors/knight_month-03.png', 'image/png'),
+  ('knight_month', 'Owen Keller', 'July 2025', 2025::integer, 7::integer, 'He led the Saturday pancake breakfast crew.', 'backend/uploads/seed/honors/knight_month-04.png', 'image/png'),
+  ('knight_month', 'Nathan Cho', 'June 2025', 2025::integer, 6::integer, 'He coordinated the blood-drive volunteer shift.', 'backend/uploads/seed/honors/knight_month-05.png', 'image/png'),
+  ('knight_month', 'Elliot Marsh', 'May 2025', 2025::integer, 5::integer, 'He repaired the hall tables before the fish fry.', 'backend/uploads/seed/honors/knight_month-06.png', 'image/png'),
+  ('knight_month', 'Caleb Ruiz', 'April 2025', 2025::integer, 4::integer, 'He drove veterans to the monthly social.', 'backend/uploads/seed/honors/knight_month-07.png', 'image/png'),
+  ('knight_month', 'Dominic Price', 'March 2025', 2025::integer, 3::integer, 'He ran the Tootsie Roll weekend with the youth helpers.', 'backend/uploads/seed/honors/knight_month-08.png', 'image/png'),
+  ('knight_month', 'Isaac Romero', 'February 2025', 2025::integer, 2::integer, 'He set up the living rosary in the parish courtyard.', 'backend/uploads/seed/honors/knight_month-09.png', 'image/png'),
+  ('knight_month', 'Gabriel Santos', 'January 2025', 2025::integer, 1::integer, 'He collected winter coats from the school families.', 'backend/uploads/seed/honors/knight_month-10.png', 'image/png'),
+  ('knight_month', 'Felix Navarro', 'December 2024', 2024::integer, 12::integer, 'He hosted the exemplification reception.', 'backend/uploads/seed/honors/knight_month-11.png', 'image/png'),
+  ('knight_month', 'Hugo Bennett', 'November 2024', 2024::integer, 11::integer, 'He kept the scholarship applications moving.', 'backend/uploads/seed/honors/knight_month-12.png', 'image/png'),
+  ('knight_month', 'Adrian Cole', 'October 2024', 2024::integer, 10::integer, 'He led the Keep Christ in Christmas card sale.', 'backend/uploads/seed/honors/knight_month-13.png', 'image/png'),
+  ('knight_month', 'Wesley Grant', 'September 2024', 2024::integer, 9::integer, 'He paired new members with sponsors.', 'backend/uploads/seed/honors/knight_month-14.png', 'image/png'),
+  ('knight_month', 'Simon Pearce', 'August 2024', 2024::integer, 8::integer, 'He cooked for the widows'' luncheon.', 'backend/uploads/seed/honors/knight_month-15.png', 'image/png'),
+  ('knight_month', 'Julian Hart', 'July 2024', 2024::integer, 7::integer, 'He logged the council''s charity hours for the report.', 'backend/uploads/seed/honors/knight_month-16.png', 'image/png'),
+  ('knight_month', 'Vincent Rossi', 'June 2024', 2024::integer, 6::integer, 'He built a ramp for a brother knight''s porch.', 'backend/uploads/seed/honors/knight_month-17.png', 'image/png'),
+  ('knight_month', 'Malcolm Reid', 'May 2024', 2024::integer, 5::integer, 'He chaired the soccer challenge at the parish school.', 'backend/uploads/seed/honors/knight_month-18.png', 'image/png'),
+  ('knight_month', 'Oscar Pham', 'April 2024', 2024::integer, 4::integer, 'He delivered food boxes after the parish mission.', 'backend/uploads/seed/honors/knight_month-19.png', 'image/png'),
+  ('knight_month', 'Leon Duarte', 'March 2024', 2024::integer, 3::integer, 'He organized the corporate communion breakfast.', 'backend/uploads/seed/honors/knight_month-20.png', 'image/png'),
+  ('family_month', 'The Nguyen Family', 'September 2025', 2025::integer, 9::integer, 'They led the parish food pantry weekend.', 'backend/uploads/seed/honors/family_month-01.png', 'image/png'),
+  ('family_month', 'The Brennan Family', 'August 2025', 2025::integer, 8::integer, 'They hosted the council picnic and watched the younger children.', 'backend/uploads/seed/honors/family_month-02.png', 'image/png'),
+  ('family_month', 'The Alvarez Family', 'July 2025', 2025::integer, 7::integer, 'They sorted coats and stayed through the distribution.', 'backend/uploads/seed/honors/family_month-03.png', 'image/png'),
+  ('family_month', 'The Okonkwo Family', 'June 2025', 2025::integer, 6::integer, 'They led the family rosary after Sunday Mass.', 'backend/uploads/seed/honors/family_month-04.png', 'image/png'),
+  ('family_month', 'The Callahan Family', 'May 2025', 2025::integer, 5::integer, 'They baked for the Lenten fish fry every Friday.', 'backend/uploads/seed/honors/family_month-05.png', 'image/png'),
+  ('family_month', 'The Ramirez Family', 'April 2025', 2025::integer, 4::integer, 'They welcomed new families at the membership drive.', 'backend/uploads/seed/honors/family_month-06.png', 'image/png'),
+  ('family_month', 'The Patel Family', 'March 2025', 2025::integer, 3::integer, 'They staffed the Special Olympics hydration tent.', 'backend/uploads/seed/honors/family_month-07.png', 'image/png'),
+  ('family_month', 'The Kowalski Family', 'February 2025', 2025::integer, 2::integer, 'They prepared the hall for the widows'' luncheon.', 'backend/uploads/seed/honors/family_month-08.png', 'image/png'),
+  ('family_month', 'The Park Family', 'January 2025', 2025::integer, 1::integer, 'They ran the Christmas poster contest at the school.', 'backend/uploads/seed/honors/family_month-09.png', 'image/png'),
+  ('family_month', 'The Moretti Family', 'December 2024', 2024::integer, 12::integer, 'They delivered meals to homebound parishioners.', 'backend/uploads/seed/honors/family_month-10.png', 'image/png'),
+  ('family_month', 'The Vasquez Family', 'November 2024', 2024::integer, 11::integer, 'They helped measure children for winter coats.', 'backend/uploads/seed/honors/family_month-11.png', 'image/png'),
+  ('family_month', 'The Thompson Family', 'October 2024', 2024::integer, 10::integer, 'They kept the scholarship candy sale stocked.', 'backend/uploads/seed/honors/family_month-12.png', 'image/png'),
+  ('family_month', 'The Carter Family', 'September 2024', 2024::integer, 9::integer, 'They hosted a vocations dinner for seminarians.', 'backend/uploads/seed/honors/family_month-13.png', 'image/png'),
+  ('family_month', 'The Donnelly Family', 'August 2024', 2024::integer, 8::integer, 'They led the living nativity volunteers.', 'backend/uploads/seed/honors/family_month-14.png', 'image/png'),
+  ('family_month', 'The Ortega Family', 'July 2024', 2024::integer, 7::integer, 'They organized the parish festival kids'' games.', 'backend/uploads/seed/honors/family_month-15.png', 'image/png'),
+  ('family_month', 'The Wallace Family', 'June 2024', 2024::integer, 6::integer, 'They drove the food-pantry truck that Saturday.', 'backend/uploads/seed/honors/family_month-16.png', 'image/png'),
+  ('family_month', 'The Gallagher Family', 'May 2024', 2024::integer, 5::integer, 'They prayed the rosary with the council each week.', 'backend/uploads/seed/honors/family_month-17.png', 'image/png'),
+  ('family_month', 'The Santos Family', 'April 2024', 2024::integer, 4::integer, 'They set up and cleared the pancake breakfast.', 'backend/uploads/seed/honors/family_month-18.png', 'image/png'),
+  ('family_month', 'The Herrera Family', 'March 2024', 2024::integer, 3::integer, 'They welcomed guests at the blood drive.', 'backend/uploads/seed/honors/family_month-19.png', 'image/png'),
+  ('family_month', 'The Berg Family', 'February 2024', 2024::integer, 2::integer, 'They packed ultrasound-initiative appeal letters.', 'backend/uploads/seed/honors/family_month-20.png', 'image/png'),
+  ('knight_year', 'Robert Hale', '2025', 2025::integer, NULL::integer, 'He logged charity hours each month and mentored new members.', 'backend/uploads/seed/honors/knight_year-01.png', 'image/png'),
+  ('knight_year', 'Carl Mendel', '2024', 2024::integer, NULL::integer, 'He kept the coat drive and the blood drive fully staffed.', 'backend/uploads/seed/honors/knight_year-02.png', 'image/png'),
+  ('knight_year', 'Evan Brooks', '2023', 2023::integer, NULL::integer, 'He revived the council''s visit schedule for homebound brothers.', 'backend/uploads/seed/honors/knight_year-03.png', 'image/png'),
+  ('knight_year', 'Hugh Salazar', '2022', 2022::integer, NULL::integer, 'He led the soccer challenge and the free-throw contest.', 'backend/uploads/seed/honors/knight_year-04.png', 'image/png'),
+  ('knight_year', 'Martin Ellison', '2021', 2021::integer, NULL::integer, 'He balanced a full program calendar without missing a meeting.', 'backend/uploads/seed/honors/knight_year-05.png', 'image/png'),
+  ('knight_year', 'Derek Fontaine', '2020', 2020::integer, NULL::integer, 'He raised the scholarship fund past its goal.', 'backend/uploads/seed/honors/knight_year-06.png', 'image/png'),
+  ('knight_year', 'Philip Okada', '2019', 2019::integer, NULL::integer, 'He trained the new officers before the election.', 'backend/uploads/seed/honors/knight_year-07.png', 'image/png'),
+  ('knight_year', 'George Lanier', '2018', 2018::integer, NULL::integer, 'He organized disaster-relief collections after the spring storms.', 'backend/uploads/seed/honors/knight_year-08.png', 'image/png'),
+  ('knight_year', 'Arthur Nguyen', '2017', 2017::integer, NULL::integer, 'He grew the rosary attendance through the year.', 'backend/uploads/seed/honors/knight_year-09.png', 'image/png'),
+  ('knight_year', 'Lawrence Kim', '2016', 2016::integer, NULL::integer, 'He finished the hall accessibility repairs.', 'backend/uploads/seed/honors/knight_year-10.png', 'image/png'),
+  ('knight_year', 'Raymond Doyle', '2015', 2015::integer, NULL::integer, 'He chaired Coats for Kids from kickoff to the last delivery.', 'backend/uploads/seed/honors/knight_year-11.png', 'image/png'),
+  ('knight_year', 'Clifford Barnes', '2014', 2014::integer, NULL::integer, 'He mentored the youth programs through the school year.', 'backend/uploads/seed/honors/knight_year-12.png', 'image/png'),
+  ('knight_year', 'Harold Ibarra', '2013', 2013::integer, NULL::integer, 'He carried the ultrasound initiative appeal to every meeting.', 'backend/uploads/seed/honors/knight_year-13.png', 'image/png'),
+  ('knight_year', 'Eugene Moss', '2012', 2012::integer, NULL::integer, 'He kept the food pantry partnership running each month.', 'backend/uploads/seed/honors/knight_year-14.png', 'image/png'),
+  ('knight_year', 'Walter Brennan', '2011', 2011::integer, NULL::integer, 'He welcomed the largest exemplification class of the decade.', 'backend/uploads/seed/honors/knight_year-15.png', 'image/png'),
+  ('knight_year', 'Francis Delgado', '2010', 2010::integer, NULL::integer, 'He published the charity report the state council requested.', 'backend/uploads/seed/honors/knight_year-16.png', 'image/png'),
+  ('knight_year', 'Albert Shaw', '2009', 2009::integer, NULL::integer, 'He led the veterans'' breakfast through the winter.', 'backend/uploads/seed/honors/knight_year-17.png', 'image/png'),
+  ('knight_year', 'Clarence Holt', '2008', 2008::integer, NULL::integer, 'He restored the council''s contingent for the parish festival.', 'backend/uploads/seed/honors/knight_year-18.png', 'image/png'),
+  ('knight_year', 'Bernard Cruz', '2007', 2007::integer, NULL::integer, 'He paired every new knight with a working committee.', 'backend/uploads/seed/honors/knight_year-19.png', 'image/png'),
+  ('knight_year', 'Stanley Peck', '2006', 2006::integer, NULL::integer, 'He held the council''s charity budget on target.', 'backend/uploads/seed/honors/knight_year-20.png', 'image/png'),
+  ('family_year', 'The Ortiz Family', '2025', 2025::integer, NULL::integer, 'They hosted monthly rosaries and supported the scholarship fund.', 'backend/uploads/seed/honors/family_year-01.png', 'image/png'),
+  ('family_year', 'The Lang Family', '2024', 2024::integer, NULL::integer, 'They staffed every fish fry and the coat distribution.', 'backend/uploads/seed/honors/family_year-02.png', 'image/png'),
+  ('family_year', 'The Webb Family', '2023', 2023::integer, NULL::integer, 'They opened their home for the council''s family prayer night.', 'backend/uploads/seed/honors/family_year-03.png', 'image/png'),
+  ('family_year', 'The Keller Family', '2022', 2022::integer, NULL::integer, 'They led the parish festival meal line.', 'backend/uploads/seed/honors/family_year-04.png', 'image/png'),
+  ('family_year', 'The Cho Family', '2021', 2021::integer, NULL::integer, 'They tutored students before the free-throw and soccer events.', 'backend/uploads/seed/honors/family_year-05.png', 'image/png'),
+  ('family_year', 'The Marsh Family', '2020', 2020::integer, NULL::integer, 'They visited homebound parishioners with the council each month.', 'backend/uploads/seed/honors/family_year-06.png', 'image/png'),
+  ('family_year', 'The Ruiz Family', '2019', 2019::integer, NULL::integer, 'They ran the Christmas poster contest and the card sale.', 'backend/uploads/seed/honors/family_year-07.png', 'image/png'),
+  ('family_year', 'The Price Family', '2018', 2018::integer, NULL::integer, 'They cooked the veterans'' breakfast from January through November.', 'backend/uploads/seed/honors/family_year-08.png', 'image/png'),
+  ('family_year', 'The Romero Family', '2017', 2017::integer, NULL::integer, 'They kept the food pantry shelves labeled and full.', 'backend/uploads/seed/honors/family_year-09.png', 'image/png'),
+  ('family_year', 'The Navarro Family', '2016', 2016::integer, NULL::integer, 'They hosted seminarians during the vocations weekend.', 'backend/uploads/seed/honors/family_year-10.png', 'image/png'),
+  ('family_year', 'The Bennett Family', '2015', 2015::integer, NULL::integer, 'They organized rides for elderly members.', 'backend/uploads/seed/honors/family_year-11.png', 'image/png'),
+  ('family_year', 'The Cole Family', '2014', 2014::integer, NULL::integer, 'They prepared the hall for every major fundraiser.', 'backend/uploads/seed/honors/family_year-12.png', 'image/png'),
+  ('family_year', 'The Pearce Family', '2013', 2013::integer, NULL::integer, 'They led the family Mass ushers for the year.', 'backend/uploads/seed/honors/family_year-13.png', 'image/png'),
+  ('family_year', 'The Hart Family', '2012', 2012::integer, NULL::integer, 'They packed and delivered coats with their children.', 'backend/uploads/seed/honors/family_year-14.png', 'image/png'),
+  ('family_year', 'The Rossi Family', '2011', 2011::integer, NULL::integer, 'They chaired the Special Olympics family tent.', 'backend/uploads/seed/honors/family_year-15.png', 'image/png'),
+  ('family_year', 'The Reid Family', '2010', 2010::integer, NULL::integer, 'They supported the ultrasound initiative bake sales.', 'backend/uploads/seed/honors/family_year-16.png', 'image/png'),
+  ('family_year', 'The Pham Family', '2009', 2009::integer, NULL::integer, 'They welcomed new families at every membership drive.', 'backend/uploads/seed/honors/family_year-17.png', 'image/png'),
+  ('family_year', 'The Duarte Family', '2008', 2008::integer, NULL::integer, 'They kept the scholarship candy sale going each month.', 'backend/uploads/seed/honors/family_year-18.png', 'image/png'),
+  ('family_year', 'The Mendel Family', '2007', 2007::integer, NULL::integer, 'They hosted the corporate communion brunch.', 'backend/uploads/seed/honors/family_year-19.png', 'image/png'),
+  ('family_year', 'The Fontaine Family', '2006', 2006::integer, NULL::integer, 'They prayed with the council and staffed the blood drive.', 'backend/uploads/seed/honors/family_year-20.png', 'image/png'),
+  ('past_gk', 'William Grant', '2024–25', 2024::integer, NULL::integer, 'He led the council through the Coats for Kids year.', 'backend/uploads/seed/honors/past_gk-01.png', 'image/png'),
+  ('past_gk', 'Thomas Reilly', '2023–24', 2023::integer, NULL::integer, 'He handed the council a balanced charity budget.', 'backend/uploads/seed/honors/past_gk-02.png', 'image/png'),
+  ('past_gk', 'Edward Castillo', '2022–23', 2022::integer, NULL::integer, 'He restarted the monthly family picnic.', 'backend/uploads/seed/honors/past_gk-03.png', 'image/png'),
+  ('past_gk', 'Joseph Brennan', '2021–22', 2021::integer, NULL::integer, 'He grew the roster and kept meetings on time.', 'backend/uploads/seed/honors/past_gk-04.png', 'image/png'),
+  ('past_gk', 'Paul Griffin', '2020–21', 2020::integer, NULL::integer, 'He launched the council''s ultrasound initiative support.', 'backend/uploads/seed/honors/past_gk-05.png', 'image/png'),
+  ('past_gk', 'Anthony Marino', '2019–20', 2019::integer, NULL::integer, 'He guided the hall renovation to completion.', 'backend/uploads/seed/honors/past_gk-06.png', 'image/png'),
+  ('past_gk', 'Charles Nguyen', '2018–19', 2018::integer, NULL::integer, 'He strengthened the council''s tie to the parish school.', 'backend/uploads/seed/honors/past_gk-07.png', 'image/png'),
+  ('past_gk', 'Frank Kowalski', '2017–18', 2017::integer, NULL::integer, 'He led through the year the blood drive doubled.', 'backend/uploads/seed/honors/past_gk-08.png', 'image/png'),
+  ('past_gk', 'Stephen Walsh', '2016–17', 2016::integer, NULL::integer, 'He installed a full slate of program directors.', 'backend/uploads/seed/honors/past_gk-09.png', 'image/png'),
+  ('past_gk', 'Patrick Donnelly', '2015–16', 2015::integer, NULL::integer, 'He hosted the district''s exemplification.', 'backend/uploads/seed/honors/past_gk-10.png', 'image/png'),
+  ('past_gk', 'Daniel Okonkwo', '2014–15', 2014::integer, NULL::integer, 'He kept charity hours at the front of every meeting.', 'backend/uploads/seed/honors/past_gk-11.png', 'image/png'),
+  ('past_gk', 'Michael Ruiz', '2013–14', 2013::integer, NULL::integer, 'He opened meetings with a steady formation program.', 'backend/uploads/seed/honors/past_gk-12.png', 'image/png'),
+  ('past_gk', 'Andrew Park', '2012–13', 2012::integer, NULL::integer, 'He left the scholarship fund larger than he found it.', 'backend/uploads/seed/honors/past_gk-13.png', 'image/png'),
+  ('past_gk', 'Christopher Walsh', '2011–12', 2011::integer, NULL::integer, 'He organized the council''s first Special Olympics team.', 'backend/uploads/seed/honors/past_gk-14.png', 'image/png'),
+  ('past_gk', 'Timothy Brooks', '2010–11', 2010::integer, NULL::integer, 'He renewed the food-pantry partnership.', 'backend/uploads/seed/honors/past_gk-15.png', 'image/png'),
+  ('past_gk', 'Brian Callahan', '2009–10', 2009::integer, NULL::integer, 'He led the widows'' luncheon into an annual event.', 'backend/uploads/seed/honors/past_gk-16.png', 'image/png'),
+  ('past_gk', 'Steven Alvarez', '2008–09', 2008::integer, NULL::integer, 'He finished the year with every officer chair filled.', 'backend/uploads/seed/honors/past_gk-17.png', 'image/png'),
+  ('past_gk', 'Kevin Moretti', '2007–08', 2007::integer, NULL::integer, 'He carried Coats for Kids through a cold winter.', 'backend/uploads/seed/honors/past_gk-18.png', 'image/png'),
+  ('past_gk', 'Ryan Thompson', '2006–07', 2006::integer, NULL::integer, 'He set the council''s visit schedule for homebound knights.', 'backend/uploads/seed/honors/past_gk-19.png', 'image/png'),
+  ('past_gk', 'Matthew Carter', '2005–06', 2005::integer, NULL::integer, 'He began the council''s corporate communion tradition.', 'backend/uploads/seed/honors/past_gk-20.png', 'image/png');
+
+INSERT INTO honors (category, name, period, sort_year, sort_month, note, photo_path, photo_type)
+SELECT s.category, s.name, s.period, s.sort_year, s.sort_month, s.note, s.photo_path, s.photo_type
+FROM honor_seed_rows s
+WHERE NOT EXISTS (
+  SELECT 1 FROM honors h
+  WHERE h.category = s.category AND h.name = s.name AND h.period = s.period
+);
+
+UPDATE honors AS h
+SET photo_path = s.photo_path, photo_type = s.photo_type
+FROM honor_seed_rows s
+WHERE h.category = s.category
+  AND h.name = s.name
+  AND h.period = s.period
+  AND h.photo_path IS NULL;
 
 INSERT INTO council_events (title, event_date, event_time, location, description, sort_order)
 SELECT v.title, v.event_date, v.event_time, v.location, v.description, v.sort_order

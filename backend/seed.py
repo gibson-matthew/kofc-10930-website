@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from media import SEED_IMAGES, slot_check_sql
+from test_seed import HONOR_SEED
 from titles import TITLE_ABBREVS
 
 
@@ -433,51 +434,6 @@ def _image_values_sql() -> str:
     return ",\n".join(rows)
 
 
-# Archive examples used when the honors table is empty on first create,
-# and when PostgreSQL is down.
-HONOR_SEED: tuple[dict, ...] = (
-    {
-        "category": "knight_month",
-        "name": "James Harrington",
-        "period": "October 2025",
-        "sort_year": 2025,
-        "sort_month": 10,
-        "note": "He chaired the Coats for Kids sorting crew.",
-    },
-    {
-        "category": "family_month",
-        "name": "The Nguyen Family",
-        "period": "September 2025",
-        "sort_year": 2025,
-        "sort_month": 9,
-        "note": "They led the parish food pantry weekend.",
-    },
-    {
-        "category": "knight_year",
-        "name": "Robert Hale",
-        "period": "2025",
-        "sort_year": 2025,
-        "sort_month": None,
-        "note": "He logged charity hours each month and mentored new members.",
-    },
-    {
-        "category": "family_year",
-        "name": "The Ortiz Family",
-        "period": "2025",
-        "sort_year": 2025,
-        "sort_month": None,
-        "note": "They hosted monthly rosaries and supported the scholarship fund.",
-    },
-    {
-        "category": "past_gk",
-        "name": "William Grant",
-        "period": "2024–25",
-        "sort_year": 2024,
-        "sort_month": None,
-        "note": "He led the council through the Coats for Kids year.",
-    },
-)
-
 # Same occasions the member page used to keep in content blocks.
 EVENT_SEED: tuple[dict, ...] = (
     {
@@ -529,22 +485,66 @@ def _sql_text(value: str | None) -> str:
     return "'" + value.replace("'", "''") + "'"
 
 
-def records_schema_sql() -> str:
-    honor_rows = ",\n  ".join(
-        "("
-        + ", ".join(
-            [
-                _sql_text(item["category"]),
-                _sql_text(item["name"]),
-                _sql_text(item["period"]),
-                str(item["sort_year"]),
-                "NULL" if item["sort_month"] is None else str(item["sort_month"]),
-                _sql_text(item["note"]),
-            ]
+def _honor_values_sql() -> str:
+    rows = []
+    for item in HONOR_SEED:
+        month = "NULL::integer" if item["sort_month"] is None else f"{int(item['sort_month'])}::integer"
+        rows.append(
+            "("
+            + ", ".join(
+                [
+                    _sql_text(item["category"]),
+                    _sql_text(item["name"]),
+                    _sql_text(item["period"]),
+                    f"{int(item['sort_year'])}::integer",
+                    month,
+                    _sql_text(item["note"]),
+                    _sql_text(item["photo_path"]),
+                    _sql_text(item["photo_type"]),
+                ]
+            )
+            + ")"
         )
-        + ")"
-        for item in HONOR_SEED
-    )
+    return ",\n  ".join(rows)
+
+
+def honor_seed_sql() -> str:
+    """Insert missing past-honor rows and fill a photo only when one is absent."""
+    honor_rows = _honor_values_sql()
+    return f"""CREATE TEMP TABLE IF NOT EXISTS honor_seed_rows (
+  category TEXT,
+  name TEXT,
+  period TEXT,
+  sort_year INTEGER,
+  sort_month INTEGER,
+  note TEXT,
+  photo_path TEXT,
+  photo_type TEXT
+) ON COMMIT DROP;
+
+INSERT INTO honor_seed_rows (category, name, period, sort_year, sort_month, note, photo_path, photo_type)
+VALUES
+  {honor_rows};
+
+INSERT INTO honors (category, name, period, sort_year, sort_month, note, photo_path, photo_type)
+SELECT s.category, s.name, s.period, s.sort_year, s.sort_month, s.note, s.photo_path, s.photo_type
+FROM honor_seed_rows s
+WHERE NOT EXISTS (
+  SELECT 1 FROM honors h
+  WHERE h.category = s.category AND h.name = s.name AND h.period = s.period
+);
+
+UPDATE honors AS h
+SET photo_path = s.photo_path, photo_type = s.photo_type
+FROM honor_seed_rows s
+WHERE h.category = s.category
+  AND h.name = s.name
+  AND h.period = s.period
+  AND h.photo_path IS NULL;
+"""
+
+
+def records_schema_sql() -> str:
     event_rows = ",\n  ".join(
         "("
         + ", ".join(
@@ -595,13 +595,7 @@ CREATE TABLE IF NOT EXISTS council_events (
 CREATE INDEX IF NOT EXISTS council_events_date_idx
   ON council_events (event_date, id);
 
-INSERT INTO honors (category, name, period, sort_year, sort_month, note)
-SELECT v.category, v.name, v.period, v.sort_year, v.sort_month, v.note
-FROM (
-  VALUES
-  {honor_rows}
-) AS v(category, name, period, sort_year, sort_month, note)
-WHERE NOT EXISTS (SELECT 1 FROM honors);
+{honor_seed_sql().rstrip()}
 
 INSERT INTO council_events (title, event_date, event_time, location, description, sort_order)
 SELECT v.title, v.event_date, v.event_time, v.location, v.description, v.sort_order
@@ -658,6 +652,10 @@ def render_schema() -> str:
 -- Passwords are bcrypt hashes. The API creates membership id 1000000
 -- on startup when that row is missing, with officer title GK and admin
 -- access. It also creates membership id 1000001 without admin access.
+-- Test roster ids 1000100 through 1000149 are created the same way.
+-- They share the password Password123! with 1000000 (David Hernandez, GK, admin)
+-- and 1000001 (Sample Brother, not an admin).
+-- Profile photos are images/seed/members/<membership id>.png.
 -- You can also run:
 --   .\\.venv\\Scripts\\python.exe backend\\seed_member.py
 -- members.title stores one officer-title abbreviation, or NULL.
@@ -669,8 +667,11 @@ def render_schema() -> str:
 -- About photos use slots recog.0 through recog.3.
 -- Membership 1000000 is renamed to David Hernandez when the row still says Test Member.
 -- honors stores past Knights and Families of the Month and Year, and Past Grand Knights.
+-- Each of those five lists is seeded with 20 rows. A row is inserted when that
+-- category, name, and period are not already stored. Photos are
+-- backend/uploads/seed/honors/<category>-NN.png.
 -- council_events stores the member-view upcoming events.
--- Example rows are inserted when honors or council_events is created empty.
+-- council_events example rows are inserted when that table is empty.
 
 BEGIN;
 
@@ -798,6 +799,9 @@ COMMIT;
 if __name__ == "__main__":
     from pathlib import Path
 
+    from test_seed import ensure_seed_photos
+
+    ensure_seed_photos()
     target = Path(__file__).with_name("schema.sql")
     target.write_text(render_schema(), encoding="utf-8")
     print(f"Wrote {target}")

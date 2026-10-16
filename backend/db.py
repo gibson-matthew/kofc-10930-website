@@ -12,6 +12,7 @@ from datetime import date, datetime, timezone
 from media import RECOG_SLOTS, SEED_IMAGES, delete_stored_file, public_url, slot_check_sql
 from security import hash_password, verify_password, verify_password_dummy
 from seed import EVENT_SEED, HONOR_SEED, PAGES
+from test_seed import MEMBER_SEED, ensure_seed_photos, member_photo_path
 from titles import (
     DIRECTOR_ROLE_SET,
     OFFICER_ROLE_SET,
@@ -21,6 +22,7 @@ from titles import (
 
 DEFAULT_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/koc10930"
 # Documented local account. Created only when this membership id is missing.
+# Password123! is also the shared password for 1000001 and roster ids 1000100–1000149.
 TEST_MEMBER_ID = "1000000"
 TEST_MEMBER_PASSWORD = "Password123!"
 TEST_MEMBER_NAME = "David Hernandez"
@@ -55,11 +57,12 @@ def _connect():
 
 class Store:
     def __init__(self) -> None:
+        ensure_seed_photos()
         self._lock = threading.Lock()
         self._memory = {slug: deepcopy(blocks) for slug, blocks in PAGES.items()}
         self._members: list[dict] = []
-        self._images: list[dict] = []
-        self._image_seq = 1
+        self._images: list[dict] = _seed_image_rows()
+        self._image_seq = len(self._images) + 1
         self._honors = _seed_honor_rows()
         self._events = _seed_event_rows()
         self._honor_seq = len(self._honors) + 1
@@ -68,30 +71,12 @@ class Store:
         self._prefer_memory = False
 
     def prepare(self) -> str:
-        """Create auth tables, the webmaster, and example images. Returns a short status."""
+        """Create auth tables, the webmaster, the test roster, and example images."""
+        ensure_seed_photos()
         hashed = hash_password(TEST_MEMBER_PASSWORD)
         with self._lock:
             self._prefer_memory = False
-            self._members = [
-                {
-                    "membership_id": TEST_MEMBER_ID,
-                    "password_hash": hashed,
-                    "display_name": TEST_MEMBER_NAME,
-                    "title": TEST_MEMBER_TITLE,
-                    "is_admin": True,
-                    "birth_month": None,
-                    "birth_day": None,
-                },
-                {
-                    "membership_id": SAMPLE_MEMBER_ID,
-                    "password_hash": hashed,
-                    "display_name": SAMPLE_MEMBER_NAME,
-                    "title": None,
-                    "is_admin": False,
-                    "birth_month": None,
-                    "birth_day": None,
-                },
-            ]
+            self._members = _memory_member_rows(hashed)
             self._images = _seed_image_rows()
             self._image_seq = len(self._images) + 1
             self._honors = _seed_honor_rows()
@@ -112,6 +97,7 @@ class Store:
                 _ensure_sample_member(cur, hashed)
                 _ensure_admin(cur)
                 _rename_test_member(cur)
+                _ensure_test_roster(cur, hashed)
             conn.commit()
             conn.close()
             return status
@@ -1731,6 +1717,42 @@ def _rollback(conn) -> None:
         pass
 
 
+def _memory_member_rows(hashed: str) -> list[dict]:
+    rows = [
+        {
+            "membership_id": TEST_MEMBER_ID,
+            "password_hash": hashed,
+            "display_name": TEST_MEMBER_NAME,
+            "title": TEST_MEMBER_TITLE,
+            "is_admin": True,
+            "birth_month": None,
+            "birth_day": None,
+        },
+        {
+            "membership_id": SAMPLE_MEMBER_ID,
+            "password_hash": hashed,
+            "display_name": SAMPLE_MEMBER_NAME,
+            "title": None,
+            "is_admin": False,
+            "birth_month": None,
+            "birth_day": None,
+        },
+    ]
+    for member in MEMBER_SEED:
+        rows.append(
+            {
+                "membership_id": member.membership_id,
+                "password_hash": hashed,
+                "display_name": member.display_name,
+                "title": member.title,
+                "is_admin": member.is_admin,
+                "birth_month": member.birth_month,
+                "birth_day": member.birth_day,
+            }
+        )
+    return rows
+
+
 def _seed_image_rows() -> list[dict]:
     rows = []
     for index, (path, original, content_type, slot) in enumerate(SEED_IMAGES, start=1):
@@ -1748,6 +1770,23 @@ def _seed_image_rows() -> list[dict]:
                 "crop_scale": 1,
             }
         )
+    next_id = len(rows) + 1
+    for member in MEMBER_SEED:
+        rows.append(
+            {
+                "id": next_id,
+                "path": member_photo_path(member.membership_id),
+                "original_name": f"{member.membership_id}.png",
+                "content_type": "image/png",
+                "purpose": "profile",
+                "slot": None,
+                "owner_membership_id": member.membership_id,
+                "crop_x": 0,
+                "crop_y": 0,
+                "crop_scale": 1,
+            }
+        )
+        next_id += 1
     return rows
 
 
@@ -2054,8 +2093,8 @@ def _seed_honor_rows() -> list[dict]:
                 "sort_year": item["sort_year"],
                 "sort_month": item["sort_month"],
                 "note": item["note"],
-                "photo_path": None,
-                "photo_type": None,
+                "photo_path": item.get("photo_path"),
+                "photo_type": item.get("photo_type"),
             }
         )
     return rows
@@ -2082,8 +2121,50 @@ def _table_exists(cur, name: str) -> bool:
     return cur.fetchone()[0] is not None
 
 
+def _ensure_honor_seed(cur) -> None:
+    """Insert each past-honor example when that category, name, and period are missing."""
+    for item in HONOR_SEED:
+        cur.execute(
+            """
+            INSERT INTO honors (category, name, period, sort_year, sort_month, note, photo_path, photo_type)
+            SELECT %s, %s, %s, %s, %s, %s, %s, %s
+            WHERE NOT EXISTS (
+                SELECT 1 FROM honors
+                WHERE category = %s AND name = %s AND period = %s
+            )
+            """,
+            (
+                item["category"],
+                item["name"],
+                item["period"],
+                item["sort_year"],
+                item["sort_month"],
+                item["note"],
+                item["photo_path"],
+                item["photo_type"],
+                item["category"],
+                item["name"],
+                item["period"],
+            ),
+        )
+        cur.execute(
+            """
+            UPDATE honors
+            SET photo_path = %s, photo_type = %s
+            WHERE category = %s AND name = %s AND period = %s
+              AND photo_path IS NULL
+            """,
+            (
+                item["photo_path"],
+                item["photo_type"],
+                item["category"],
+                item["name"],
+                item["period"],
+            ),
+        )
+
+
 def _ensure_records(cur) -> None:
-    honors_new = not _table_exists(cur, "honors")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS honors (
@@ -2112,22 +2193,7 @@ def _ensure_records(cur) -> None:
         ON honors (category, sort_year DESC, sort_month DESC)
         """
     )
-    if honors_new:
-        for item in HONOR_SEED:
-            cur.execute(
-                """
-                INSERT INTO honors (category, name, period, sort_year, sort_month, note)
-                VALUES (%s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    item["category"],
-                    item["name"],
-                    item["period"],
-                    item["sort_year"],
-                    item["sort_month"],
-                    item["note"],
-                ),
-            )
+    _ensure_honor_seed(cur)
     events_new = not _table_exists(cur, "council_events")
     cur.execute(
         """
@@ -2493,6 +2559,66 @@ def _rename_test_member(cur) -> None:
         """,
         (TEST_MEMBER_NAME, TEST_MEMBER_ID),
     )
+
+
+def _ensure_test_roster(cur, hashed: str) -> None:
+    """Insert roster members that are missing, without taking a title already in use."""
+    for member in MEMBER_SEED:
+        if member.title:
+            cur.execute(
+                """
+                INSERT INTO members (
+                    membership_id, password_hash, display_name, title, is_admin, birth_month, birth_day
+                )
+                SELECT %s, %s, %s,
+                    CASE WHEN EXISTS (SELECT 1 FROM members WHERE title = %s) THEN NULL ELSE %s END,
+                    %s, %s, %s
+                WHERE NOT EXISTS (SELECT 1 FROM members WHERE membership_id = %s)
+                """,
+                (
+                    member.membership_id,
+                    hashed,
+                    member.display_name,
+                    member.title,
+                    member.title,
+                    member.is_admin,
+                    member.birth_month,
+                    member.birth_day,
+                    member.membership_id,
+                ),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO members (
+                    membership_id, password_hash, display_name, title, is_admin, birth_month, birth_day
+                )
+                SELECT %s, %s, %s, NULL, %s, %s, %s
+                WHERE NOT EXISTS (SELECT 1 FROM members WHERE membership_id = %s)
+                """,
+                (
+                    member.membership_id,
+                    hashed,
+                    member.display_name,
+                    member.is_admin,
+                    member.birth_month,
+                    member.birth_day,
+                    member.membership_id,
+                ),
+            )
+        path = member_photo_path(member.membership_id)
+        cur.execute(
+            """
+            INSERT INTO images (path, original_name, content_type, purpose, slot, owner_membership_id)
+            SELECT %s, %s, 'image/png', 'profile', NULL, %s
+            WHERE EXISTS (SELECT 1 FROM members WHERE membership_id = %s)
+              AND NOT EXISTS (
+                SELECT 1 FROM images
+                WHERE purpose = 'profile' AND owner_membership_id = %s
+              )
+            """,
+            (path, f"{member.membership_id}.png", member.membership_id, member.membership_id, member.membership_id),
+        )
 
 
 def _role_plan(officer: list[dict], director: list[dict]) -> tuple[dict[str, str], set[str]]:
