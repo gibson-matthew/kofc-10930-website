@@ -22,6 +22,7 @@ import {
 } from "../api";
 import { OFFICER_TITLES, memberLabel } from "../titles";
 import { navigate } from "../router";
+import ActivityLog from "./ActivityLog";
 
 const SLOTS = [
   ["logo", "Logo"],
@@ -480,6 +481,7 @@ export default function SettingsView() {
               <a href="#members">Members</a>
               <a href="#admin-access">Admin access</a>
               <a href="#media">Media</a>
+              <a href="#logs">Logs & activity</a>
             </p>
           ) : null}
         </div>
@@ -741,6 +743,17 @@ export default function SettingsView() {
               </article>
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {admin ? (
+        <section className="block" id="logs" aria-labelledby="logsHeading">
+          <div className="section-head">
+            <div className="eyebrow left-only">Webmaster</div>
+            <h2 id="logsHeading">Logs & activity</h2>
+            <p>Stored sign-in, security, content, and optional site events, plus each Accept or Decline. Read-only.</p>
+          </div>
+          <ActivityLog members={members} />
         </section>
       ) : null}
     </div>

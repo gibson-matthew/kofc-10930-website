@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import queue
+import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -109,6 +110,18 @@ def ensure_audit_schema(cur) -> None:
             """
             CREATE INDEX IF NOT EXISTS consent_choices_member_idx
             ON consent_choices (membership_id, chosen_at DESC)
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS audit_events_created_idx
+            ON audit_events (created_at DESC)
+            """
+        )
+        cur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS consent_choices_chosen_idx
+            ON consent_choices (chosen_at DESC)
             """
         )
         cur.execute("RELEASE SAVEPOINT audit_schema")
@@ -743,3 +756,344 @@ def library_name(path: str) -> str:
     if "/financial-secretary/" in normalized:
         return "financial_secretary"
     return ""
+
+
+_ROW_LIMIT = 200
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_HIDDEN_DETAIL_KEYS = {"password", "password_hash", "token", "authorization", "cookie", "secret"}
+
+
+def _unavailable() -> dict:
+    return {"available": False, "truncated": False, "rows": []}
+
+
+def _clip(value, limit: int) -> str:
+    return " ".join(str(value or "").split())[:limit]
+
+
+def _day(value: str) -> str | None:
+    text = str(value or "").strip()[:10]
+    if not _DATE_RE.match(text):
+        return None
+    try:
+        datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        return None
+    return text
+
+
+def _like_pattern(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def _iso(value) -> str:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat()
+    return ""
+
+
+def _public_details(value) -> dict:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except Exception:
+            return {}
+    if not isinstance(value, dict):
+        return {}
+    cleaned = {}
+    for key, item in value.items():
+        if str(key).lower() in _HIDDEN_DETAIL_KEYS:
+            continue
+        cleaned[str(key)] = item
+    return cleaned
+
+
+def _recover(cur) -> None:
+    """A failed name lookup must not abandon the audit read."""
+    connection = cur.connection
+    if getattr(connection, "autocommit", False):
+        return
+    try:
+        connection.rollback()
+    except Exception:
+        pass
+
+
+def _member_ids_for(cur, text: str) -> list[str]:
+    cleaned = _clip(text, 80)
+    if not cleaned:
+        return []
+    try:
+        cur.execute(
+            """
+            SELECT membership_id
+            FROM members
+            WHERE display_name ILIKE %s ESCAPE '\\'
+            LIMIT 100
+            """,
+            (_like_pattern(cleaned),),
+        )
+        found = []
+        for row in cur.fetchall():
+            member_id = row.get("membership_id") if isinstance(row, dict) else row[0]
+            if member_id:
+                found.append(str(member_id))
+        return found
+    except Exception as exc:
+        log.warning("Could not match member names for the activity log: %s", exc)
+        _recover(cur)
+        return []
+
+
+def _names_for(cur, ids: list[str]) -> dict[str, str]:
+    unique = list(dict.fromkeys(item for item in ids if item))
+    if not unique:
+        return {}
+    marks = ", ".join(["%s"] * len(unique))
+    try:
+        cur.execute(
+            f"SELECT membership_id, display_name FROM members WHERE membership_id IN ({marks})",
+            unique,
+        )
+        names = {}
+        for row in cur.fetchall():
+            if isinstance(row, dict):
+                member_id, name = row.get("membership_id"), row.get("display_name")
+            else:
+                member_id, name = row[0], row[1]
+            if member_id and name:
+                names[str(member_id)] = str(name)
+        return names
+    except Exception as exc:
+        log.warning("Could not attach member names to the activity log: %s", exc)
+        _recover(cur)
+        return {}
+
+
+def _user_clause(column: str, text: str, name_ids: list[str]) -> tuple[str, list]:
+    parts = [f"COALESCE({column}, '') ILIKE %s ESCAPE '\\'"]
+    params: list = [_like_pattern(text)]
+    if name_ids:
+        marks = ", ".join(["%s"] * len(name_ids))
+        parts.append(f"{column} IN ({marks})")
+        params.extend(name_ids)
+    return "(" + " OR ".join(parts) + ")", params
+
+
+def _select_events(cur, *, event_type, member_text, name_ids, date_from, date_to, query, query_ids, limit):
+    clauses = []
+    params: list = []
+    if event_type:
+        clauses.append("event_type = %s")
+        params.append(event_type)
+    if date_from:
+        clauses.append("created_at >= (%s::date AT TIME ZONE 'America/Chicago')")
+        params.append(date_from)
+    if date_to:
+        clauses.append("created_at < ((%s::date + INTERVAL '1 day') AT TIME ZONE 'America/Chicago')")
+        params.append(date_to)
+    if member_text:
+        id_sql, id_params = _user_clause("membership_id", member_text, name_ids)
+        attempted_sql, attempted_params = _user_clause("details->>'attempted_id'", member_text, name_ids)
+        clauses.append(f"({id_sql} OR {attempted_sql})")
+        params.extend(id_params)
+        params.extend(attempted_params)
+    if query:
+        pattern = _like_pattern(query)
+        parts = [
+            "event_type ILIKE %s ESCAPE '\\'",
+            "COALESCE(membership_id, '') ILIKE %s ESCAPE '\\'",
+            "COALESCE(details->>'attempted_id', '') ILIKE %s ESCAPE '\\'",
+            "COALESCE(details::text, '') ILIKE %s ESCAPE '\\'",
+        ]
+        params.extend([pattern, pattern, pattern, pattern])
+        if query_ids:
+            marks = ", ".join(["%s"] * len(query_ids))
+            parts.append(f"membership_id IN ({marks})")
+            params.extend(query_ids)
+            parts.append(f"COALESCE(details->>'attempted_id', '') IN ({marks})")
+            params.extend(query_ids)
+        clauses.append("(" + " OR ".join(parts) + ")")
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    params.append(limit)
+    cur.execute(
+        f"""
+        SELECT id, event_type, tier, created_at, membership_id, ip, user_agent, details
+        FROM audit_events
+        {where}
+        ORDER BY created_at DESC, id DESC
+        LIMIT %s
+        """,
+        params,
+    )
+    return list(cur.fetchall())
+
+
+def _select_consents(cur, *, member_text, name_ids, date_from, date_to, query, query_ids, limit):
+    clauses = []
+    params: list = []
+    if date_from:
+        clauses.append("chosen_at >= (%s::date AT TIME ZONE 'America/Chicago')")
+        params.append(date_from)
+    if date_to:
+        clauses.append("chosen_at < ((%s::date + INTERVAL '1 day') AT TIME ZONE 'America/Chicago')")
+        params.append(date_to)
+    if member_text:
+        user_sql, user_params = _user_clause("membership_id", member_text, name_ids)
+        clauses.append(user_sql)
+        params.extend(user_params)
+    if query:
+        pattern = _like_pattern(query)
+        parts = [
+            "choice ILIKE %s ESCAPE '\\'",
+            "version ILIKE %s ESCAPE '\\'",
+            "COALESCE(membership_id, '') ILIKE %s ESCAPE '\\'",
+            "'consent.choice' ILIKE %s ESCAPE '\\'",
+        ]
+        params.extend([pattern, pattern, pattern, pattern])
+        if query_ids:
+            marks = ", ".join(["%s"] * len(query_ids))
+            parts.append(f"membership_id IN ({marks})")
+            params.extend(query_ids)
+        clauses.append("(" + " OR ".join(parts) + ")")
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    params.append(limit)
+    cur.execute(
+        f"""
+        SELECT id, membership_id, choice, version, chosen_at, ip, user_agent
+        FROM consent_choices
+        {where}
+        ORDER BY chosen_at DESC, id DESC
+        LIMIT %s
+        """,
+        params,
+    )
+    return list(cur.fetchall())
+
+
+def _event_row(record: dict) -> dict:
+    created = record.get("created_at")
+    return {
+        "kind": "event",
+        "id": int(record["id"]),
+        "event_type": record.get("event_type") or "",
+        "tier": record.get("tier") or "",
+        "created_at": _iso(created),
+        "_sort": created if isinstance(created, datetime) else datetime.min.replace(tzinfo=timezone.utc),
+        "membership_id": record.get("membership_id") or "",
+        "ip": record.get("ip") or "",
+        "user_agent": record.get("user_agent") or "",
+        "details": _public_details(record.get("details")),
+        "choice": "",
+        "version": "",
+        "display_name": "",
+    }
+
+
+def _consent_row(record: dict) -> dict:
+    created = record.get("chosen_at")
+    choice = record.get("choice") or ""
+    version = record.get("version") or ""
+    return {
+        "kind": "consent",
+        "id": int(record["id"]),
+        "event_type": "consent.choice",
+        "tier": "necessary",
+        "created_at": _iso(created),
+        "_sort": created if isinstance(created, datetime) else datetime.min.replace(tzinfo=timezone.utc),
+        "membership_id": record.get("membership_id") or "",
+        "ip": record.get("ip") or "",
+        "user_agent": record.get("user_agent") or "",
+        "details": {"choice": choice, "version": version},
+        "choice": choice,
+        "version": version,
+        "display_name": "",
+    }
+
+
+def list_activity(
+    *,
+    event_type: str = "",
+    member_id: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    query: str = "",
+) -> dict:
+    """Read audit rows for an admin. A database failure is unavailable, not an exception.
+
+    This reader is intentionally outside _guard. None would look like an empty log.
+    It uses tracking's own connection and does not change the site's memory fallback.
+    """
+    conn = _connect()
+    if conn is None:
+        return _unavailable()
+    try:
+        from psycopg.rows import dict_row
+
+        conn.autocommit = True
+        event_name = _clip(event_type, 80)
+        member_text = _clip(member_id, 80)
+        query_text = _clip(query, 120)
+        start = _day(date_from)
+        end = _day(date_to)
+        fetch_limit = _ROW_LIMIT + 1
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SET statement_timeout = '4000'")
+            name_ids = _member_ids_for(cur, member_text)
+            query_ids = _member_ids_for(cur, query_text)
+            events = _select_events(
+                cur,
+                event_type=event_name,
+                member_text=member_text,
+                name_ids=name_ids,
+                date_from=start,
+                date_to=end,
+                query=query_text,
+                query_ids=query_ids,
+                limit=fetch_limit,
+            )
+            consents = []
+            if event_name in {"", "consent.choice"}:
+                consents = _select_consents(
+                    cur,
+                    member_text=member_text,
+                    name_ids=name_ids,
+                    date_from=start,
+                    date_to=end,
+                    query=query_text,
+                    query_ids=query_ids,
+                    limit=fetch_limit,
+                )
+            rows = [_event_row(record) for record in events]
+            rows.extend(_consent_row(record) for record in consents)
+            rows.sort(key=lambda row: (row["_sort"], row["id"]), reverse=True)
+            truncated = len(rows) > _ROW_LIMIT
+            visible = rows[:_ROW_LIMIT]
+            ids = []
+            for row in visible:
+                if row["membership_id"]:
+                    ids.append(row["membership_id"])
+                attempted = row["details"].get("attempted_id") if row["kind"] == "event" else ""
+                if isinstance(attempted, str) and attempted:
+                    ids.append(attempted)
+            names = _names_for(cur, ids)
+            for row in visible:
+                mid = row["membership_id"]
+                attempted = row["details"].get("attempted_id") if row["kind"] == "event" else ""
+                if mid and mid in names:
+                    row["display_name"] = names[mid]
+                elif isinstance(attempted, str) and attempted in names:
+                    row["display_name"] = names[attempted]
+                row.pop("_sort", None)
+        return {"available": True, "truncated": truncated, "rows": visible}
+    except Exception as exc:
+        log.warning("Could not read the activity log: %s", exc)
+        return _unavailable()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass

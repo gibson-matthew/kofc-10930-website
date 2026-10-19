@@ -1236,6 +1236,26 @@ def post_consent(body: ConsentIn, request: Request) -> JSONResponse:
     return response
 
 
+@api.get("/audit/log")
+def audit_log(
+    event_type: str = "",
+    member_id: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    q: str = "",
+    admin: dict = Depends(require_admin),
+) -> dict:
+    if not admin.get("is_admin"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access is required")
+    return tracking.list_activity(
+        event_type=event_type,
+        member_id=member_id,
+        date_from=date_from,
+        date_to=date_to,
+        query=q,
+    )
+
+
 @api.post("/audit/events", status_code=status.HTTP_204_NO_CONTENT)
 def audit_events(body: AuditBatchIn, request: Request) -> Response:
     if tracking.allow_client(tracking.client_ip(request), "audit", 120, 60) is False:

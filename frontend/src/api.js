@@ -187,6 +187,18 @@ export async function fetchMembers() {
   return readJson(response, "Could not load members.");
 }
 
+export async function fetchActivity(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.event_type) params.set("event_type", filters.event_type);
+  if (filters.member_id) params.set("member_id", filters.member_id);
+  if (filters.date_from) params.set("date_from", filters.date_from);
+  if (filters.date_to) params.set("date_to", filters.date_to);
+  if (filters.q) params.set("q", filters.q);
+  const query = params.toString();
+  const response = await send(`/api/audit/log${query ? `?${query}` : ""}`);
+  return readJson(response, "Could not load activity.");
+}
+
 export async function setMemberBirthday(memberid, payload) {
   const response = await send(`/api/members/${encodeURIComponent(memberid)}/birthday`, {
     method: "PATCH",

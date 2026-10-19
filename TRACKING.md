@@ -56,3 +56,7 @@ These are logged only after Accept. Browser events also include language and tim
 - Password change — members cannot change a password in the app. Creating a member stores the new id and title, never the password.
 - Account lockout and unlock — sign-in is not locked after failures. Repeated failures are counted in `security.login_burst` only.
 - IP geolocation — no outside lookup. The IP address itself is stored on the event.
+
+## Admin review
+
+Administrators open Settings and use Logs & activity. The list shows `audit_events` and `consent_choices` (accepted or declined, time, and version), newest first. Filters cover event type, date, and member. Search matches event type, member, and details text. The list is read-only. A non-admin receives 403 and does not see the section. If Postgres is unavailable, that section shows a short notice and the rest of Settings still loads. Opening the log does not write a tracking event.

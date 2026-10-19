@@ -660,4 +660,10 @@ CREATE TABLE IF NOT EXISTS consent_choices (
 CREATE INDEX IF NOT EXISTS consent_choices_member_idx
   ON consent_choices (membership_id, chosen_at DESC);
 
+CREATE INDEX IF NOT EXISTS audit_events_created_idx
+  ON audit_events (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS consent_choices_chosen_idx
+  ON consent_choices (chosen_at DESC);
+
 COMMIT;
