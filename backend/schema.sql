@@ -732,6 +732,56 @@ WHERE NOT EXISTS (
   WHERE p.member_id = v.member_id AND p.body = v.body
 );
 
+-- Member nominations for Knight and Family awards. Names and reasons are plain text.
+-- member_id is the voter. nominee_member_id is set for knight awards and is not a foreign key.
+CREATE TABLE IF NOT EXISTS nominations (
+  id SERIAL PRIMARY KEY,
+  member_id TEXT NOT NULL,
+  category TEXT NOT NULL,
+  nominee_member_id TEXT,
+  nominee_name TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  period TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT nominations_category_chk CHECK (
+    category IN ('knight_month', 'family_month', 'knight_year', 'family_year')
+  ),
+  CONSTRAINT nominations_one_per_period UNIQUE (member_id, category, period)
+);
+
+CREATE INDEX IF NOT EXISTS nominations_period_idx
+  ON nominations (period, category);
+
+INSERT INTO nominations (
+  member_id, category, nominee_member_id, nominee_name, reason, period, created_at
+)
+SELECT v.member_id, v.category, v.nominee_member_id, v.nominee_name, v.reason, v.period, v.created_at
+FROM (
+  VALUES
+  (
+    '1000000',
+    'knight_month',
+    '1000135',
+    'Walter Shaw',
+    'He keeps the council charity work moving.',
+    '2026-10',
+    TIMESTAMPTZ '2026-10-12T17:00:00+00:00'
+  ),
+  (
+    '1000001',
+    'family_month',
+    NULL,
+    'The Nguyen Family',
+    'They welcome new brothers and their families.',
+    '2026-10',
+    TIMESTAMPTZ '2026-10-05T17:00:00+00:00'
+  )
+) AS v(member_id, category, nominee_member_id, nominee_name, reason, period, created_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM nominations n
+  WHERE n.member_id = v.member_id AND n.category = v.category AND n.period = v.period
+);
+
 -- Necessary and optional site events. Writes must not block page requests.
 CREATE TABLE IF NOT EXISTS audit_events (
   id BIGSERIAL PRIMARY KEY,

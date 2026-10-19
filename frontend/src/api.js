@@ -461,3 +461,41 @@ export async function deletePrayer(id) {
   const response = await send(`/api/prayers/${encodeURIComponent(id)}`, { method: "DELETE" });
   return readJson(response, "Could not remove the prayer request.");
 }
+
+export async function fetchNominations() {
+  let response;
+  try {
+    response = await send("/api/nominations");
+  } catch {
+    throw new Error("Could not load nominations.");
+  }
+  return readJson(response, "Could not load nominations.");
+}
+
+export async function fetchNominationResults() {
+  let response;
+  try {
+    response = await send("/api/nominations/results");
+  } catch {
+    throw new Error("Could not load nomination results.");
+  }
+  return readJson(response, "Could not load nomination results.");
+}
+
+export async function saveNomination(fields) {
+  const response = await send("/api/nominations", {
+    method: "POST",
+    body: JSON.stringify({
+      category: fields.category || "",
+      nominee_member_id: fields.nominee_member_id || "",
+      nominee_name: fields.nominee_name || "",
+      reason: fields.reason || "",
+    }),
+  });
+  return readJson(response, "Could not save the nomination.");
+}
+
+export async function withdrawNomination(id) {
+  const response = await send(`/api/nominations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return readJson(response, "Could not withdraw the nomination.");
+}

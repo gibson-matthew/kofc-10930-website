@@ -13,6 +13,7 @@ import AnnouncementList from "./AnnouncementList";
 import AnnouncementReader from "./AnnouncementReader";
 import DocumentLibrary from "./DocumentLibrary";
 import MemberDirectory from "./MemberDirectory";
+import NominationPanel from "./NominationPanel";
 import PrayerList from "./PrayerList";
 import EventsSection from "./EventsSection";
 import HonorsSection from "./HonorsSection";
@@ -37,7 +38,7 @@ const LINK_CARDS = [
   { title: "links.4.title", action: "links.4.action", panel: "panel-roster", roster: true },
   { title: "links.6.title", action: "links.6.action", detail: "links.6.detail", panel: "panel-comments" },
   { title: "links.9.title", action: "links.9.action", panel: "panel-hours", hours: true },
-  { title: "links.11.title", action: "links.11.action", detail: "links.11.detail", panel: "panel-nominate" },
+  { title: "links.11.title", action: "links.11.action", panel: "panel-nominate", nominations: true },
   { title: "links.12.title", action: "links.12.action", panel: "panel-fs", library: "financial_secretary" },
   { title: "links.13.title", action: "links.13.action", panel: "panel-treasurer", library: "treasurer" },
   { title: "links.14.title", action: "links.14.action", detail: "links.14.detail", panel: "panel-budget" },
@@ -543,7 +544,9 @@ function ScheduleCard({ index }) {
 }
 
 function linkFields(card) {
-  if (card.panel === "panel-birthdays" || card.library || card.announcements || card.roster || card.prayers) return [];
+  if (card.panel === "panel-birthdays" || card.library || card.announcements || card.roster || card.prayers || card.nominations) {
+    return [];
+  }
   const fields = [];
   if (card.body) fields.push({ id: card.body, label: "Summary", long: true });
   if (card.hours) {
@@ -1148,6 +1151,8 @@ function MemberView() {
                           shown ? <MemberDirectory canManage={Boolean(user?.is_admin)} /> : null
                         ) : card.prayers ? (
                           shown ? <PrayerList isAdmin={Boolean(user?.is_admin)} /> : null
+                        ) : card.nominations ? (
+                          shown ? <NominationPanel isAdmin={Boolean(user?.is_admin)} /> : null
                         ) : birthdays ? (
                           <BirthdayList
                             roster={roster}

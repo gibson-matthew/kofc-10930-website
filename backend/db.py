@@ -24,6 +24,19 @@ from prayers import (
     display_prayer_body,
     display_prayer_title,
 )
+from nominations import (
+    CATEGORY_ORDER,
+    NOMINATION_SEED,
+    active_periods,
+    build_results,
+    clean_nomination_name,
+    clean_nomination_reason,
+    display_nomination_name,
+    display_nomination_reason,
+    in_active_period,
+    period_for,
+    resolve_nominee,
+)
 from media import (
     RECOG_SLOTS,
     SEED_DOCUMENTS,
@@ -114,11 +127,13 @@ class Store:
         self._documents = _seed_document_rows()
         self._announcements = _seed_announcement_rows()
         self._prayers = _seed_prayer_rows()
+        self._nominations = _seed_nomination_rows()
         self._honor_seq = len(self._honors) + 1
         self._event_seq = len(self._events) + 1
         self._document_seq = len(self._documents) + 1
         self._announcement_seq = len(self._announcements) + 1
         self._prayer_seq = len(self._prayers) + 1
+        self._nomination_seq = len(self._nominations) + 1
         self._refresh: dict[str, dict] = {}
         self._prefer_memory = False
 
@@ -137,11 +152,13 @@ class Store:
             self._documents = _seed_document_rows()
             self._announcements = _seed_announcement_rows()
             self._prayers = _seed_prayer_rows()
+            self._nominations = _seed_nomination_rows()
             self._honor_seq = len(self._honors) + 1
             self._event_seq = len(self._events) + 1
             self._document_seq = len(self._documents) + 1
             self._announcement_seq = len(self._announcements) + 1
             self._prayer_seq = len(self._prayers) + 1
+            self._nomination_seq = len(self._nominations) + 1
         conn = _connect()
         if conn is None:
             with self._lock:
@@ -1644,6 +1661,247 @@ class Store:
             _rollback(conn)
             raise StoreError("Could not remove the prayer request.", 503) from exc
 
+    def list_nominations(self, member_id: str | None) -> dict:
+        actor = str(member_id or "").strip()
+        month_period, year_period = active_periods()
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                rows = [
+                    dict(item)
+                    for item in self._nominations
+                    if str(item.get("member_id") or "") == actor
+                    and in_active_period(str(item.get("category") or ""), str(item.get("period") or ""), month_period, year_period)
+                ]
+            rows.sort(key=lambda item: _nomination_order(item.get("category")))
+            return _nomination_bundle(rows, month_period, year_period)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    _NOMINATION_SELECT
+                    + """
+                    WHERE member_id = %s
+                      AND (
+                        (category IN ('knight_month', 'family_month') AND period = %s)
+                        OR (category IN ('knight_year', 'family_year') AND period = %s)
+                      )
+                    ORDER BY created_at DESC, id DESC
+                    """,
+                    (actor, month_period, year_period),
+                )
+                fetched = cur.fetchall()
+            conn.close()
+        except Exception as exc:
+            log.warning("Nomination list failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise StoreError("Could not load nominations.", 503) from exc
+        rows = [_nomination_from_row(row) for row in fetched]
+        rows.sort(key=lambda item: _nomination_order(item.get("category")))
+        return _nomination_bundle(rows, month_period, year_period)
+
+    def nomination_results(self) -> dict:
+        month_period, year_period = active_periods()
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                rows = []
+                for item in self._nominations:
+                    if not in_active_period(
+                        str(item.get("category") or ""),
+                        str(item.get("period") or ""),
+                        month_period,
+                        year_period,
+                    ):
+                        continue
+                    copied = dict(item)
+                    copied["voter_name"] = self._memory_author(item.get("member_id"))
+                    rows.append(copied)
+            return build_results(rows, month_period, year_period)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT n.id, n.member_id, n.category, n.nominee_member_id, n.nominee_name,
+                           n.reason, n.period, n.created_at,
+                           COALESCE(NULLIF(btrim(m.display_name), ''), 'Member')
+                    FROM nominations n
+                    LEFT JOIN members m ON m.membership_id = n.member_id
+                    WHERE (n.category IN ('knight_month', 'family_month') AND n.period = %s)
+                       OR (n.category IN ('knight_year', 'family_year') AND n.period = %s)
+                    """,
+                    (month_period, year_period),
+                )
+                fetched = cur.fetchall()
+            conn.close()
+        except Exception as exc:
+            log.warning("Nomination results failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise StoreError("Could not load nomination results.", 503) from exc
+        rows = []
+        for row in fetched:
+            item = _nomination_from_row(row)
+            item["voter_name"] = row[8]
+            rows.append(item)
+        return build_results(rows, month_period, year_period)
+
+    def save_nomination(
+        self,
+        category: str,
+        nominee_member_id: str,
+        nominee_name: str,
+        reason: str,
+        member_id: str | None,
+    ) -> dict:
+        chosen = str(category or "").strip()
+        if chosen not in CATEGORY_ORDER:
+            raise StoreError("Choose a category.", 400)
+        try:
+            cleaned_reason = clean_nomination_reason(reason)
+            period = period_for(chosen)
+        except ValueError as exc:
+            raise StoreError(str(exc), 400) from exc
+        actor = str(member_id or "").strip()
+        if not actor:
+            raise StoreError("Sign in to submit a nomination.", 401)
+        created_at = datetime.now(timezone.utc)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                try:
+                    nominee_id, cleaned_name = resolve_nominee(
+                        chosen,
+                        nominee_member_id,
+                        nominee_name,
+                        self._lookup_member_name,
+                    )
+                except ValueError as exc:
+                    raise StoreError(str(exc), 400) from exc
+                for item in self._nominations:
+                    if (
+                        str(item.get("member_id") or "") == actor
+                        and item.get("category") == chosen
+                        and str(item.get("period") or "") == period
+                    ):
+                        item["nominee_member_id"] = nominee_id or ""
+                        item["nominee_name"] = cleaned_name
+                        item["reason"] = cleaned_reason
+                        return _public_nomination(item)
+                nomination_id = self._nomination_seq
+                self._nomination_seq += 1
+                row = {
+                    "id": nomination_id,
+                    "member_id": actor,
+                    "category": chosen,
+                    "nominee_member_id": nominee_id or "",
+                    "nominee_name": cleaned_name,
+                    "reason": cleaned_reason,
+                    "period": period,
+                    "created_at": created_at,
+                }
+                self._nominations.append(row)
+            return _public_nomination(row)
+        try:
+            with conn.cursor() as cur:
+                def lookup(wanted: str, cursor=cur) -> str | None:
+                    cursor.execute(
+                        "SELECT display_name FROM members WHERE membership_id = %s",
+                        (wanted,),
+                    )
+                    found = cursor.fetchone()
+                    if found is None:
+                        return None
+                    return found[0]
+
+                try:
+                    nominee_id, cleaned_name = resolve_nominee(
+                        chosen,
+                        nominee_member_id,
+                        nominee_name,
+                        lookup,
+                    )
+                except ValueError as exc:
+                    raise StoreError(str(exc), 400) from exc
+                cur.execute(
+                    """
+                    INSERT INTO nominations (
+                      member_id, category, nominee_member_id, nominee_name, reason, period, created_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT ON CONSTRAINT nominations_one_per_period
+                    DO UPDATE SET
+                      nominee_member_id = EXCLUDED.nominee_member_id,
+                      nominee_name = EXCLUDED.nominee_name,
+                      reason = EXCLUDED.reason
+                    RETURNING id, member_id, category, nominee_member_id, nominee_name, reason, period, created_at
+                    """,
+                    (actor, chosen, nominee_id, cleaned_name, cleaned_reason, period, created_at),
+                )
+                stored = cur.fetchone()
+            conn.commit()
+            conn.close()
+        except StoreError:
+            _rollback(conn)
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the nomination.", 503) from exc
+        if stored is None:
+            raise StoreError("Could not save the nomination.", 503)
+        return _public_nomination(_nomination_from_row(stored))
+
+    def withdraw_nomination(self, nomination_id: int, member_id: str | None) -> None:
+        actor = str(member_id or "").strip()
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                match = next((item for item in self._nominations if item["id"] == nomination_id), None)
+                if match is None:
+                    raise StoreError("Nomination was not found.", 404)
+                if str(match.get("member_id") or "") != actor:
+                    raise StoreError("You can only withdraw your own nomination.", 403)
+                self._nominations = [item for item in self._nominations if item["id"] != nomination_id]
+            return
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT member_id FROM nominations WHERE id = %s", (nomination_id,))
+                found = cur.fetchone()
+                if found is None:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Nomination was not found.", 404)
+                if str(found[0] or "") != actor:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("You can only withdraw your own nomination.", 403)
+                cur.execute(
+                    "DELETE FROM nominations WHERE id = %s AND member_id = %s",
+                    (nomination_id, actor),
+                )
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Nomination was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not withdraw the nomination.", 503) from exc
+
+    def _lookup_member_name(self, member_id: str) -> str | None:
+        wanted = str(member_id or "").strip()
+        for item in self._members:
+            if item.get("membership_id") == wanted:
+                return item.get("display_name")
+        return None
+
     def _memory_author(self, member_id: str | None) -> str:
         wanted = str(member_id or "").strip()
         for item in self._members:
@@ -3112,6 +3370,70 @@ def _author_name(cur, member_id: str) -> str:
     return display_person_name(found[0])
 
 
+_NOMINATION_SELECT = """
+SELECT id, member_id, category, nominee_member_id, nominee_name, reason, period, created_at
+FROM nominations
+"""
+
+
+def _nomination_order(category) -> int:
+    try:
+        return CATEGORY_ORDER.index(category)
+    except ValueError:
+        return len(CATEGORY_ORDER)
+
+
+def _seed_nomination_rows() -> list[dict]:
+    rows = []
+    for index, item in enumerate(NOMINATION_SEED, start=1):
+        rows.append(
+            {
+                "id": index,
+                "member_id": item["member_id"],
+                "category": item["category"],
+                "nominee_member_id": item.get("nominee_member_id") or "",
+                "nominee_name": clean_nomination_name(item["nominee_name"]),
+                "reason": clean_nomination_reason(item.get("reason") or ""),
+                "period": item["period"],
+                "created_at": datetime.fromisoformat(item["created_at"]),
+            }
+        )
+    return rows
+
+
+def _nomination_from_row(row) -> dict:
+    return {
+        "id": row[0],
+        "member_id": row[1],
+        "category": row[2],
+        "nominee_member_id": row[3] or "",
+        "nominee_name": row[4] or "",
+        "reason": row[5] or "",
+        "period": row[6],
+        "created_at": row[7],
+    }
+
+
+def _public_nomination(row: dict) -> dict:
+    return {
+        "id": int(row["id"]),
+        "category": row["category"],
+        "nominee_name": display_nomination_name(row.get("nominee_name") or ""),
+        "nominee_member_id": str(row.get("nominee_member_id") or ""),
+        "reason": display_nomination_reason(row.get("reason") or ""),
+        "period": str(row.get("period") or ""),
+        "submitted_on": uploaded_on(row["created_at"]),
+    }
+
+
+def _nomination_bundle(rows: list[dict], month_period: str, year_period: str) -> dict:
+    return {
+        "month_period": month_period,
+        "year_period": year_period,
+        "nominations": [_public_nomination(item) for item in rows],
+    }
+
+
 def _seed_event_rows() -> list[dict]:
     rows = []
     for index, item in enumerate(EVENT_SEED, start=1):
@@ -3265,6 +3587,7 @@ def _ensure_records(cur) -> None:
     _ensure_documents(cur)
     _ensure_announcements(cur)
     _ensure_prayers(cur)
+    _ensure_nominations(cur)
 
 
 def _ensure_documents(cur) -> None:
@@ -3398,6 +3721,55 @@ def _ensure_prayers(cur) -> None:
                 clean_prayer_body(item["body"]),
                 datetime.fromisoformat(item["created_at"]),
                 datetime.fromisoformat(item["updated_at"]),
+            ),
+        )
+
+
+def _ensure_nominations(cur) -> None:
+    """Create the nominations table. Example rows are inserted only on first create."""
+    nominations_new = not _table_exists(cur, "nominations")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS nominations (
+          id SERIAL PRIMARY KEY,
+          member_id TEXT NOT NULL,
+          category TEXT NOT NULL,
+          nominee_member_id TEXT,
+          nominee_name TEXT NOT NULL,
+          reason TEXT NOT NULL DEFAULT '',
+          period TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CONSTRAINT nominations_category_chk CHECK (
+            category IN ('knight_month', 'family_month', 'knight_year', 'family_year')
+          ),
+          CONSTRAINT nominations_one_per_period UNIQUE (member_id, category, period)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS nominations_period_idx
+        ON nominations (period, category)
+        """
+    )
+    if not nominations_new:
+        return
+    for item in NOMINATION_SEED:
+        cur.execute(
+            """
+            INSERT INTO nominations (
+              member_id, category, nominee_member_id, nominee_name, reason, period, created_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                item["member_id"],
+                item["category"],
+                item.get("nominee_member_id") or None,
+                clean_nomination_name(item["nominee_name"]),
+                clean_nomination_reason(item.get("reason") or ""),
+                item["period"],
+                datetime.fromisoformat(item["created_at"]),
             ),
         )
 

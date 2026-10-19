@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from announcements import ANNOUNCEMENT_SEED
+from nominations import NOMINATION_SEED
 from prayers import PRAYER_SEED
 from media import SEED_DOCUMENTS, SEED_IMAGES, slot_check_sql
 from test_seed import HONOR_SEED
@@ -655,6 +656,57 @@ WHERE NOT EXISTS (
 """
 
 
+def nominations_schema_sql() -> str:
+    """Nomination table and example rows. A later schema load can restore a deleted example."""
+    value_rows = ",\n  ".join(
+        "("
+        + ", ".join(
+            [
+                _sql_text(item["member_id"]),
+                _sql_text(item["category"]),
+                _sql_text(item.get("nominee_member_id")),
+                _sql_text(item["nominee_name"]),
+                _sql_text(item.get("reason") or ""),
+                _sql_text(item["period"]),
+                f"TIMESTAMPTZ {_sql_text(item['created_at'])}",
+            ]
+        )
+        + ")"
+        for item in NOMINATION_SEED
+    )
+    return f"""CREATE TABLE IF NOT EXISTS nominations (
+  id SERIAL PRIMARY KEY,
+  member_id TEXT NOT NULL,
+  category TEXT NOT NULL,
+  nominee_member_id TEXT,
+  nominee_name TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  period TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT nominations_category_chk CHECK (
+    category IN ('knight_month', 'family_month', 'knight_year', 'family_year')
+  ),
+  CONSTRAINT nominations_one_per_period UNIQUE (member_id, category, period)
+);
+
+CREATE INDEX IF NOT EXISTS nominations_period_idx
+  ON nominations (period, category);
+
+INSERT INTO nominations (
+  member_id, category, nominee_member_id, nominee_name, reason, period, created_at
+)
+SELECT v.member_id, v.category, v.nominee_member_id, v.nominee_name, v.reason, v.period, v.created_at
+FROM (
+  VALUES
+  {value_rows}
+) AS v(member_id, category, nominee_member_id, nominee_name, reason, period, created_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM nominations n
+  WHERE n.member_id = v.member_id AND n.category = v.category AND n.period = v.period
+);
+"""
+
+
 def records_schema_sql() -> str:
     event_rows = ",\n  ".join(
         "("
@@ -728,6 +780,8 @@ WHERE NOT EXISTS (SELECT 1 FROM council_events);
 {announcements_schema_sql().rstrip()}
 
 {prayers_schema_sql().rstrip()}
+
+{nominations_schema_sql().rstrip()}
 """
 
 
@@ -814,6 +868,11 @@ def render_schema() -> str:
 -- member_id is a membership id with no foreign key.
 -- Example rows are inserted when that member and prayer text are not already stored.
 -- The API inserts those examples only when the prayer_requests table is first created.
+-- nominations stores one Knight or Family nomination per member, category, and period.
+-- member_id is the voter. nominee_member_id is set for knight awards and has no foreign key.
+-- period is YYYY-MM for month awards and YYYY for year awards.
+-- Example rows are inserted when that voter, category, and period are not already stored.
+-- The API inserts those examples only when the nominations table is first created.
 
 BEGIN;
 

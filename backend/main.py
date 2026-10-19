@@ -241,6 +241,54 @@ class PrayerOut(BaseModel):
     mine: bool
 
 
+class NominationIn(BaseModel):
+    category: str = Field(default="", max_length=40)
+    nominee_member_id: str = Field(default="", max_length=32)
+    nominee_name: str = Field(default="", max_length=400)
+    reason: str = Field(default="", max_length=1000)
+
+
+class NominationOut(BaseModel):
+    id: int
+    category: str
+    nominee_name: str
+    nominee_member_id: str = ""
+    reason: str = ""
+    period: str
+    submitted_on: str
+
+
+class NominationBundle(BaseModel):
+    month_period: str
+    year_period: str
+    nominations: list[NominationOut]
+
+
+class NominatorOut(BaseModel):
+    member_id: str
+    display_name: str
+    reason: str = ""
+
+
+class NomineeTallyOut(BaseModel):
+    nominee_name: str
+    nominee_member_id: str = ""
+    votes: int
+    nominators: list[NominatorOut]
+
+
+class CategoryResultOut(BaseModel):
+    category: str
+    label: str
+    nominees: list[NomineeTallyOut]
+
+
+class NominationResultsOut(BaseModel):
+    month_period: str
+    year_period: str
+    categories: list[CategoryResultOut]
+
+
 class EventOut(BaseModel):
     id: int
     title: str
@@ -1383,6 +1431,52 @@ def delete_prayer(
         _raise_store(exc)
     if member.get("is_admin"):
         tracking.admin_event(request, member.get("memberid"), "delete", "prayer_request", prayer_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@api.get("/nominations", response_model=NominationBundle)
+def list_nominations(member: dict = Depends(get_current_member)) -> NominationBundle:
+    try:
+        payload = store.list_nominations(member.get("memberid"))
+    except StoreError as exc:
+        _raise_store(exc)
+    return NominationBundle(**payload)
+
+
+@api.get("/nominations/results", response_model=NominationResultsOut)
+def nomination_results(member: dict = Depends(require_admin)) -> NominationResultsOut:
+    del member
+    try:
+        payload = store.nomination_results()
+    except StoreError as exc:
+        _raise_store(exc)
+    return NominationResultsOut(**payload)
+
+
+@api.post("/nominations", response_model=NominationOut)
+def save_nomination(body: NominationIn, member: dict = Depends(get_current_member)) -> NominationOut:
+    try:
+        saved = store.save_nomination(
+            body.category,
+            body.nominee_member_id,
+            body.nominee_name,
+            body.reason,
+            member.get("memberid"),
+        )
+    except StoreError as exc:
+        _raise_store(exc)
+    return NominationOut(**saved)
+
+
+@api.delete("/nominations/{nomination_id}", status_code=status.HTTP_204_NO_CONTENT)
+def withdraw_nomination(
+    nomination_id: int,
+    member: dict = Depends(get_current_member),
+) -> Response:
+    try:
+        store.withdraw_nomination(nomination_id, member.get("memberid"))
+    except StoreError as exc:
+        _raise_store(exc)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
