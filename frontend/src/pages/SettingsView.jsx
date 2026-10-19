@@ -16,6 +16,7 @@ import {
   replaceMedia,
   setMemberAdmin,
   setMemberBirthday,
+  setMemberHonorary,
   updateMyCrop,
   uploadMedia,
   uploadMyPhoto,
@@ -466,6 +467,17 @@ export default function SettingsView() {
     }, next ? "Admin access granted." : "Admin access removed.");
   }
 
+  function onHonorary(member, next) {
+    run(async () => {
+      const updated = await setMemberHonorary(member.memberid, next);
+      setMembers((current) =>
+        current.map((item) =>
+          item.memberid === updated.memberid ? { ...item, honorary_life: Boolean(updated.honorary_life) } : item,
+        ),
+      );
+    }, next ? "Honorary Life Member set." : "Honorary Life Member cleared.");
+  }
+
   const adminCount = members.filter((member) => member.is_admin).length;
 
   return (
@@ -649,6 +661,15 @@ export default function SettingsView() {
                     {" · "}
                     {member.is_admin ? "Admin" : "Member"}
                   </p>
+                  <label className="admin-toggle">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(member.honorary_life)}
+                      disabled={pending}
+                      onChange={(event) => onHonorary(member, event.target.checked)}
+                    />
+                    Honorary Life Member
+                  </label>
                   <BirthdayEditor member={member} onSave={onBirthday} />
                 </div>
               </article>

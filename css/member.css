@@ -1388,3 +1388,25 @@ body.page-member .signin-field textarea {
   color: var(--wine);
   text-decoration: underline;
 }
+
+.detail .member-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.detail .member-row > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.detail .member-row .portrait-sm {
+  flex-shrink: 0;
+}
+
+.detail .member-honor {
+  color: var(--wine);
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}

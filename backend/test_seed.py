@@ -43,6 +43,24 @@ class SeedMember(NamedTuple):
     birth_day: int
 
 
+# Optional directory examples. Applied when that member row is first created.
+# The API also applies them once, when the phone column is first added.
+# honorary_life, phone, email. Empty phone and email stay unset.
+DIRECTORY_SEED: dict[str, tuple[bool, str, str]] = {
+    "1000000": (True, "(817) 555-0140", "david.hernandez@example.com"),
+    "1000104": (False, "(817) 555-0142", "christopher.nguyen@example.com"),
+    "1000105": (False, "(817) 555-0144", "andrew.callahan@example.com"),
+    "1000121": (True, "(817) 555-0168", "richard.donnelly@example.com"),
+    "1000135": (True, "(817) 555-0176", "walter.shaw@example.com"),
+    "1000144": (True, "", ""),
+}
+
+
+def directory_fields(membership_id: str) -> tuple[bool, str | None, str | None]:
+    honorary, phone, email = DIRECTORY_SEED.get(membership_id, (False, "", ""))
+    return bool(honorary), phone or None, email or None
+
+
 # 50 members. GK stays with David Hernandez (1000000). Shared password: Password123!
 MEMBER_SEED: tuple[SeedMember, ...] = (
     SeedMember("1000100", "Michael Brennan", "DGK", True, 10, 3),

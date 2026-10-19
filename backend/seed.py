@@ -742,6 +742,8 @@ def render_schema() -> str:
 -- members.title stores one officer-title abbreviation, or NULL.
 -- members.is_admin grants full edit access.
 -- members.birth_month and members.birth_day store a birthday, or both stay NULL.
+-- members.honorary_life marks an Honorary Life Member.
+-- members.phone and members.email are optional. The member list omits them for non-admins.
 -- year.fraternal stores the current fraternal year, such as {fraternal_year}.
 -- images holds the logo, carousel photos, About photos, uploads, and profile photos.
 -- Profile photos store crop_x, crop_y, and crop_scale for the viewing angle.
@@ -775,13 +777,38 @@ CREATE TABLE IF NOT EXISTS members (
   title TEXT,
   is_admin BOOLEAN NOT NULL DEFAULT FALSE,
   birth_month SMALLINT,
-  birth_day SMALLINT
+  birth_day SMALLINT,
+  honorary_life BOOLEAN NOT NULL DEFAULT FALSE,
+  phone TEXT,
+  email TEXT
 );
 
 ALTER TABLE members ADD COLUMN IF NOT EXISTS title TEXT;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_month SMALLINT;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_day SMALLINT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS honorary_life BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS email TEXT;
+
+UPDATE members
+SET honorary_life = TRUE, phone = '(817) 555-0140', email = 'david.hernandez@example.com'
+WHERE membership_id = '1000000' AND honorary_life = FALSE AND phone IS NULL AND email IS NULL;
+UPDATE members
+SET phone = '(817) 555-0142', email = 'christopher.nguyen@example.com'
+WHERE membership_id = '1000104' AND honorary_life = FALSE AND phone IS NULL AND email IS NULL;
+UPDATE members
+SET phone = '(817) 555-0144', email = 'andrew.callahan@example.com'
+WHERE membership_id = '1000105' AND honorary_life = FALSE AND phone IS NULL AND email IS NULL;
+UPDATE members
+SET honorary_life = TRUE, phone = '(817) 555-0168', email = 'richard.donnelly@example.com'
+WHERE membership_id = '1000121' AND honorary_life = FALSE AND phone IS NULL AND email IS NULL;
+UPDATE members
+SET honorary_life = TRUE, phone = '(817) 555-0176', email = 'walter.shaw@example.com'
+WHERE membership_id = '1000135' AND honorary_life = FALSE AND phone IS NULL AND email IS NULL;
+UPDATE members
+SET honorary_life = TRUE
+WHERE membership_id = '1000144' AND honorary_life = FALSE AND phone IS NULL AND email IS NULL;
 ALTER TABLE members DROP CONSTRAINT IF EXISTS members_title_abbrev;
 ALTER TABLE members ADD CONSTRAINT members_title_abbrev
   CHECK (title IS NULL OR title IN ({title_choices}));

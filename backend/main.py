@@ -123,6 +123,7 @@ class MemberOut(BaseModel):
     crop_scale: float = 1
     birth_month: int | None = None
     birth_day: int | None = None
+    honorary_life: bool = False
 
 
 class TitleIn(BaseModel):
@@ -147,6 +148,10 @@ class AssignmentsIn(BaseModel):
 
 class AdminIn(BaseModel):
     is_admin: bool
+
+
+class HonoraryIn(BaseModel):
+    honorary_life: bool
 
 
 class BirthdayIn(BaseModel):
@@ -635,6 +640,36 @@ def member_roster(member: dict = Depends(get_current_member)) -> list[MemberOut]
     return [MemberOut(**row) for row in rows]
 
 
+_DIRECTORY_PUBLIC = (
+    "memberid",
+    "display_name",
+    "title",
+    "honorary_life",
+    "photo_url",
+    "crop_x",
+    "crop_y",
+    "crop_scale",
+)
+
+
+@api.get("/members/directory")
+def member_directory(member: dict = Depends(get_current_member)) -> list[dict]:
+    """Signed-in roster. Phone and email are included only for an administrator."""
+    try:
+        rows = store.list_directory()
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    admin = bool(member.get("is_admin"))
+    visible = []
+    for row in rows:
+        item = {key: row.get(key) for key in _DIRECTORY_PUBLIC}
+        if admin:
+            item["phone"] = row.get("phone") or ""
+            item["email"] = row.get("email") or ""
+        visible.append(item)
+    return visible
+
+
 @api.patch("/members/{memberid}", response_model=MemberOut)
 def update_member_admin(
     memberid: str,
@@ -652,6 +687,28 @@ def update_member_admin(
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
     tracking.flag_change(request, member.get("memberid"), memberid, before, updated)
+    return MemberOut(**updated)
+
+
+@api.patch("/members/{memberid}/honorary", response_model=MemberOut)
+def update_member_honorary(
+    memberid: str,
+    body: HonoraryIn,
+    request: Request,
+    member: dict = Depends(require_admin),
+) -> MemberOut:
+    try:
+        updated = store.set_honorary(memberid, body.honorary_life)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    tracking.admin_event(
+        request,
+        member.get("memberid"),
+        "update",
+        "honorary_life",
+        memberid,
+        honorary_life=bool(updated.get("honorary_life")),
+    )
     return MemberOut(**updated)
 
 

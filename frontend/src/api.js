@@ -169,6 +169,24 @@ export async function fetchRoster() {
   return readJson(response, "Could not load members.");
 }
 
+export async function fetchDirectory() {
+  let response;
+  try {
+    response = await send("/api/members/directory");
+  } catch {
+    throw new Error("Could not load members.");
+  }
+  return readJson(response, "Could not load members.");
+}
+
+export async function setMemberHonorary(memberid, honorary) {
+  const response = await send(`/api/members/${encodeURIComponent(memberid)}/honorary`, {
+    method: "PATCH",
+    body: JSON.stringify({ honorary_life: Boolean(honorary) }),
+  });
+  return readJson(response, "Could not update Honorary Life Member.");
+}
+
 export async function saveRoleAssignments(payload) {
   const response = await send("/api/members/assignments", {
     method: "POST",

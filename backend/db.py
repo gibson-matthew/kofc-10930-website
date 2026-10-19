@@ -32,7 +32,7 @@ from media import (
 )
 from security import hash_password, verify_password, verify_password_dummy
 from seed import EVENT_SEED, HONOR_SEED, PAGES
-from test_seed import MEMBER_SEED, ensure_seed_photos, member_photo_path
+from test_seed import DIRECTORY_SEED, MEMBER_SEED, directory_fields, ensure_seed_photos, member_photo_path
 from titles import (
     DIRECTOR_ROLE_SET,
     OFFICER_ROLE_SET,
@@ -320,18 +320,7 @@ class Store:
             return self._memory_member(memberid)
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT m.membership_id, m.password_hash, m.display_name, m.title, m.is_admin,
-                           i.id, i.path, i.crop_x, i.crop_y, i.crop_scale,
-                           m.birth_month, m.birth_day
-                    FROM members m
-                    LEFT JOIN images i
-                      ON i.owner_membership_id = m.membership_id AND i.purpose = 'profile'
-                    WHERE m.membership_id = %s
-                    """,
-                    (memberid,),
-                )
+                cur.execute(_MEMBER_SELECT + " WHERE m.membership_id = %s", (memberid,))
                 row = cur.fetchone()
             conn.close()
         except Exception as exc:
@@ -377,9 +366,16 @@ class Store:
             "crop_scale": float(record.get("crop_scale") or 1),
             "birth_month": _birthday_number(record.get("birth_month")),
             "birth_day": _birthday_number(record.get("birth_day")),
+            "honorary_life": bool(record.get("honorary_life")),
         }
 
-    def list_members(self) -> list[dict]:
+    def _directory_member(self, record: dict) -> dict:
+        row = self._public_member(record)
+        row["phone"] = str(record.get("phone") or "").strip()
+        row["email"] = str(record.get("email") or "").strip()
+        return row
+
+    def _member_records(self) -> list[dict]:
         conn = self._open()
         if conn is None:
             with self._lock:
@@ -392,19 +388,13 @@ class Store:
                     record["crop_x"] = photo.get("crop_x", 0) if photo else 0
                     record["crop_y"] = photo.get("crop_y", 0) if photo else 0
                     record["crop_scale"] = photo.get("crop_scale", 1) if photo else 1
-                    rows.append(self._public_member(record))
-            rows.sort(key=lambda item: (item["display_name"].lower(), item["memberid"]))
+                    rows.append(record)
             return rows
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    SELECT m.membership_id, m.password_hash, m.display_name, m.title, m.is_admin,
-                           i.id, i.path, i.crop_x, i.crop_y, i.crop_scale,
-                           m.birth_month, m.birth_day
-                    FROM members m
-                    LEFT JOIN images i
-                      ON i.owner_membership_id = m.membership_id AND i.purpose = 'profile'
+                    _MEMBER_SELECT
+                    + """
                     ORDER BY lower(m.display_name), m.membership_id
                     """
                 )
@@ -417,7 +407,18 @@ class Store:
             except Exception:
                 pass
             raise StoreError("Could not load members.", 503) from exc
-        return [self._public_member(_record_from_row(row)) for row in fetched]
+        return [_record_from_row(row) for row in fetched]
+
+    def list_members(self) -> list[dict]:
+        rows = [self._public_member(record) for record in self._member_records()]
+        rows.sort(key=lambda item: (item["display_name"].lower(), item["memberid"]))
+        return rows
+
+    def list_directory(self) -> list[dict]:
+        """Member list plus contact fields. The route omits phone and email for non-admins."""
+        rows = [self._directory_member(record) for record in self._member_records()]
+        rows.sort(key=lambda item: (item["display_name"].lower(), item["memberid"]))
+        return rows
 
     def set_title(self, memberid: str, title: str | None) -> dict:
         try:
@@ -621,6 +622,9 @@ class Store:
                     "is_admin": False,
                     "birth_month": birth_month,
                     "birth_day": birth_day,
+                    "honorary_life": False,
+                    "phone": "",
+                    "email": "",
                 }
             )
 
@@ -654,6 +658,9 @@ class Store:
                         "is_admin": False,
                         "birth_month": month,
                         "birth_day": day,
+                        "honorary_life": False,
+                        "phone": "",
+                        "email": "",
                     }
                 )
             record = self._memory_member(memberid)
@@ -716,6 +723,7 @@ class Store:
             "crop_scale": 1.0,
             "birth_month": month,
             "birth_day": day,
+            "honorary_life": False,
         }
 
     def set_birthday(self, memberid: str, birth_month: int | None, birth_day: int | None) -> dict:
@@ -761,6 +769,53 @@ class Store:
                 if member["membership_id"] == memberid:
                     member["birth_month"] = month
                     member["birth_day"] = day
+                    break
+        updated = self.get_member(memberid)
+        if updated is None:
+            raise StoreError("Member was not found.", 404)
+        return updated
+
+    def set_honorary(self, memberid: str, honorary_life: bool) -> dict:
+        memberid = memberid.strip()
+        flag = bool(honorary_life)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                target = next((item for item in self._members if item["membership_id"] == memberid), None)
+                if target is None:
+                    raise StoreError("Member was not found.", 404)
+                target["honorary_life"] = flag
+            record = self._memory_member(memberid)
+            if record is None:
+                raise StoreError("Member was not found.", 404)
+            return self._public_member(record)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE members
+                    SET honorary_life = %s
+                    WHERE membership_id = %s
+                    RETURNING membership_id
+                    """,
+                    (flag, memberid),
+                )
+                found = cur.fetchone()
+            if found is None:
+                conn.rollback()
+                conn.close()
+                raise StoreError("Member was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not update Honorary Life Member.", 503) from exc
+        with self._lock:
+            for member in self._members:
+                if member["membership_id"] == memberid:
+                    member["honorary_life"] = flag
                     break
         updated = self.get_member(memberid)
         if updated is None:
@@ -2186,8 +2241,20 @@ CREATE TABLE IF NOT EXISTS members (
   title TEXT,
   is_admin BOOLEAN NOT NULL DEFAULT FALSE,
   birth_month SMALLINT,
-  birth_day SMALLINT
+  birth_day SMALLINT,
+  honorary_life BOOLEAN NOT NULL DEFAULT FALSE,
+  phone TEXT,
+  email TEXT
 )
+"""
+
+_MEMBER_SELECT = """
+SELECT m.membership_id, m.password_hash, m.display_name, m.title, m.is_admin,
+       i.id, i.path, i.crop_x, i.crop_y, i.crop_scale,
+       m.birth_month, m.birth_day, m.honorary_life, m.phone, m.email
+FROM members m
+LEFT JOIN images i
+  ON i.owner_membership_id = m.membership_id AND i.purpose = 'profile'
 """
 
 
@@ -2197,6 +2264,15 @@ def _rollback(conn) -> None:
         conn.close()
     except Exception:
         pass
+
+
+def _memory_contact(membership_id: str) -> dict:
+    honorary, phone, email = directory_fields(membership_id)
+    return {
+        "honorary_life": honorary,
+        "phone": phone or "",
+        "email": email or "",
+    }
 
 
 def _memory_member_rows(hashed: str) -> list[dict]:
@@ -2209,6 +2285,7 @@ def _memory_member_rows(hashed: str) -> list[dict]:
             "is_admin": True,
             "birth_month": None,
             "birth_day": None,
+            **_memory_contact(TEST_MEMBER_ID),
         },
         {
             "membership_id": SAMPLE_MEMBER_ID,
@@ -2218,6 +2295,7 @@ def _memory_member_rows(hashed: str) -> list[dict]:
             "is_admin": False,
             "birth_month": None,
             "birth_day": None,
+            **_memory_contact(SAMPLE_MEMBER_ID),
         },
     ]
     for member in MEMBER_SEED:
@@ -2230,6 +2308,7 @@ def _memory_member_rows(hashed: str) -> list[dict]:
                 "is_admin": member.is_admin,
                 "birth_month": member.birth_month,
                 "birth_day": member.birth_day,
+                **_memory_contact(member.membership_id),
             }
         )
     return rows
@@ -2318,6 +2397,9 @@ def _record_from_row(row) -> dict:
         "crop_scale": float(row[9]) if len(row) > 9 and row[9] is not None else 1,
         "birth_month": _birthday_number(row[10]) if len(row) > 10 else None,
         "birth_day": _birthday_number(row[11]) if len(row) > 11 else None,
+        "honorary_life": bool(row[12]) if len(row) > 12 and row[12] is not None else False,
+        "phone": str(row[13] or "").strip() if len(row) > 13 else "",
+        "email": str(row[14] or "").strip() if len(row) > 14 else "",
     }
 
 
@@ -2775,6 +2857,32 @@ def _table_exists(cur, name: str) -> bool:
     return cur.fetchone()[0] is not None
 
 
+def _column_exists(cur, table: str, column: str) -> bool:
+    cur.execute(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s AND column_name = %s
+        """,
+        (table, column),
+    )
+    return cur.fetchone() is not None
+
+
+def _backfill_directory_seed(cur) -> None:
+    """Fill example contact fields once, when those columns are first added."""
+    for membership_id in DIRECTORY_SEED:
+        honorary, phone, email = directory_fields(membership_id)
+        cur.execute(
+            """
+            UPDATE members
+            SET honorary_life = %s, phone = %s, email = %s
+            WHERE membership_id = %s
+            """,
+            (honorary, phone, email, membership_id),
+        )
+
+
 def _ensure_honor_seed(cur) -> None:
     """Insert each past-honor example when that category, name, and period are missing."""
     for item in HONOR_SEED:
@@ -3137,6 +3245,8 @@ def _remove_retired_link_blocks(cur) -> None:
 
 
 def _ensure_schema(cur) -> None:
+    members_existed = _table_exists(cur, "members")
+    phone_existed = members_existed and _column_exists(cur, "members", "phone")
     cur.execute(_MEMBER_COLUMNS)
     cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS title TEXT")
     cur.execute("SAVEPOINT member_title_null")
@@ -3151,6 +3261,13 @@ def _ensure_schema(cur) -> None:
     )
     cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_month SMALLINT")
     cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_day SMALLINT")
+    cur.execute(
+        "ALTER TABLE members ADD COLUMN IF NOT EXISTS honorary_life BOOLEAN NOT NULL DEFAULT FALSE"
+    )
+    cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS phone TEXT")
+    cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS email TEXT")
+    if members_existed and not phone_existed:
+        _backfill_directory_seed(cur)
     cur.execute("SAVEPOINT member_birthday")
     try:
         cur.execute("ALTER TABLE members DROP CONSTRAINT IF EXISTS members_birthday_chk")
@@ -3259,12 +3376,14 @@ def _seed_images(cur) -> None:
 def _upsert_test_member(cur, hashed: str) -> str:
     cur.execute(
         """
-        INSERT INTO members (membership_id, password_hash, display_name, title, is_admin)
-        VALUES (%s, %s, %s, %s, TRUE)
+        INSERT INTO members (
+          membership_id, password_hash, display_name, title, is_admin, honorary_life, phone, email
+        )
+        VALUES (%s, %s, %s, %s, TRUE, %s, %s, %s)
         ON CONFLICT (membership_id) DO NOTHING
         RETURNING id
         """,
-        (TEST_MEMBER_ID, hashed, TEST_MEMBER_NAME, TEST_MEMBER_TITLE),
+        (TEST_MEMBER_ID, hashed, TEST_MEMBER_NAME, TEST_MEMBER_TITLE, *directory_fields(TEST_MEMBER_ID)),
     )
     if cur.fetchone():
         return "created"
@@ -3331,15 +3450,17 @@ def _ensure_test_roster(cur, hashed: str) -> None:
     Clearing a photo stays cleared on the next startup.
     """
     for member in MEMBER_SEED:
+        honorary, phone, email = directory_fields(member.membership_id)
         if member.title:
             cur.execute(
                 """
                 INSERT INTO members (
-                    membership_id, password_hash, display_name, title, is_admin, birth_month, birth_day
+                    membership_id, password_hash, display_name, title, is_admin, birth_month, birth_day,
+                    honorary_life, phone, email
                 )
                 SELECT %s, %s, %s,
                     CASE WHEN EXISTS (SELECT 1 FROM members WHERE title = %s) THEN NULL ELSE %s END,
-                    %s, %s, %s
+                    %s, %s, %s, %s, %s, %s
                 WHERE NOT EXISTS (SELECT 1 FROM members WHERE membership_id = %s)
                 RETURNING membership_id
                 """,
@@ -3352,6 +3473,9 @@ def _ensure_test_roster(cur, hashed: str) -> None:
                     member.is_admin,
                     member.birth_month,
                     member.birth_day,
+                    honorary,
+                    phone,
+                    email,
                     member.membership_id,
                 ),
             )
@@ -3359,9 +3483,10 @@ def _ensure_test_roster(cur, hashed: str) -> None:
             cur.execute(
                 """
                 INSERT INTO members (
-                    membership_id, password_hash, display_name, title, is_admin, birth_month, birth_day
+                    membership_id, password_hash, display_name, title, is_admin, birth_month, birth_day,
+                    honorary_life, phone, email
                 )
-                SELECT %s, %s, %s, NULL, %s, %s, %s
+                SELECT %s, %s, %s, NULL, %s, %s, %s, %s, %s, %s
                 WHERE NOT EXISTS (SELECT 1 FROM members WHERE membership_id = %s)
                 RETURNING membership_id
                 """,
@@ -3372,6 +3497,9 @@ def _ensure_test_roster(cur, hashed: str) -> None:
                     member.is_admin,
                     member.birth_month,
                     member.birth_day,
+                    honorary,
+                    phone,
+                    email,
                     member.membership_id,
                 ),
             )
