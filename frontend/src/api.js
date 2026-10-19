@@ -435,3 +435,29 @@ export async function deleteAnnouncement(id) {
   const response = await send(`/api/announcements/${encodeURIComponent(id)}`, { method: "DELETE" });
   return readJson(response, "Could not remove the announcement.");
 }
+
+export async function fetchPrayers() {
+  let response;
+  try {
+    response = await send("/api/prayers");
+  } catch {
+    throw new Error("Could not load prayer requests.");
+  }
+  return readJson(response, "Could not load prayer requests.");
+}
+
+export async function savePrayer(fields, id) {
+  const response = await send(id ? `/api/prayers/${encodeURIComponent(id)}` : "/api/prayers", {
+    method: id ? "PATCH" : "POST",
+    body: JSON.stringify({
+      title: fields.title || "",
+      body: fields.body || "",
+    }),
+  });
+  return readJson(response, "Could not save the prayer request.");
+}
+
+export async function deletePrayer(id) {
+  const response = await send(`/api/prayers/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return readJson(response, "Could not remove the prayer request.");
+}

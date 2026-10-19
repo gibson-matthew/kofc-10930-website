@@ -13,6 +13,7 @@ import AnnouncementList from "./AnnouncementList";
 import AnnouncementReader from "./AnnouncementReader";
 import DocumentLibrary from "./DocumentLibrary";
 import MemberDirectory from "./MemberDirectory";
+import PrayerList from "./PrayerList";
 import EventsSection from "./EventsSection";
 import HonorsSection from "./HonorsSection";
 import SettingsView from "./SettingsView";
@@ -32,7 +33,7 @@ const LINK_CARDS = [
   },
   { title: "links.1.title", action: "links.1.action", detail: "links.1.detail", panel: "panel-birthdays" },
   { title: "links.2.title", action: "links.2.action", panel: "panel-announcements", announcements: true },
-  { title: "links.3.title", action: "links.3.action", detail: "links.3.detail", panel: "panel-prayer" },
+  { title: "links.3.title", action: "links.3.action", panel: "panel-prayer", prayers: true },
   { title: "links.4.title", action: "links.4.action", panel: "panel-roster", roster: true },
   { title: "links.6.title", action: "links.6.action", detail: "links.6.detail", panel: "panel-comments" },
   { title: "links.9.title", action: "links.9.action", panel: "panel-hours", hours: true },
@@ -542,7 +543,7 @@ function ScheduleCard({ index }) {
 }
 
 function linkFields(card) {
-  if (card.panel === "panel-birthdays" || card.library || card.announcements || card.roster) return [];
+  if (card.panel === "panel-birthdays" || card.library || card.announcements || card.roster || card.prayers) return [];
   const fields = [];
   if (card.body) fields.push({ id: card.body, label: "Summary", long: true });
   if (card.hours) {
@@ -1145,6 +1146,8 @@ function MemberView() {
                           ) : null
                         ) : card.roster ? (
                           shown ? <MemberDirectory canManage={Boolean(user?.is_admin)} /> : null
+                        ) : card.prayers ? (
+                          shown ? <PrayerList isAdmin={Boolean(user?.is_admin)} /> : null
                         ) : birthdays ? (
                           <BirthdayList
                             roster={roster}

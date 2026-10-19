@@ -227,6 +227,20 @@ class AnnouncementOut(BaseModel):
     posted_on: str
 
 
+class PrayerIn(BaseModel):
+    title: str = Field(default="", max_length=400)
+    body: str = Field(default="", max_length=8000)
+
+
+class PrayerOut(BaseModel):
+    id: int
+    title: str = ""
+    body: str = ""
+    author_name: str
+    submitted_on: str
+    mine: bool
+
+
 class EventOut(BaseModel):
     id: int
     title: str
@@ -1323,6 +1337,52 @@ def delete_announcement(
     except StoreError as exc:
         _raise_store(exc)
     tracking.admin_event(request, member.get("memberid"), "delete", "announcement", announcement_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@api.get("/prayers", response_model=list[PrayerOut])
+def list_prayers(member: dict = Depends(get_current_member)) -> list[PrayerOut]:
+    try:
+        rows = store.list_prayers(member.get("memberid"))
+    except StoreError as exc:
+        _raise_store(exc)
+    return [PrayerOut(**row) for row in rows]
+
+
+@api.post("/prayers", response_model=PrayerOut, status_code=status.HTTP_201_CREATED)
+def create_prayer(body: PrayerIn, member: dict = Depends(get_current_member)) -> PrayerOut:
+    try:
+        created = store.create_prayer(body.title, body.body, member.get("memberid"))
+    except StoreError as exc:
+        _raise_store(exc)
+    return PrayerOut(**created)
+
+
+@api.patch("/prayers/{prayer_id}", response_model=PrayerOut)
+def update_prayer(
+    prayer_id: int,
+    body: PrayerIn,
+    member: dict = Depends(get_current_member),
+) -> PrayerOut:
+    try:
+        updated = store.update_prayer(prayer_id, body.title, body.body, member.get("memberid"))
+    except StoreError as exc:
+        _raise_store(exc)
+    return PrayerOut(**updated)
+
+
+@api.delete("/prayers/{prayer_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_prayer(
+    prayer_id: int,
+    request: Request,
+    member: dict = Depends(get_current_member),
+) -> Response:
+    try:
+        store.delete_prayer(prayer_id, member.get("memberid"), bool(member.get("is_admin")))
+    except StoreError as exc:
+        _raise_store(exc)
+    if member.get("is_admin"):
+        tracking.admin_event(request, member.get("memberid"), "delete", "prayer_request", prayer_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

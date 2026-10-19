@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from announcements import ANNOUNCEMENT_SEED
+from prayers import PRAYER_SEED
 from media import SEED_DOCUMENTS, SEED_IMAGES, slot_check_sql
 from test_seed import HONOR_SEED
 from titles import TITLE_ABBREVS
@@ -613,6 +614,47 @@ WHERE NOT EXISTS (
 """
 
 
+def prayers_schema_sql() -> str:
+    """Prayer-request table and example rows. A later schema load can restore a deleted example."""
+    value_rows = ",\n  ".join(
+        "("
+        + ", ".join(
+            [
+                _sql_text(item["member_id"]),
+                _sql_text(item["title"]),
+                _sql_text(item["body"]),
+                f"TIMESTAMPTZ {_sql_text(item['created_at'])}",
+                f"TIMESTAMPTZ {_sql_text(item['updated_at'])}",
+            ]
+        )
+        + ")"
+        for item in PRAYER_SEED
+    )
+    return f"""CREATE TABLE IF NOT EXISTS prayer_requests (
+  id SERIAL PRIMARY KEY,
+  member_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS prayer_requests_created_idx
+  ON prayer_requests (created_at DESC, id DESC);
+
+INSERT INTO prayer_requests (member_id, title, body, created_at, updated_at)
+SELECT v.member_id, v.title, v.body, v.created_at, v.updated_at
+FROM (
+  VALUES
+  {value_rows}
+) AS v(member_id, title, body, created_at, updated_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM prayer_requests p
+  WHERE p.member_id = v.member_id AND p.body = v.body
+);
+"""
+
+
 def records_schema_sql() -> str:
     event_rows = ",\n  ".join(
         "("
@@ -684,6 +726,8 @@ WHERE NOT EXISTS (SELECT 1 FROM council_events);
 {documents_schema_sql().rstrip()}
 
 {announcements_schema_sql().rstrip()}
+
+{prayers_schema_sql().rstrip()}
 """
 
 
@@ -766,6 +810,10 @@ def render_schema() -> str:
 -- announcements stores member-only notices. body is sanitized HTML.
 -- Example rows are inserted when that title is not already stored.
 -- The API inserts those examples only when the announcements table is first created.
+-- prayer_requests stores member-only intentions. title and body are plain text.
+-- member_id is a membership id with no foreign key.
+-- Example rows are inserted when that member and prayer text are not already stored.
+-- The API inserts those examples only when the prayer_requests table is first created.
 
 BEGIN;
 

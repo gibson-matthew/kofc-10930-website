@@ -16,6 +16,14 @@ from announcements import (
     clean_announcement_title,
     sanitize_html,
 )
+from prayers import (
+    PRAYER_SEED,
+    clean_prayer_body,
+    clean_prayer_title,
+    display_person_name,
+    display_prayer_body,
+    display_prayer_title,
+)
 from media import (
     RECOG_SLOTS,
     SEED_DOCUMENTS,
@@ -105,10 +113,12 @@ class Store:
         self._events = _seed_event_rows()
         self._documents = _seed_document_rows()
         self._announcements = _seed_announcement_rows()
+        self._prayers = _seed_prayer_rows()
         self._honor_seq = len(self._honors) + 1
         self._event_seq = len(self._events) + 1
         self._document_seq = len(self._documents) + 1
         self._announcement_seq = len(self._announcements) + 1
+        self._prayer_seq = len(self._prayers) + 1
         self._refresh: dict[str, dict] = {}
         self._prefer_memory = False
 
@@ -126,10 +136,12 @@ class Store:
             self._events = _seed_event_rows()
             self._documents = _seed_document_rows()
             self._announcements = _seed_announcement_rows()
+            self._prayers = _seed_prayer_rows()
             self._honor_seq = len(self._honors) + 1
             self._event_seq = len(self._events) + 1
             self._document_seq = len(self._documents) + 1
             self._announcement_seq = len(self._announcements) + 1
+            self._prayer_seq = len(self._prayers) + 1
         conn = _connect()
         if conn is None:
             with self._lock:
@@ -1456,6 +1468,188 @@ class Store:
         except Exception as exc:
             _rollback(conn)
             raise StoreError("Could not remove the announcement.", 503) from exc
+
+    def list_prayers(self, viewer_id: str | None) -> list[dict]:
+        viewer = str(viewer_id or "").strip()
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                rows = _sorted_prayers(self._prayers)
+                names = {
+                    item.get("membership_id"): item.get("display_name")
+                    for item in self._members
+                }
+            return [
+                _public_prayer(item, viewer, names.get(item.get("member_id")))
+                for item in rows
+            ]
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    _PRAYER_SELECT
+                    + """
+                    ORDER BY p.created_at DESC, p.id DESC
+                    """
+                )
+                fetched = cur.fetchall()
+            conn.close()
+        except Exception as exc:
+            log.warning("Prayer list failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise StoreError("Could not load prayer requests.", 503) from exc
+        return [_public_prayer(_prayer_from_row(row), viewer, row[6]) for row in fetched]
+
+    def create_prayer(self, title: str, body: str, member_id: str | None) -> dict:
+        cleaned_title = _prayer_value(clean_prayer_title, title)
+        cleaned_body = _prayer_value(clean_prayer_body, body)
+        actor = str(member_id or "").strip()
+        if not actor:
+            raise StoreError("Sign in to add a prayer request.", 401)
+        created_at = datetime.now(timezone.utc)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                prayer_id = self._prayer_seq
+                self._prayer_seq += 1
+                row = {
+                    "id": prayer_id,
+                    "member_id": actor,
+                    "title": cleaned_title,
+                    "body": cleaned_body,
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                }
+                self._prayers.append(row)
+                author = self._memory_author(actor)
+            return _public_prayer(row, actor, author)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO prayer_requests (
+                      member_id, title, body, created_at, updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING id, title, body, member_id, created_at, updated_at
+                    """,
+                    (actor, cleaned_title, cleaned_body, created_at, created_at),
+                )
+                stored = cur.fetchone()
+                author = _author_name(cur, actor) if stored is not None else "Member"
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the prayer request.", 503) from exc
+        if stored is None:
+            raise StoreError("Could not save the prayer request.", 503)
+        return _public_prayer(_prayer_from_row(stored), actor, author)
+
+    def update_prayer(self, prayer_id: int, title: str, body: str, member_id: str | None) -> dict:
+        cleaned_title = _prayer_value(clean_prayer_title, title)
+        cleaned_body = _prayer_value(clean_prayer_body, body)
+        actor = str(member_id or "").strip()
+        updated_at = datetime.now(timezone.utc)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                for item in self._prayers:
+                    if item["id"] != prayer_id:
+                        continue
+                    if str(item.get("member_id") or "") != actor:
+                        raise StoreError("You can only change your own prayer request.", 403)
+                    item["title"] = cleaned_title
+                    item["body"] = cleaned_body
+                    item["updated_at"] = updated_at
+                    author = self._memory_author(item.get("member_id"))
+                    return _public_prayer(item, actor, author)
+            raise StoreError("Prayer request was not found.", 404)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT member_id FROM prayer_requests WHERE id = %s", (prayer_id,))
+                found = cur.fetchone()
+                if found is None:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Prayer request was not found.", 404)
+                if str(found[0] or "") != actor:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("You can only change your own prayer request.", 403)
+                cur.execute(
+                    """
+                    UPDATE prayer_requests
+                    SET title = %s, body = %s, updated_at = %s
+                    WHERE id = %s AND member_id = %s
+                    RETURNING id, title, body, member_id, created_at, updated_at
+                    """,
+                    (cleaned_title, cleaned_body, updated_at, prayer_id, actor),
+                )
+                stored = cur.fetchone()
+                author = _author_name(cur, actor) if stored is not None else "Member"
+            if stored is None:
+                conn.rollback()
+                conn.close()
+                raise StoreError("Prayer request was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the prayer request.", 503) from exc
+        return _public_prayer(_prayer_from_row(stored), actor, author)
+
+    def delete_prayer(self, prayer_id: int, member_id: str | None, is_admin: bool) -> None:
+        actor = str(member_id or "").strip()
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                match = next((item for item in self._prayers if item["id"] == prayer_id), None)
+                if match is None:
+                    raise StoreError("Prayer request was not found.", 404)
+                owner = str(match.get("member_id") or "")
+                if owner != actor and not is_admin:
+                    raise StoreError("You can only remove your own prayer request.", 403)
+                self._prayers = [item for item in self._prayers if item["id"] != prayer_id]
+            return
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT member_id FROM prayer_requests WHERE id = %s", (prayer_id,))
+                found = cur.fetchone()
+                if found is None:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Prayer request was not found.", 404)
+                owner = str(found[0] or "")
+                if owner != actor and not is_admin:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("You can only remove your own prayer request.", 403)
+                cur.execute("DELETE FROM prayer_requests WHERE id = %s", (prayer_id,))
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Prayer request was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not remove the prayer request.", 503) from exc
+
+    def _memory_author(self, member_id: str | None) -> str:
+        wanted = str(member_id or "").strip()
+        for item in self._members:
+            if item.get("membership_id") == wanted:
+                return display_person_name(item.get("display_name"))
+        return "Member"
 
     def _document_record(self, document_id: int) -> dict | None:
         conn = self._open()
@@ -2836,6 +3030,88 @@ def _public_announcement(row: dict) -> dict:
     }
 
 
+_PRAYER_SELECT = """
+SELECT p.id, p.title, p.body, p.member_id, p.created_at, p.updated_at,
+       COALESCE(NULLIF(btrim(m.display_name), ''), 'Member')
+FROM prayer_requests p
+LEFT JOIN members m ON m.membership_id = p.member_id
+"""
+
+
+def _prayer_value(cleaner, value: str) -> str:
+    try:
+        return cleaner(value)
+    except ValueError as exc:
+        raise StoreError(str(exc), 400) from exc
+
+
+def _seed_prayer_rows() -> list[dict]:
+    rows = []
+    for index, item in enumerate(PRAYER_SEED, start=1):
+        created = datetime.fromisoformat(item["created_at"])
+        updated = datetime.fromisoformat(item["updated_at"])
+        rows.append(
+            {
+                "id": index,
+                "member_id": item["member_id"],
+                "title": clean_prayer_title(item["title"]),
+                "body": clean_prayer_body(item["body"]),
+                "created_at": created,
+                "updated_at": updated,
+            }
+        )
+    return rows
+
+
+def _prayer_moment(row: dict) -> datetime:
+    value = row["created_at"]
+    if isinstance(value, datetime):
+        moment = value
+    else:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment
+
+
+def _sorted_prayers(rows: list[dict]) -> list[dict]:
+    chosen = [dict(item) for item in rows]
+    chosen.sort(key=lambda item: (_prayer_moment(item), int(item["id"])), reverse=True)
+    return chosen
+
+
+def _prayer_from_row(row) -> dict:
+    return {
+        "id": row[0],
+        "title": row[1] or "",
+        "body": row[2] or "",
+        "member_id": row[3],
+        "created_at": row[4],
+        "updated_at": row[5],
+    }
+
+
+def _public_prayer(row: dict, viewer_id: str, author_name) -> dict:
+    owner = str(row.get("member_id") or "").strip()
+    viewer = str(viewer_id or "").strip()
+    return {
+        "id": int(row["id"]),
+        "title": display_prayer_title(row.get("title") or ""),
+        "body": display_prayer_body(row.get("body") or ""),
+        "author_name": display_person_name(author_name),
+        "submitted_on": uploaded_on(row["created_at"]),
+        "mine": bool(owner and owner == viewer),
+    }
+
+
+def _author_name(cur, member_id: str) -> str:
+    cur.execute("SELECT display_name FROM members WHERE membership_id = %s", (member_id,))
+    found = cur.fetchone()
+    if found is None:
+        return "Member"
+    return display_person_name(found[0])
+
+
 def _seed_event_rows() -> list[dict]:
     rows = []
     for index, item in enumerate(EVENT_SEED, start=1):
@@ -2988,6 +3264,7 @@ def _ensure_records(cur) -> None:
             )
     _ensure_documents(cur)
     _ensure_announcements(cur)
+    _ensure_prayers(cur)
 
 
 def _ensure_documents(cur) -> None:
@@ -3078,6 +3355,47 @@ def _ensure_announcements(cur) -> None:
                 item["summary"],
                 sanitize_html(item["body"]),
                 item["created_by"],
+                datetime.fromisoformat(item["created_at"]),
+                datetime.fromisoformat(item["updated_at"]),
+            ),
+        )
+
+
+def _ensure_prayers(cur) -> None:
+    """Create the prayer requests table. Example rows are inserted only on first create."""
+    prayers_new = not _table_exists(cur, "prayer_requests")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS prayer_requests (
+          id SERIAL PRIMARY KEY,
+          member_id TEXT NOT NULL,
+          title TEXT NOT NULL DEFAULT '',
+          body TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS prayer_requests_created_idx
+        ON prayer_requests (created_at DESC, id DESC)
+        """
+    )
+    if not prayers_new:
+        return
+    for item in PRAYER_SEED:
+        cur.execute(
+            """
+            INSERT INTO prayer_requests (
+              member_id, title, body, created_at, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                item["member_id"],
+                clean_prayer_title(item["title"]),
+                clean_prayer_body(item["body"]),
                 datetime.fromisoformat(item["created_at"]),
                 datetime.fromisoformat(item["updated_at"]),
             ),

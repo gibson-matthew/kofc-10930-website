@@ -1410,3 +1410,8 @@ body.page-member .signin-field textarea {
   font-size: 0.78rem;
   letter-spacing: 0.04em;
 }
+
+.detail .prayer-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

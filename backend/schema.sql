@@ -694,6 +694,44 @@ WHERE NOT EXISTS (
   WHERE a.title = v.title
 );
 
+-- Member-only prayer requests. title and body are plain text.
+-- member_id is a membership id with no foreign key, so example rows can be stored before members exist.
+CREATE TABLE IF NOT EXISTS prayer_requests (
+  id SERIAL PRIMARY KEY,
+  member_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS prayer_requests_created_idx
+  ON prayer_requests (created_at DESC, id DESC);
+
+INSERT INTO prayer_requests (member_id, title, body, created_at, updated_at)
+SELECT v.member_id, v.title, v.body, v.created_at, v.updated_at
+FROM (
+  VALUES
+  (
+    '1000000',
+    'For the sick',
+    'Pray for the brothers who are ill and for their families.',
+    TIMESTAMPTZ '2026-10-12T17:00:00+00:00',
+    TIMESTAMPTZ '2026-10-12T17:00:00+00:00'
+  ),
+  (
+    '1000001',
+    '',
+    'Pray for our council and for the families we serve.',
+    TIMESTAMPTZ '2026-09-28T17:00:00+00:00',
+    TIMESTAMPTZ '2026-09-28T17:00:00+00:00'
+  )
+) AS v(member_id, title, body, created_at, updated_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM prayer_requests p
+  WHERE p.member_id = v.member_id AND p.body = v.body
+);
+
 -- Necessary and optional site events. Writes must not block page requests.
 CREATE TABLE IF NOT EXISTS audit_events (
   id BIGSERIAL PRIMARY KEY,
