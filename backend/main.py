@@ -208,6 +208,20 @@ class DocumentOut(BaseModel):
     uploaded_on: str
 
 
+class AnnouncementIn(BaseModel):
+    title: str = Field(default="", max_length=200)
+    summary: str = Field(default="", max_length=400)
+    body: str = Field(default="", max_length=40000)
+
+
+class AnnouncementOut(BaseModel):
+    id: int
+    title: str
+    summary: str = ""
+    body: str = ""
+    posted_on: str
+
+
 class EventOut(BaseModel):
     id: int
     title: str
@@ -1188,6 +1202,71 @@ async def create_document(
         library=cleaned_library,
     )
     return DocumentOut(**created)
+
+
+@api.get("/announcements", response_model=list[AnnouncementOut])
+def list_announcements(member: dict = Depends(get_current_member)) -> list[AnnouncementOut]:
+    del member
+    try:
+        rows = store.list_announcements()
+    except StoreError as exc:
+        _raise_store(exc)
+    return [AnnouncementOut(**row) for row in rows]
+
+
+@api.get("/announcements/{announcement_id}", response_model=AnnouncementOut)
+def get_announcement(announcement_id: int, member: dict = Depends(get_current_member)) -> AnnouncementOut:
+    del member
+    try:
+        row = store.get_announcement(announcement_id)
+    except StoreError as exc:
+        _raise_store(exc)
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Announcement was not found.")
+    return AnnouncementOut(**row)
+
+
+@api.post("/announcements", response_model=AnnouncementOut, status_code=status.HTTP_201_CREATED)
+def create_announcement(
+    body: AnnouncementIn,
+    request: Request,
+    member: dict = Depends(require_admin),
+) -> AnnouncementOut:
+    try:
+        created = store.create_announcement(body.title, body.summary, body.body, member.get("memberid"))
+    except StoreError as exc:
+        _raise_store(exc)
+    tracking.admin_event(request, member.get("memberid"), "create", "announcement", created.get("id"))
+    return AnnouncementOut(**created)
+
+
+@api.patch("/announcements/{announcement_id}", response_model=AnnouncementOut)
+def update_announcement(
+    announcement_id: int,
+    body: AnnouncementIn,
+    request: Request,
+    member: dict = Depends(require_admin),
+) -> AnnouncementOut:
+    try:
+        updated = store.update_announcement(announcement_id, body.title, body.summary, body.body)
+    except StoreError as exc:
+        _raise_store(exc)
+    tracking.admin_event(request, member.get("memberid"), "update", "announcement", announcement_id)
+    return AnnouncementOut(**updated)
+
+
+@api.delete("/announcements/{announcement_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_announcement(
+    announcement_id: int,
+    request: Request,
+    member: dict = Depends(require_admin),
+) -> Response:
+    try:
+        store.delete_announcement(announcement_id)
+    except StoreError as exc:
+        _raise_store(exc)
+    tracking.admin_event(request, member.get("memberid"), "delete", "announcement", announcement_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @api.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

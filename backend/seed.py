@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from announcements import ANNOUNCEMENT_SEED
 from media import SEED_DOCUMENTS, SEED_IMAGES, slot_check_sql
 from test_seed import HONOR_SEED
 from titles import TITLE_ABBREVS
@@ -569,6 +570,49 @@ WHERE NOT EXISTS (
 """
 
 
+def announcements_schema_sql() -> str:
+    """Announcement table and example rows. A later schema load can restore a deleted example title."""
+    value_rows = ",\n  ".join(
+        "("
+        + ", ".join(
+            [
+                _sql_text(item["title"]),
+                _sql_text(item["summary"]),
+                _sql_text(item["body"]),
+                _sql_text(item["created_by"]),
+                f"TIMESTAMPTZ {_sql_text(item['created_at'])}",
+                f"TIMESTAMPTZ {_sql_text(item['updated_at'])}",
+            ]
+        )
+        + ")"
+        for item in ANNOUNCEMENT_SEED
+    )
+    return f"""CREATE TABLE IF NOT EXISTS announcements (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL,
+  created_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS announcements_created_idx
+  ON announcements (created_at DESC, id DESC);
+
+INSERT INTO announcements (title, summary, body, created_by, created_at, updated_at)
+SELECT v.title, v.summary, v.body, v.created_by, v.created_at, v.updated_at
+FROM (
+  VALUES
+  {value_rows}
+) AS v(title, summary, body, created_by, created_at, updated_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM announcements a
+  WHERE a.title = v.title
+);
+"""
+
+
 def records_schema_sql() -> str:
     event_rows = ",\n  ".join(
         "("
@@ -638,6 +682,8 @@ FROM (
 WHERE NOT EXISTS (SELECT 1 FROM council_events);
 
 {documents_schema_sql().rstrip()}
+
+{announcements_schema_sql().rstrip()}
 """
 
 
@@ -715,6 +761,9 @@ def render_schema() -> str:
 -- Example rows are inserted when that library and title are not already stored.
 -- The API inserts those examples only when the documents table is first created.
 -- Files are backend/uploads/treasurer/ and backend/uploads/financial-secretary/.
+-- announcements stores member-only notices. body is sanitized HTML.
+-- Example rows are inserted when that title is not already stored.
+-- The API inserts those examples only when the announcements table is first created.
 
 BEGIN;
 

@@ -626,6 +626,46 @@ WHERE NOT EXISTS (
   WHERE d.library = v.library AND d.title = v.title
 );
 
+-- Member-only announcements. body is sanitized HTML.
+CREATE TABLE IF NOT EXISTS announcements (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL,
+  created_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS announcements_created_idx
+  ON announcements (created_at DESC, id DESC);
+
+INSERT INTO announcements (title, summary, body, created_by, created_at, updated_at)
+SELECT v.title, v.summary, v.body, v.created_by, v.created_at, v.updated_at
+FROM (
+  VALUES
+  (
+    'Exemplification practice',
+    'Practice details stay with the council.',
+    '<p>Exemplification practice stays with the council. Come ready to review the degree and the evening duties.</p><ul><li>Parish hall</li><li>Brothers only</li></ul>',
+    '1000000',
+    TIMESTAMPTZ '2026-10-08T17:00:00+00:00',
+    TIMESTAMPTZ '2026-10-08T17:00:00+00:00'
+  ),
+  (
+    'Business meeting reminder',
+    'Officers report on Wednesday.',
+    '<p>Officers report at the business meeting. Brothers plan the next charity work in the parish hall.</p>',
+    '1000000',
+    TIMESTAMPTZ '2026-09-20T17:00:00+00:00',
+    TIMESTAMPTZ '2026-09-20T17:00:00+00:00'
+  )
+) AS v(title, summary, body, created_by, created_at, updated_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM announcements a
+  WHERE a.title = v.title
+);
+
 -- Necessary and optional site events. Writes must not block page requests.
 CREATE TABLE IF NOT EXISTS audit_events (
   id BIGSERIAL PRIMARY KEY,

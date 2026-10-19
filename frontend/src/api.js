@@ -385,3 +385,35 @@ export async function deleteDocument(id) {
   const response = await send(`/api/documents/${id}`, { method: "DELETE" });
   return readJson(response, "Could not remove the document.");
 }
+
+export async function fetchAnnouncements() {
+  let response;
+  try {
+    response = await send("/api/announcements");
+  } catch {
+    throw new Error("Could not load announcements.");
+  }
+  return readJson(response, "Could not load announcements.");
+}
+
+export async function fetchAnnouncement(id) {
+  const response = await send(`/api/announcements/${encodeURIComponent(id)}`);
+  return readJson(response, "Could not load the announcement.");
+}
+
+export async function saveAnnouncement(fields, id) {
+  const response = await send(id ? `/api/announcements/${encodeURIComponent(id)}` : "/api/announcements", {
+    method: id ? "PATCH" : "POST",
+    body: JSON.stringify({
+      title: fields.title || "",
+      summary: fields.summary || "",
+      body: fields.body || "",
+    }),
+  });
+  return readJson(response, "Could not save the announcement.");
+}
+
+export async function deleteAnnouncement(id) {
+  const response = await send(`/api/announcements/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return readJson(response, "Could not remove the announcement.");
+}

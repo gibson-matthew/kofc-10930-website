@@ -23,7 +23,7 @@ These are logged without consent:
 - `error.frontend` — browser error message and membership id when signed in
 - `file.upload` — success or failure for a profile photo, honor photo, library document, or media-library image, with type, size when known, and record id
 - `file.remove` — profile photo, honor photo, library document, or media-library image removed
-- `admin.content_create`, `admin.content_update`, `admin.content_delete` — content blocks, members, birthdays, honors, events, documents, and media-library images. Details include the admin id, record id, and content type. Content-block values are not copied.
+- `admin.content_create`, `admin.content_update`, `admin.content_delete` — content blocks, members, birthdays, honors, events, documents, announcements, and media-library images. Details include the admin id, record id, and content type. Content-block values and announcement HTML are not copied.
 - `admin.flag_change` — admin flag granted or removed
 - `admin.title_change` — officer or director title changes, including a title cleared from the previous holder
 

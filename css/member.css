@@ -1271,3 +1271,120 @@ body.page-member .signin-field textarea {
   opacity: 0.65;
   cursor: not-allowed;
 }
+
+.detail .doc-list h3 a {
+  color: var(--navy);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.detail .doc-list h3 a:hover {
+  color: var(--wine);
+}
+
+.detail .rte-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+
+.detail .rte-toolbar .btn {
+  padding: 0.4rem 0.55rem;
+}
+
+.detail .rte-editor {
+  min-height: 8rem;
+  max-height: 16rem;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid rgba(26, 23, 20, 0.16);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.65rem;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.detail .rte-editor:focus {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.detail .rte-editor p,
+.announcement-body p {
+  margin: 0.4rem 0;
+}
+
+.detail .rte-editor h2,
+.detail .rte-editor h3,
+.detail .rte-editor h4,
+.announcement-body h2,
+.announcement-body h3,
+.announcement-body h4 {
+  color: var(--navy);
+  margin: 0.7rem 0 0.25rem;
+}
+
+.detail .rte-editor ul,
+.detail .rte-editor ol,
+.announcement-body ul,
+.announcement-body ol {
+  margin: 0.4rem 0;
+  padding-left: 1.25rem;
+}
+
+.detail .rte-editor ul,
+.announcement-body ul {
+  list-style: disc;
+}
+
+.detail .rte-editor ol,
+.announcement-body ol {
+  list-style: decimal;
+}
+
+.detail .rte-editor mark,
+.announcement-body mark {
+  background: #f3e6b8;
+}
+
+.announcement-page {
+  min-height: 100vh;
+  background: var(--ivory);
+  color: var(--ink);
+}
+
+.announcement-bar {
+  display: flex;
+  align-items: center;
+  padding: 0.8rem clamp(1.1rem, 4vw, 2.5rem);
+  background: var(--navy);
+  border-bottom: 1px solid var(--hairline);
+}
+
+.announcement-page main {
+  padding: 1.6rem 0 3rem;
+}
+
+.announcement-page h1 {
+  color: var(--navy);
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  line-height: 1.15;
+  margin: 0.45rem 0 0.35rem;
+}
+
+.announcement-date,
+.announcement-summary {
+  color: var(--ink-soft);
+  margin: 0.25rem 0 0;
+}
+
+.announcement-body {
+  margin-top: 1rem;
+  max-width: 42rem;
+}
+
+.announcement-body a {
+  color: var(--wine);
+  text-decoration: underline;
+}

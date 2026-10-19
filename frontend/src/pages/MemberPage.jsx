@@ -9,6 +9,8 @@ import { ContentProvider, useContent } from "../content/ContentContext";
 import { birthdayGroups } from "../birthdays";
 import { LOGO_SRC, SITE_TITLE } from "../content/seed";
 import { DEFAULT_YEAR, FIXED_CHROME, YEAR_KEY, fraternalPhrases, normalizeFraternalYear } from "../content/year";
+import AnnouncementList from "./AnnouncementList";
+import AnnouncementReader from "./AnnouncementReader";
 import DocumentLibrary from "./DocumentLibrary";
 import EventsSection from "./EventsSection";
 import HonorsSection from "./HonorsSection";
@@ -28,7 +30,7 @@ const LINK_CARDS = [
     external: true,
   },
   { title: "links.1.title", action: "links.1.action", detail: "links.1.detail", panel: "panel-birthdays" },
-  { title: "links.2.title", action: "links.2.action", detail: "links.2.detail", panel: "panel-announcements" },
+  { title: "links.2.title", action: "links.2.action", panel: "panel-announcements", announcements: true },
   { title: "links.3.title", action: "links.3.action", detail: "links.3.detail", panel: "panel-prayer" },
   { title: "links.4.title", action: "links.4.action", detail: "links.4.detail", panel: "panel-roster" },
   { title: "links.6.title", action: "links.6.action", detail: "links.6.detail", panel: "panel-comments" },
@@ -539,7 +541,7 @@ function ScheduleCard({ index }) {
 }
 
 function linkFields(card) {
-  if (card.panel === "panel-birthdays" || card.library) return [];
+  if (card.panel === "panel-birthdays" || card.library || card.announcements) return [];
   const fields = [];
   if (card.body) fields.push({ id: card.body, label: "Summary", long: true });
   if (card.hours) {
@@ -1136,6 +1138,10 @@ function MemberView() {
                               canManage={Boolean(editing && user?.is_admin)}
                             />
                           ) : null
+                        ) : card.announcements ? (
+                          shown ? (
+                            <AnnouncementList canManage={Boolean(editing && user?.is_admin)} />
+                          ) : null
                         ) : birthdays ? (
                           <BirthdayList
                             roster={roster}
@@ -1228,11 +1234,18 @@ function MemberView() {
   );
 }
 
+function announcementPathId(path) {
+  const match = /^\/member\/announcements\/([A-Za-z0-9-]{1,40})$/.exec(path || "");
+  return match ? match[1] : "";
+}
+
 export default function MemberPage() {
   const { user } = useAuth();
+  const path = usePath();
+  const announcement = announcementPathId(path);
   return (
     <ContentProvider slug="member" canEdit={Boolean(user?.is_admin)}>
-      <MemberView />
+      {announcement ? <AnnouncementReader id={announcement} /> : <MemberView />}
     </ContentProvider>
   );
 }

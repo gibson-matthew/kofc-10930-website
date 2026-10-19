@@ -9,6 +9,13 @@ import threading
 from copy import deepcopy
 from datetime import date, datetime, timezone
 
+from announcements import (
+    ANNOUNCEMENT_SEED,
+    clean_announcement_body,
+    clean_announcement_summary,
+    clean_announcement_title,
+    sanitize_html,
+)
 from media import (
     RECOG_SLOTS,
     SEED_DOCUMENTS,
@@ -97,9 +104,11 @@ class Store:
         self._honors = _seed_honor_rows()
         self._events = _seed_event_rows()
         self._documents = _seed_document_rows()
+        self._announcements = _seed_announcement_rows()
         self._honor_seq = len(self._honors) + 1
         self._event_seq = len(self._events) + 1
         self._document_seq = len(self._documents) + 1
+        self._announcement_seq = len(self._announcements) + 1
         self._refresh: dict[str, dict] = {}
         self._prefer_memory = False
 
@@ -116,9 +125,11 @@ class Store:
             self._honors = _seed_honor_rows()
             self._events = _seed_event_rows()
             self._documents = _seed_document_rows()
+            self._announcements = _seed_announcement_rows()
             self._honor_seq = len(self._honors) + 1
             self._event_seq = len(self._events) + 1
             self._document_seq = len(self._documents) + 1
+            self._announcement_seq = len(self._announcements) + 1
         conn = _connect()
         if conn is None:
             with self._lock:
@@ -1229,6 +1240,167 @@ class Store:
             _rollback(conn)
             raise StoreError("Could not remove the document.", 503) from exc
         delete_stored_file(str(previous.get("file_path") or ""))
+
+    def list_announcements(self) -> list[dict]:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                rows = _sorted_announcements(self._announcements)
+            return [_public_announcement(item) for item in rows]
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    _ANNOUNCEMENT_SELECT
+                    + """
+                    ORDER BY created_at DESC, id DESC
+                    """
+                )
+                fetched = cur.fetchall()
+            conn.close()
+        except Exception as exc:
+            log.warning("Announcement list failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise StoreError("Could not load announcements.", 503) from exc
+        return [_public_announcement(_announcement_from_row(row)) for row in fetched]
+
+    def get_announcement(self, announcement_id: int) -> dict | None:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                for item in self._announcements:
+                    if item["id"] == announcement_id:
+                        return _public_announcement(item)
+            return None
+        try:
+            with conn.cursor() as cur:
+                cur.execute(_ANNOUNCEMENT_SELECT + " WHERE id = %s", (announcement_id,))
+                row = cur.fetchone()
+            conn.close()
+        except Exception as exc:
+            log.warning("Announcement lookup failed: %s", exc)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            raise StoreError("Could not load the announcement.", 503) from exc
+        if row is None:
+            return None
+        return _public_announcement(_announcement_from_row(row))
+
+    def create_announcement(self, title: str, summary: str, body: str, created_by: str | None) -> dict:
+        cleaned_title = _announcement_value(clean_announcement_title, title)
+        cleaned_summary = _announcement_value(clean_announcement_summary, summary)
+        cleaned_body = _announcement_value(clean_announcement_body, body)
+        actor = str(created_by or "").strip()[:32] or None
+        created_at = datetime.now(timezone.utc)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                announcement_id = self._announcement_seq
+                self._announcement_seq += 1
+                row = {
+                    "id": announcement_id,
+                    "title": cleaned_title,
+                    "summary": cleaned_summary,
+                    "body": cleaned_body,
+                    "created_by": actor,
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                }
+                self._announcements.append(row)
+            return _public_announcement(row)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO announcements (
+                      title, summary, body, created_by, created_at, updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING id, title, summary, body, created_by, created_at, updated_at
+                    """,
+                    (cleaned_title, cleaned_summary, cleaned_body, actor, created_at, created_at),
+                )
+                row = cur.fetchone()
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the announcement.", 503) from exc
+        if row is None:
+            raise StoreError("Could not save the announcement.", 503)
+        return _public_announcement(_announcement_from_row(row))
+
+    def update_announcement(self, announcement_id: int, title: str, summary: str, body: str) -> dict:
+        cleaned_title = _announcement_value(clean_announcement_title, title)
+        cleaned_summary = _announcement_value(clean_announcement_summary, summary)
+        cleaned_body = _announcement_value(clean_announcement_body, body)
+        updated_at = datetime.now(timezone.utc)
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                for item in self._announcements:
+                    if item["id"] != announcement_id:
+                        continue
+                    item["title"] = cleaned_title
+                    item["summary"] = cleaned_summary
+                    item["body"] = cleaned_body
+                    item["updated_at"] = updated_at
+                    return _public_announcement(item)
+            raise StoreError("Announcement was not found.", 404)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE announcements
+                    SET title = %s, summary = %s, body = %s, updated_at = %s
+                    WHERE id = %s
+                    RETURNING id, title, summary, body, created_by, created_at, updated_at
+                    """,
+                    (cleaned_title, cleaned_summary, cleaned_body, updated_at, announcement_id),
+                )
+                row = cur.fetchone()
+            if row is None:
+                conn.rollback()
+                conn.close()
+                raise StoreError("Announcement was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the announcement.", 503) from exc
+        return _public_announcement(_announcement_from_row(row))
+
+    def delete_announcement(self, announcement_id: int) -> None:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                before = len(self._announcements)
+                self._announcements = [item for item in self._announcements if item["id"] != announcement_id]
+                if len(self._announcements) == before:
+                    raise StoreError("Announcement was not found.", 404)
+            return
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM announcements WHERE id = %s", (announcement_id,))
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Announcement was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not remove the announcement.", 503) from exc
 
     def _document_record(self, document_id: int) -> dict | None:
         conn = self._open()
@@ -2511,6 +2683,77 @@ def _public_document(row: dict) -> dict:
     }
 
 
+_ANNOUNCEMENT_SELECT = """
+SELECT id, title, summary, body, created_by, created_at, updated_at
+FROM announcements
+"""
+
+
+def _announcement_value(cleaner, value: str) -> str:
+    try:
+        return cleaner(value)
+    except ValueError as exc:
+        raise StoreError(str(exc), 400) from exc
+
+
+def _seed_announcement_rows() -> list[dict]:
+    rows = []
+    for index, item in enumerate(ANNOUNCEMENT_SEED, start=1):
+        created = datetime.fromisoformat(item["created_at"])
+        updated = datetime.fromisoformat(item["updated_at"])
+        rows.append(
+            {
+                "id": index,
+                "title": item["title"],
+                "summary": item["summary"],
+                "body": sanitize_html(item["body"]),
+                "created_by": item["created_by"],
+                "created_at": created,
+                "updated_at": updated,
+            }
+        )
+    return rows
+
+
+def _announcement_moment(row: dict) -> datetime:
+    value = row["created_at"]
+    if isinstance(value, datetime):
+        moment = value
+    else:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment
+
+
+def _sorted_announcements(rows: list[dict]) -> list[dict]:
+    chosen = [dict(item) for item in rows]
+    chosen.sort(key=lambda item: (_announcement_moment(item), int(item["id"])), reverse=True)
+    return chosen
+
+
+def _announcement_from_row(row) -> dict:
+    return {
+        "id": row[0],
+        "title": row[1],
+        "summary": row[2] or "",
+        "body": row[3] or "",
+        "created_by": row[4],
+        "created_at": row[5],
+        "updated_at": row[6],
+    }
+
+
+def _public_announcement(row: dict) -> dict:
+    return {
+        "id": int(row["id"]),
+        "title": row["title"],
+        "summary": row.get("summary") or "",
+        "body": sanitize_html(row.get("body") or ""),
+        "posted_on": uploaded_on(row["created_at"]),
+    }
+
+
 def _seed_event_rows() -> list[dict]:
     rows = []
     for index, item in enumerate(EVENT_SEED, start=1):
@@ -2636,6 +2879,7 @@ def _ensure_records(cur) -> None:
                 ),
             )
     _ensure_documents(cur)
+    _ensure_announcements(cur)
 
 
 def _ensure_documents(cur) -> None:
@@ -2685,6 +2929,49 @@ def _ensure_documents(cur) -> None:
                 item["content_type"],
                 item["uploaded_by"],
                 datetime.fromisoformat(item["uploaded_at"]),
+            ),
+        )
+
+
+def _ensure_announcements(cur) -> None:
+    """Create the announcements table. Example rows are inserted only on first create."""
+    announcements_new = not _table_exists(cur, "announcements")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS announcements (
+          id SERIAL PRIMARY KEY,
+          title TEXT NOT NULL,
+          summary TEXT NOT NULL DEFAULT '',
+          body TEXT NOT NULL,
+          created_by TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS announcements_created_idx
+        ON announcements (created_at DESC, id DESC)
+        """
+    )
+    if not announcements_new:
+        return
+    for item in ANNOUNCEMENT_SEED:
+        cur.execute(
+            """
+            INSERT INTO announcements (
+              title, summary, body, created_by, created_at, updated_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (
+                item["title"],
+                item["summary"],
+                sanitize_html(item["body"]),
+                item["created_by"],
+                datetime.fromisoformat(item["created_at"]),
+                datetime.fromisoformat(item["updated_at"]),
             ),
         )
 
