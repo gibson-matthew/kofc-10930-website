@@ -3,6 +3,7 @@ import { createEvent, deleteEvent, fetchEvents, updateEvent } from "../api";
 import CalendarField, { formatLongDate } from "../components/CalendarField";
 import { useContent } from "../content/ContentContext";
 import { EVENT_FALLBACK, collapse } from "../content/records";
+import { trackClick, trackFeature } from "../tracking";
 
 const READ_MORE = "Read More...";
 
@@ -319,7 +320,14 @@ export default function EventsSection() {
               pending={pending}
               confirming={confirmId === event.id}
               canManage={canManage}
-              onToggle={() => setOpenIds((current) => ({ ...current, [event.id]: !current[event.id] }))}
+              onToggle={() =>
+                setOpenIds((current) => {
+                  const next = !current[event.id];
+                  trackClick(next ? "read_more" : "show_less", { target: "event", event_id: event.id });
+                  if (next) trackFeature("event_expand", { event_id: event.id });
+                  return { ...current, [event.id]: next };
+                })
+              }
               onEdit={() => {
                 setError("");
                 setConfirmId(null);

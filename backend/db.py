@@ -128,6 +128,9 @@ class Store:
             with conn.cursor() as cur:
                 _ensure_schema(cur)
                 _remove_retired_link_blocks(cur)
+                from tracking import ensure_audit_schema
+
+                ensure_audit_schema(cur)
                 _seed_images(cur)
                 _ensure_records(cur)
                 status = _upsert_test_member(cur, hashed)

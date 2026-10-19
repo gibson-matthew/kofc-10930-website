@@ -626,4 +626,38 @@ WHERE NOT EXISTS (
   WHERE d.library = v.library AND d.title = v.title
 );
 
+-- Necessary and optional site events. Writes must not block page requests.
+CREATE TABLE IF NOT EXISTS audit_events (
+  id BIGSERIAL PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  membership_id TEXT,
+  ip TEXT,
+  user_agent TEXT,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  CONSTRAINT audit_events_tier_chk CHECK (tier IN ('necessary', 'accept'))
+);
+
+CREATE INDEX IF NOT EXISTS audit_events_type_idx
+  ON audit_events (event_type, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS audit_events_member_idx
+  ON audit_events (membership_id, created_at DESC);
+
+-- Accepted or declined optional tracking. The browser also stores this choice.
+CREATE TABLE IF NOT EXISTS consent_choices (
+  id BIGSERIAL PRIMARY KEY,
+  membership_id TEXT,
+  choice TEXT NOT NULL,
+  version TEXT NOT NULL,
+  chosen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ip TEXT,
+  user_agent TEXT,
+  CONSTRAINT consent_choices_choice_chk CHECK (choice IN ('accepted', 'declined'))
+);
+
+CREATE INDEX IF NOT EXISTS consent_choices_member_idx
+  ON consent_choices (membership_id, chosen_at DESC);
+
 COMMIT;

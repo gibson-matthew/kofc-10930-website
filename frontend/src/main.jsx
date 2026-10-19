@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { AuthProvider } from "./auth/AuthContext";
 import { LOGO_SRC } from "./content/seed";
+import { installFrontendErrors } from "./tracking";
 import App from "./App.jsx";
 import "./index.css";
 import "../../css/shared.css";
@@ -37,6 +38,7 @@ function installSquareFavicon(src) {
 }
 
 installSquareFavicon(LOGO_SRC);
+installFrontendErrors();
 
 const memberRoute = window.location.pathname === "/member" || window.location.pathname.startsWith("/member/");
 document.body.className = memberRoute ? "page-member" : "page-public";

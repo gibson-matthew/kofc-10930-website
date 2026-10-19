@@ -8,6 +8,7 @@ import {
   uploadDocument,
 } from "../api";
 import { MONTHS, collapse } from "../content/records";
+import { trackClick, trackSearchUse, watchSearch } from "../tracking";
 
 const DOCUMENT_FALLBACK = {
   treasurer: [
@@ -184,6 +185,16 @@ export default function DocumentLibrary({ library, canManage }) {
     }
   }, [manage]);
 
+  useEffect(() => {
+    const needle = librarySearchText({ title: query, description: "", uploaded_on: "" });
+    if (!needle) {
+      watchSearch(`library.${library}`, "", 0);
+      return;
+    }
+    const count = documents.filter((doc) => librarySearchText(doc).includes(needle)).length;
+    watchSearch(`library.${library}`, query, count);
+  }, [query, documents, library]);
+
   async function reload() {
     const rows = await fetchDocuments(library);
     setDocuments(Array.isArray(rows) ? rows : []);
@@ -278,6 +289,7 @@ export default function DocumentLibrary({ library, canManage }) {
       {documents.length > 0 ? (
         <DocumentList
           documents={documents}
+          library={library}
           query={query}
           fallback={fallback}
           manage={manage}
@@ -297,6 +309,7 @@ export default function DocumentLibrary({ library, canManage }) {
 
 function DocumentList({
   documents,
+  library,
   query,
   fallback,
   manage,
@@ -331,11 +344,28 @@ function DocumentList({
                   <div className="signin-actions recog-actions">
                     {downloadable ? (
                       pdf ? (
-                        <a className="btn" href={documentFileUrl(doc.id)} target="_blank" rel="noopener noreferrer">
+                        <a
+                          className="btn"
+                          href={documentFileUrl(doc.id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={() => {
+                            trackClick("library_preview", { library, document_id: doc.id });
+                            if (needle) trackSearchUse(`library.${library}`, query, { document_id: doc.id });
+                          }}
+                        >
                           Open
                         </a>
                       ) : (
-                        <a className="btn" href={documentFileUrl(doc.id)} download={doc.original_name || ""}>
+                        <a
+                          className="btn"
+                          href={documentFileUrl(doc.id)}
+                          download={doc.original_name || ""}
+                          onClick={() => {
+                            trackClick("library_download", { library, document_id: doc.id });
+                            if (needle) trackSearchUse(`library.${library}`, query, { document_id: doc.id });
+                          }}
+                        >
                           Download
                         </a>
                       )

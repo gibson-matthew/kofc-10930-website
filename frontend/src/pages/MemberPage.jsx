@@ -14,6 +14,7 @@ import EventsSection from "./EventsSection";
 import HonorsSection from "./HonorsSection";
 import SettingsView from "./SettingsView";
 import { navigate, usePath } from "../router";
+import { trackClick, trackFeature } from "../tracking";
 import { DIRECTOR_ROLES, memberLabel, OFFICER_ROLES } from "../titles";
 
 const TITLE = SITE_TITLE;
@@ -362,7 +363,15 @@ function EditBar() {
         id="editToggle"
         aria-pressed={editing ? "true" : "false"}
         aria-label={editing ? "CANCEL CHANGES" : "EDIT PAGE"}
-        onClick={editing ? cancelEdit : startEdit}
+        onClick={() => {
+          if (editing) {
+            trackClick("cancel_changes");
+            cancelEdit();
+          } else {
+            trackClick("edit_page");
+            startEdit();
+          }
+        }}
       >
         {editing ? "CANCEL CHANGES" : "EDIT PAGE"}
       </button>
@@ -381,7 +390,16 @@ function EditBar() {
           />
         </label>
       ) : null}
-      <button type="button" className="btn save-edits" id="saveEdits" hidden={!editing} onClick={saveEdits}>
+      <button
+        type="button"
+        className="btn save-edits"
+        id="saveEdits"
+        hidden={!editing}
+        onClick={() => {
+          trackClick("save_changes");
+          saveEdits();
+        }}
+      >
         SAVE CHANGES
       </button>
     </>
@@ -794,7 +812,14 @@ function MemberView() {
   }
 
   function togglePanel(panel) {
-    setOpenPanels((current) => ({ ...current, [panel]: !current[panel] }));
+    setOpenPanels((current) => {
+      const next = !current[panel];
+      if (panel === "panel-birthdays") {
+        trackClick(next ? "view_more" : "view_less", { target: "birthdays" });
+        if (next) trackFeature("birthday_expand");
+      }
+      return { ...current, [panel]: next };
+    });
   }
 
   function openBirthdays(event) {
@@ -806,6 +831,8 @@ function MemberView() {
     }
     event.preventDefault();
     setOpenPanels((current) => ({ ...current, "panel-birthdays": true }));
+    trackClick("view_more", { target: "birthdays" });
+    trackFeature("birthday_expand");
     window.requestAnimationFrame(() => {
       document.getElementById("birthdays")?.scrollIntoView();
     });
@@ -1113,7 +1140,10 @@ function MemberView() {
                           <BirthdayList
                             roster={roster}
                             ready={rosterReady}
-                            onHide={() => setOpenPanels((current) => ({ ...current, [card.panel]: false }))}
+                            onHide={() => {
+                              trackClick("view_less", { target: "birthdays" });
+                              setOpenPanels((current) => ({ ...current, [card.panel]: false }));
+                            }}
                           />
                         ) : showForm ? (
                           <DraftFields fields={fields} />

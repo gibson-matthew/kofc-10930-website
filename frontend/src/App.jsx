@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useAuth } from "./auth/AuthContext";
+import ConsentBanner, { PageView } from "./components/ConsentBanner";
 import LoginPage from "./pages/LoginPage";
 import MemberPage from "./pages/MemberPage";
 import PublicPage from "./pages/PublicPage";
@@ -21,7 +22,14 @@ function MemberGate() {
 
 export default function App() {
   const path = usePath();
-  if (path === "/login") return <LoginPage />;
-  if (path === "/member" || path.startsWith("/member/")) return <MemberGate />;
-  return <PublicPage />;
+  let page = <PublicPage />;
+  if (path === "/login") page = <LoginPage />;
+  else if (path === "/member" || path.startsWith("/member/")) page = <MemberGate />;
+  return (
+    <>
+      <PageView path={path} />
+      {page}
+      <ConsentBanner />
+    </>
+  );
 }

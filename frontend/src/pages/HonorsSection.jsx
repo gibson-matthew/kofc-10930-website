@@ -6,6 +6,7 @@ import PhotoEditor from "../components/PhotoEditor";
 import { useContent } from "../content/ContentContext";
 import { clampCrop } from "../crop";
 import { HONOR_FALLBACK, HONOR_GROUPS, MONTHS, collapse } from "../content/records";
+import { trackClick, trackSearchUse, watchSearch } from "../tracking";
 
 const VISIBLE_HONORS = 2;
 const MONTH_CATEGORIES = new Set(["knight_month", "family_month"]);
@@ -330,8 +331,25 @@ export default function HonorsSection() {
     }
   }
 
+  useEffect(() => {
+    for (const [category] of HONOR_GROUPS) {
+      const query = queries[category] || "";
+      const needle = honorSearchText(query);
+      if (!needle) {
+        watchSearch(`honors.${category}`, "", 0);
+        continue;
+      }
+      const count = honors.filter((honor) =>
+        honor.category === category &&
+        honorSearchText(`${honor.name || ""} ${honor.period || ""} ${honor.note || ""}`).includes(needle),
+      ).length;
+      watchSearch(`honors.${category}`, query, count);
+    }
+  }, [queries, honors]);
+
   function toggleGroup(category) {
     const next = !expanded[category];
+    trackClick(next ? "view_more" : "view_less", { target: "honors", category });
     setExpanded((current) => ({ ...current, [category]: next }));
     if (!next) setQueries((current) => ({ ...current, [category]: "" }));
   }
@@ -378,6 +396,8 @@ export default function HonorsSection() {
                     setError("");
                     setConfirmId(null);
                     setEditor({ mode: "edit", category, id: honor.id });
+                    const query = queries[category] || "";
+                    if (honorSearchText(query)) trackSearchUse(`honors.${category}`, query, { record_id: honor.id });
                   }}
                 >
                   Edit
