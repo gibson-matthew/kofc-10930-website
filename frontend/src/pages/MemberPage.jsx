@@ -148,12 +148,11 @@ function RoleGrid({ roles, roster, ready, editing, onDraft }) {
 }
 
 function RecogCard({ index, editing, recognition, onReload }) {
-  const { text, draftText, setDraft } = useContent();
+  const { text } = useContent();
   const [open, setOpen] = useState(false);
-  const [formOpen, setFormOpen] = useState(false);
-  const [snapshot, setSnapshot] = useState(null);
   const [busy, setBusy] = useState(false);
   const [photoError, setPhotoError] = useState("");
+  const [photoNotice, setPhotoNotice] = useState("");
   const [photoFailed, setPhotoFailed] = useState(false);
   const [photoEditor, setPhotoEditor] = useState(null);
   const photoRef = useRef(null);
@@ -162,9 +161,9 @@ function RecogCard({ index, editing, recognition, onReload }) {
   const detailId = `recog.${index}.detail`;
   const slot = (recognition || []).find((item) => item.slot === `recog.${index}`) || null;
   const src = slot?.url || "";
-  const title = editing ? draftText(titleId) : text(titleId);
-  const body = editing ? draftText(bodyId) : text(bodyId);
-  const detail = editing ? draftText(detailId) : text(detailId);
+  const title = text(titleId);
+  const body = text(bodyId);
+  const detail = text(detailId);
   photoRef.current = photoEditor;
 
   useEffect(() => {
@@ -187,28 +186,11 @@ function RecogCard({ index, editing, recognition, onReload }) {
 
   useEffect(() => {
     if (!editing) {
-      setFormOpen(false);
       closePhotoEditor();
+      setPhotoNotice("");
+      setPhotoError("");
     }
   }, [editing]);
-
-  function beginEdit() {
-    setSnapshot({
-      title: draftText(titleId),
-      body: draftText(bodyId),
-      detail: draftText(detailId),
-    });
-    setFormOpen(true);
-  }
-
-  function revertCopy() {
-    if (snapshot) {
-      setDraft(titleId, snapshot.title);
-      setDraft(bodyId, snapshot.body);
-      setDraft(detailId, snapshot.detail);
-    }
-    setFormOpen(false);
-  }
 
   function openExisting() {
     setPhotoError("");
@@ -245,6 +227,7 @@ function RecogCard({ index, editing, recognition, onReload }) {
     if (!chosen?.src) return;
     setBusy(true);
     setPhotoError("");
+    setPhotoNotice("");
     try {
       if (chosen.file) {
         if (slot?.id) {
@@ -261,6 +244,7 @@ function RecogCard({ index, editing, recognition, onReload }) {
       }
       await onReload();
       closePhotoEditor();
+      setPhotoNotice("Saved");
     } catch (err) {
       setPhotoError(err instanceof Error ? err.message : "Could not save the photo.");
     } finally {
@@ -276,24 +260,14 @@ function RecogCard({ index, editing, recognition, onReload }) {
         <Portrait />
       )}
       <div>
-        {editing && formOpen ? (
-          <>
-            <DraftFields
-              fields={[
-                { id: titleId, label: "Title" },
-                { id: bodyId, label: "Summary", long: true },
-                { id: detailId, label: "Details", long: true },
-              ]}
-            />
-            <div className="signin-actions recog-actions">
-              <button type="button" className="btn btn-quiet" onClick={() => setFormOpen(false)}>
-                Done
-              </button>
-              <button type="button" className="btn btn-quiet" onClick={revertCopy}>
-                Cancel
-              </button>
-            </div>
-          </>
+        {editing ? (
+          <EditableFields
+            fields={[
+              { id: titleId, label: "Title" },
+              { id: bodyId, label: "Summary", long: true },
+              { id: detailId, label: "Details", long: true },
+            ]}
+          />
         ) : (
           <>
             <h3>{title}</h3>
@@ -309,13 +283,6 @@ function RecogCard({ index, editing, recognition, onReload }) {
                 {open ? "Show less" : "Read More..."}
               </button>
             </p>
-            {editing ? (
-              <div className="signin-actions recog-actions">
-                <button type="button" className="btn btn-quiet" onClick={beginEdit}>
-                  Edit
-                </button>
-              </div>
-            ) : null}
           </>
         )}
         {editing && photoEditor ? (
@@ -343,11 +310,7 @@ function RecogCard({ index, editing, recognition, onReload }) {
             )}
           </div>
         ) : null}
-        {photoError ? (
-          <p className="signin-error" role="alert">
-            {photoError}
-          </p>
-        ) : null}
+        <SectionNote notice={photoNotice} error={photoError} />
       </div>
     </article>
   );
@@ -358,8 +321,26 @@ function keepEditingClick(event) {
 }
 
 function EditBar() {
-  const { editing, startEdit, cancelEdit, saveEdits, draftText, setFraternalYear } = useContent();
+  const { editing, startEdit, exitEdit, saveFields, draftText, setFraternalYear } = useContent();
   const yearValue = draftText(YEAR_KEY);
+  const [pending, setPending] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  async function saveYear() {
+    setPending(true);
+    setNotice("");
+    setError("");
+    try {
+      await saveFields([YEAR_KEY]);
+      setNotice("Saved");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <>
       <button
@@ -367,46 +348,54 @@ function EditBar() {
         className="edit-toggle"
         id="editToggle"
         aria-pressed={editing ? "true" : "false"}
-        aria-label={editing ? "CANCEL CHANGES" : "EDIT PAGE"}
+        aria-label={editing ? "Done" : "Edit"}
         onClick={() => {
           if (editing) {
-            trackClick("cancel_changes");
-            cancelEdit();
+            trackClick("done");
+            setNotice("");
+            setError("");
+            exitEdit();
           } else {
-            trackClick("edit_page");
+            trackClick("edit");
             startEdit();
           }
         }}
       >
-        {editing ? "CANCEL CHANGES" : "EDIT PAGE"}
+        {editing ? "Done" : "Edit"}
       </button>
       {editing ? (
-        <label className="year-field">
-          <span>Fraternal year</span>
-          <input
-            value={yearValue}
-            maxLength={9}
-            inputMode="text"
-            autoComplete="off"
-            spellCheck={false}
-            aria-label="Fraternal year"
-            placeholder="2026–27"
-            onChange={(event) => setFraternalYear(event.target.value)}
-          />
-        </label>
+        <div className="year-edit">
+          <label className="year-field">
+            <span>Fraternal year</span>
+            <input
+              value={yearValue}
+              maxLength={9}
+              inputMode="text"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Fraternal year"
+              placeholder="2026–27"
+              onChange={(event) => {
+                setNotice("");
+                setError("");
+                setFraternalYear(event.target.value);
+              }}
+            />
+          </label>
+          <button type="button" className="btn year-save" disabled={pending} onClick={saveYear}>
+            Save
+          </button>
+          {error ? (
+            <p className="year-status is-error" role="alert">
+              {error}
+            </p>
+          ) : notice ? (
+            <p className="year-status" role="status">
+              {notice}
+            </p>
+          ) : null}
+        </div>
       ) : null}
-      <button
-        type="button"
-        className="btn save-edits"
-        id="saveEdits"
-        hidden={!editing}
-        onClick={() => {
-          trackClick("save_changes");
-          saveEdits();
-        }}
-      >
-        SAVE CHANGES
-      </button>
     </>
   );
 }
@@ -428,6 +417,24 @@ function FixedText({ id, as: Tag = "p", className, htmlId, style }) {
       {FIXED_CHROME[id]}
     </Tag>
   );
+}
+
+function SectionNote({ notice, error }) {
+  if (error) {
+    return (
+      <p className="signin-error" role="alert">
+        {error}
+      </p>
+    );
+  }
+  if (notice) {
+    return (
+      <p className="settings-notice is-confirm" role="status">
+        {notice}
+      </p>
+    );
+  }
+  return null;
 }
 
 function DraftFields({ fields }) {
@@ -470,53 +477,56 @@ function DraftFields({ fields }) {
   );
 }
 
-function ScheduleCard({ index }) {
-  const { editing, text, draftText, setDraft } = useContent();
-  const [open, setOpen] = useState(false);
-  const [snapshot, setSnapshot] = useState(null);
-  const titleId = `sched.${index}.title`;
-  const bodyId = `sched.${index}.body`;
-  const lines = index === 3;
+function EditableFields({ fields }) {
+  const { saveFields } = useContent();
+  const [pending, setPending] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!editing) setOpen(false);
-  }, [editing]);
-
-  const title = editing ? draftText(titleId) : text(titleId);
-  const body = editing ? draftText(bodyId) : text(bodyId);
-
-  function beginEdit() {
-    setSnapshot({ title: draftText(titleId), body: draftText(bodyId) });
-    setOpen(true);
-  }
-
-  function revert() {
-    if (snapshot) {
-      setDraft(titleId, snapshot.title);
-      setDraft(bodyId, snapshot.body);
+  async function onSave() {
+    setPending(true);
+    setNotice("");
+    setError("");
+    try {
+      await saveFields(fields.map((field) => field.id));
+      setNotice("Saved");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save.");
+    } finally {
+      setPending(false);
     }
-    setOpen(false);
   }
 
   return (
+    <>
+      <DraftFields fields={fields} />
+      <div className="signin-actions recog-actions">
+        <button type="button" className="btn btn-quiet" disabled={pending} onClick={onSave}>
+          Save
+        </button>
+      </div>
+      <SectionNote notice={notice} error={error} />
+    </>
+  );
+}
+
+function ScheduleCard({ index }) {
+  const { editing, text } = useContent();
+  const titleId = `sched.${index}.title`;
+  const bodyId = `sched.${index}.body`;
+  const lines = index === 3;
+  const title = text(titleId);
+  const body = text(bodyId);
+
+  return (
     <article className={index === 3 ? "sched wide" : "sched"}>
-      {editing && open ? (
-        <>
-          <DraftFields
-            fields={[
-              { id: titleId, label: "Title" },
-              { id: bodyId, label: "Details", lines },
-            ]}
-          />
-          <div className="signin-actions recog-actions">
-            <button type="button" className="btn btn-quiet" onClick={() => setOpen(false)}>
-              Done
-            </button>
-            <button type="button" className="btn btn-quiet" onClick={revert}>
-              Cancel
-            </button>
-          </div>
-        </>
+      {editing ? (
+        <EditableFields
+          fields={[
+            { id: titleId, label: "Title" },
+            { id: bodyId, label: "Details", lines },
+          ]}
+        />
       ) : (
         <>
           <h3>{title}</h3>
@@ -530,13 +540,6 @@ function ScheduleCard({ index }) {
                 </span>
               ))}
           </p>
-          {editing ? (
-            <div className="signin-actions recog-actions">
-              <button type="button" className="btn btn-quiet" onClick={beginEdit}>
-                Edit
-              </button>
-            </div>
-          ) : null}
         </>
       )}
     </article>
@@ -626,7 +629,7 @@ function BirthdayList({ roster, ready, onHide }) {
 }
 
 function MemberView() {
-  const { editing, savedFlash, saveError, cancelEdit, registerSaveHook, applyFraternalYear } = useContent();
+  const { editing, exitEdit } = useContent();
   const { logout: signOut, user, refresh } = useAuth();
   const path = usePath();
   const onSettings = path === "/member/settings";
@@ -637,10 +640,14 @@ function MemberView() {
   const profileRef = useRef(null);
   const hiddenRef = useRef(false);
   const roleDrafts = useRef({ officer: null, director: null });
+  const roleLock = useRef("");
   const [logoSrc, setLogoSrc] = useState(LOGO_SRC);
   const [recognition, setRecognition] = useState([]);
   const [roster, setRoster] = useState([]);
   const [rosterReady, setRosterReady] = useState(false);
+  const [rolePending, setRolePending] = useState("");
+  const [roleNotice, setRoleNotice] = useState({ officer: "", director: "" });
+  const [roleError, setRoleError] = useState({ officer: "", director: "" });
 
   const onOfficerDraft = useCallback((draft) => {
     roleDrafts.current.officer = draft;
@@ -666,8 +673,8 @@ function MemberView() {
   }, [onSettings]);
 
   useEffect(() => {
-    if (onSettings && editing) cancelEdit();
-  }, [onSettings, editing, cancelEdit]);
+    if (onSettings && editing) exitEdit();
+  }, [onSettings, editing, exitEdit]);
 
   useEffect(() => {
     let cancel = false;
@@ -718,36 +725,69 @@ function MemberView() {
     };
   }, [onSettings, editing, rosterReady]);
 
-  useEffect(() => {
-    return registerSaveHook(async () => {
-      applyFraternalYear();
-      const officer = roleDrafts.current.officer;
-      const director = roleDrafts.current.director;
-      if (!officer || !director) return;
-      const seen = new Set();
-      for (const memberid of [...Object.values(officer), ...Object.values(director)]) {
-        if (!memberid) continue;
-        if (seen.has(memberid)) throw new Error("A member can hold only one title.");
-        seen.add(memberid);
+  function savedRoleMap(roles) {
+    const map = {};
+    for (const [, abbrev] of roles) {
+      const holder = roster.find((member) => member.title === abbrev);
+      map[abbrev] = holder ? holder.memberid : "";
+    }
+    return map;
+  }
+
+  function roleEntries(map) {
+    return Object.entries(map).map(([title, memberid]) => ({
+      title,
+      memberid: memberid || null,
+    }));
+  }
+
+  async function saveRoleGroup(kind) {
+    if (roleLock.current) return;
+    roleLock.current = kind;
+    const mine = kind === "officer" ? roleDrafts.current.officer : roleDrafts.current.director;
+    setRoleNotice((current) => ({ ...current, [kind]: "" }));
+    setRoleError((current) => ({ ...current, [kind]: "" }));
+    if (!mine) {
+      roleLock.current = "";
+      setRoleError((current) => ({ ...current, [kind]: "Members are still loading." }));
+      return;
+    }
+    const other = savedRoleMap(kind === "officer" ? DIRECTOR_ROLES : OFFICER_ROLES);
+    const seen = new Set();
+    for (const memberid of [...Object.values(mine), ...Object.values(other)]) {
+      if (!memberid) continue;
+      if (seen.has(memberid)) {
+        roleLock.current = "";
+        setRoleError((current) => ({ ...current, [kind]: "A member can hold only one title." }));
+        return;
       }
+      seen.add(memberid);
+    }
+    const officer = kind === "officer" ? mine : other;
+    const director = kind === "director" ? mine : other;
+    setRolePending(kind);
+    try {
       const rows = await saveRoleAssignments({
-        officer: Object.entries(officer).map(([title, memberid]) => ({
-          title,
-          memberid: memberid || null,
-        })),
-        director: Object.entries(director).map(([title, memberid]) => ({
-          title,
-          memberid: memberid || null,
-        })),
+        officer: roleEntries(officer),
+        director: roleEntries(director),
       });
       if (Array.isArray(rows)) setRoster(rows);
+      setRoleNotice((current) => ({ ...current, [kind]: "Saved" }));
       try {
         await refresh();
       } catch {
         /* The assignment is saved. The name updates on the next visit. */
       }
-    });
-  }, [registerSaveHook, refresh, applyFraternalYear]);
+    } catch (err) {
+      setRoleError((current) => ({
+        ...current,
+        [kind]: err instanceof Error ? err.message : `Could not save ${kind} assignments.`,
+      }));
+    } finally {
+      roleLock.current = "";
+      setRolePending("");
+    }
+  }
 
   useEffect(() => {
     if (onSettings) return undefined;
@@ -1015,6 +1055,21 @@ function MemberView() {
                 onDraft={onOfficerDraft}
               />
             </div>
+            {editing ? (
+              <>
+                <div className="signin-actions recog-actions">
+                  <button
+                    type="button"
+                    className="btn btn-quiet"
+                    disabled={!rosterReady || Boolean(rolePending)}
+                    onClick={() => saveRoleGroup("officer")}
+                  >
+                    Save
+                  </button>
+                </div>
+                <SectionNote notice={roleNotice.officer} error={roleError.officer} />
+              </>
+            ) : null}
           </section>
 
           <section className="block" id="directors" aria-labelledby="directorsHeading">
@@ -1032,6 +1087,21 @@ function MemberView() {
                 onDraft={onDirectorDraft}
               />
             </div>
+            {editing ? (
+              <>
+                <div className="signin-actions recog-actions">
+                  <button
+                    type="button"
+                    className="btn btn-quiet"
+                    disabled={!rosterReady || Boolean(rolePending)}
+                    onClick={() => saveRoleGroup("director")}
+                  >
+                    Save
+                  </button>
+                </div>
+                <SectionNote notice={roleNotice.director} error={roleError.director} />
+              </>
+            ) : null}
           </section>
 
           <section className="block" id="events" aria-labelledby="eventsHeading">
@@ -1055,7 +1125,7 @@ function MemberView() {
               />
               {editing ? (
                 <div className="card blood-edit">
-                  <DraftFields
+                  <EditableFields
                     fields={[
                       { id: "blood.place", label: "Location" },
                       { id: "blood.when", label: "Date and time" },
@@ -1086,7 +1156,7 @@ function MemberView() {
             <div className="stats" aria-label="Donation statistics">
               {editing ? (
                 <div className="card blood-edit">
-                  <DraftFields
+                  <EditableFields
                     fields={range(3).flatMap((index) => [
                       { id: `stat.${index}.value`, label: `Stat ${index + 1} number` },
                       { id: `stat.${index}.label`, label: `Stat ${index + 1} label` },
@@ -1133,7 +1203,7 @@ function MemberView() {
                       shown={shown}
                       onToggle={card.panel ? () => togglePanel(card.panel) : undefined}
                     />
-                    {showForm && !card.panel ? <DraftFields fields={fields} /> : null}
+                    {showForm && !card.panel ? <EditableFields fields={fields} /> : null}
                     {card.panel ? (
                       <div className="detail" id={card.panel} hidden={!shown}>
                         {card.library ? (
@@ -1163,7 +1233,7 @@ function MemberView() {
                             }}
                           />
                         ) : showForm ? (
-                          <DraftFields fields={fields} />
+                          <EditableFields fields={fields} />
                         ) : card.hours ? (
                           <p>
                             <Block id="links.9.before" locked />{" "}
@@ -1232,15 +1302,6 @@ function MemberView() {
           </div>
         </div>
       </footer>
-      <div
-        id="saveStatus"
-        className="save-status"
-        role="status"
-        aria-live="polite"
-        hidden={!savedFlash && !saveError}
-      >
-        {saveError || "Saved"}
-      </div>
     </>
   );
 }

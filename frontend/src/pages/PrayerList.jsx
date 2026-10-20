@@ -105,6 +105,7 @@ export default function PrayerList({ isAdmin }) {
   const [fallback, setFallback] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [pending, setPending] = useState(false);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -151,12 +152,14 @@ export default function PrayerList({ isAdmin }) {
     if (editing && !numericId(editing.id)) return;
     setPending(true);
     setError("");
+    setNotice("");
     try {
       await savePrayer(fields, editing ? editing.id : null);
       setAdding(false);
       setEditing(null);
       try {
         await reload();
+        setNotice("Saved");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Saved, but the list could not be reloaded.");
       }
@@ -171,16 +174,19 @@ export default function PrayerList({ isAdmin }) {
     if (!numericId(id)) return;
     setPending(true);
     setError("");
+    setNotice("");
     try {
       await deletePrayer(id);
       setConfirmId(null);
       setItems((current) => current.filter((item) => item.id !== id));
+      setNotice("Saved");
       try {
         await reload();
       } catch {
         /* The removed request is already hidden. */
       }
     } catch (err) {
+      setNotice("");
       setError(err instanceof Error ? err.message : "Could not remove the prayer request.");
     } finally {
       setPending(false);
@@ -195,6 +201,11 @@ export default function PrayerList({ isAdmin }) {
     <>
       {fallback ? (
         <p className="settings-hint">Showing the example list while the council records are unavailable.</p>
+      ) : null}
+      {notice ? (
+        <p className="settings-notice is-confirm" role="status">
+          {notice}
+        </p>
       ) : null}
       {error ? (
         <p className="signin-error" role="alert">

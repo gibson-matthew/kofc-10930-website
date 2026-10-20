@@ -253,7 +253,7 @@ export default function SettingsView() {
   const [mediaOpen, setMediaOpen] = useState(false);
   const [mediaQuery, setMediaQuery] = useState("");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [flash, setFlash] = useState({});
   const [pending, setPending] = useState(false);
   const [loadingAdmin, setLoadingAdmin] = useState(admin);
   const [editor, setEditor] = useState(null);
@@ -291,15 +291,35 @@ export default function SettingsView() {
     };
   }, [admin]);
 
-  async function run(action, success) {
+  function writeFlash(scope, message, problem) {
+    setFlash((current) => ({ ...current, [scope]: { notice: message || "", error: problem || "" } }));
+  }
+
+  function Flash({ scope }) {
+    const item = flash[scope];
+    if (!item?.error && !item?.notice) return null;
+    if (item.error) {
+      return (
+        <p className="signin-error" role="alert">
+          {item.error}
+        </p>
+      );
+    }
+    return (
+      <p className="settings-notice is-confirm" role="status">
+        {item.notice}
+      </p>
+    );
+  }
+
+  async function run(scope, action, success) {
     setPending(true);
-    setError("");
-    setNotice("");
+    writeFlash(scope, "", "");
     try {
       await action();
-      if (success) setNotice(success);
+      if (success) writeFlash(scope, success, "");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      writeFlash(scope, "", err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setPending(false);
     }
@@ -314,7 +334,7 @@ export default function SettingsView() {
 
   function openEditor() {
     setError("");
-    setNotice("");
+    writeFlash("profile", "", "");
     setEditor((current) => {
       if (current?.ownedUrl) URL.revokeObjectURL(current.src);
       if (user?.photo_url) {
@@ -335,13 +355,11 @@ export default function SettingsView() {
     if (!file) return;
     const problem = imageFileError(file);
     if (problem) {
-      setNotice("");
-      setError(problem);
+      writeFlash("profile", "", problem);
       return;
     }
     const url = URL.createObjectURL(file);
-    setError("");
-    setNotice("");
+    writeFlash("profile", "", "");
     setEditor((current) => {
       if (current?.ownedUrl) URL.revokeObjectURL(current.src);
       return { src: url, file, ownedUrl: true, crop: { x: 0, y: 0, scale: 1 } };
@@ -356,7 +374,7 @@ export default function SettingsView() {
   function onSavePhoto(crop) {
     const file = editor?.file || null;
     if (!file && !editor?.src) return;
-    run(async () => {
+    run("profile", async () => {
       const updated = file ? await uploadMyPhoto(file, crop) : await updateMyCrop(crop);
       await refresh();
       rememberMember(updated);
@@ -373,7 +391,7 @@ export default function SettingsView() {
 
   function onRemovePhoto() {
     closeEditor();
-    run(async () => {
+    run("profile", async () => {
       const updated = await deleteMyPhoto();
       await refresh();
       rememberMember(updated);
@@ -385,7 +403,7 @@ export default function SettingsView() {
       showEmptyEditor();
       return;
     }
-    run(async () => {
+    run("profile", async () => {
       const updated = await deleteMyPhoto();
       await refresh();
       rememberMember(updated);
@@ -402,11 +420,10 @@ export default function SettingsView() {
     event.target.value = "";
     const problem = imageFileError(file);
     if (problem) {
-      setNotice("");
-      setError(problem);
+      writeFlash("media", "", problem);
       return;
     }
-    run(async () => {
+    run("media", async () => {
       await uploadMedia(file);
       await reloadMedia();
     }, "Image uploaded.");
@@ -417,18 +434,17 @@ export default function SettingsView() {
     event.target.value = "";
     const problem = imageFileError(file);
     if (problem) {
-      setNotice("");
-      setError(problem);
+      writeFlash("media", "", problem);
       return;
     }
-    run(async () => {
+    run("media", async () => {
       await replaceMedia(image.id, file);
       await reloadMedia();
     }, "Image replaced.");
   }
 
   function onRemove(image) {
-    run(async () => {
+    run("media", async () => {
       await deleteMedia(image.id);
       await reloadMedia();
     }, "Image removed.");
@@ -443,7 +459,7 @@ export default function SettingsView() {
         return item;
       }),
     );
-    run(async () => {
+    run("media", async () => {
       try {
         await assignMediaSlot(image.id, slot);
       } catch (err) {
@@ -478,7 +494,6 @@ export default function SettingsView() {
     };
     setPending(true);
     setError("");
-    setNotice("");
     setMemberError("");
     setMemberNotice("");
     try {
@@ -514,7 +529,7 @@ export default function SettingsView() {
   }
 
   function onAdmin(member, next) {
-    run(async () => {
+    run("admin", async () => {
       const updated = await setMemberAdmin(member.memberid, next);
       setMembers((current) => current.map((item) => (item.memberid === updated.memberid ? updated : item)));
       if (updated.memberid === user?.memberid) await refresh();
@@ -522,7 +537,7 @@ export default function SettingsView() {
   }
 
   function onHonorary(member, next) {
-    run(async () => {
+    run("members", async () => {
       const updated = await setMemberHonorary(member.memberid, next);
       setMembers((current) =>
         current.map((item) =>
@@ -588,16 +603,12 @@ export default function SettingsView() {
             {error}
           </p>
         ) : null}
-        {notice ? (
-          <p className="settings-notice" role="status">
-            {notice}
-          </p>
-        ) : null}
 
         <div className="settings-stack">
           <article className="card settings-card" id="profile">
             <h3>Profile photo</h3>
             <p>One photo. It is public and appears wherever you are shown.</p>
+            <Flash scope="profile" />
             {editor ? (
               <PhotoEditor
                 key={editor.src || "empty"}
@@ -708,7 +719,7 @@ export default function SettingsView() {
                     </option>
                   ))}
                 </select>
-                <p className="settings-hint">Optional. A title can belong to one member. Later changes are made from Edit page.</p>
+                <p className="settings-hint">Optional. A title can belong to one member. Later changes are made with Edit on the members page.</p>
               </label>
               <BirthdayFields
                 month={memberForm.birth_month}
@@ -735,6 +746,7 @@ export default function SettingsView() {
             </form>
           </article>
           {loadingAdmin ? <p>Loading members…</p> : null}
+          <Flash scope="members" />
           <ListPanel
             open={membersOpen}
             canToggle={members.length > DIRECTORY_PREVIEW}
@@ -778,13 +790,14 @@ export default function SettingsView() {
           <div className="section-head">
             <div className="eyebrow left-only">Webmaster</div>
             <h2 id="adminHeading">Admin access</h2>
-            <p>Full edit access uses the same Edit page, Save changes, and Cancel changes controls.</p>
+            <p>Full edit access uses the Edit control on the members page.</p>
             {loadingAdmin ? null : (
               <p className="settings-hint">
                 {adminCount === 1 ? "1 member has full edit access." : `${adminCount} members have full edit access.`}
               </p>
             )}
           </div>
+          <Flash scope="admin" />
           {loadingAdmin ? <p>Loading members…</p> : null}
           <ListPanel
             open={adminsOpen}
@@ -829,6 +842,7 @@ export default function SettingsView() {
             <h2 id="mediaHeading">Media</h2>
             <p>Upload a JPG, PNG, or WebP, then choose it for the logo, a carousel photo, or an About photo. Replace or remove any image. An empty slot uses the example image.</p>
           </div>
+          <Flash scope="media" />
           <div className="signin-actions">
             <label className="btn">
               Upload image

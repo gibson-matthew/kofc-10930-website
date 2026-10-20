@@ -48,6 +48,7 @@ export default function MemberDirectory({ canManage }) {
   const [fallback, setFallback] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [pendingId, setPendingId] = useState("");
   const [query, setQuery] = useState("");
   const manage = Boolean(canManage) && !fallback;
@@ -78,8 +79,10 @@ export default function MemberDirectory({ canManage }) {
   async function onHonorary(member, next) {
     setPendingId(member.memberid);
     setError("");
+    setNotice("");
     try {
       const updated = await setMemberHonorary(member.memberid, next);
+      setNotice("Saved");
       setItems((current) =>
         current.map((item) =>
           item.memberid === member.memberid
@@ -101,6 +104,11 @@ export default function MemberDirectory({ canManage }) {
     <>
       {fallback ? (
         <p className="settings-hint">Showing the example list while the council records are unavailable.</p>
+      ) : null}
+      {notice ? (
+        <p className="settings-notice is-confirm" role="status">
+          {notice}
+        </p>
       ) : null}
       {error ? (
         <p className="signin-error" role="alert">

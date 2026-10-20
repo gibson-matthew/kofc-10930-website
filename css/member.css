@@ -87,6 +87,13 @@ nav.site-nav a:hover { color: var(--gold-soft); }
   gap: 0.7rem;
 }
 
+.year-edit {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 .year-field {
   display: flex;
   align-items: center;
@@ -99,6 +106,30 @@ nav.site-nav a:hover { color: var(--gold-soft); }
   text-transform: uppercase;
   white-space: nowrap;
 }
+
+.year-save {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 0.55rem 0.7rem;
+}
+
+header.site .year-save:hover {
+  background: var(--gold-soft);
+  color: var(--navy-deep);
+  border-color: var(--gold-soft);
+  transform: none;
+  box-shadow: none;
+}
+
+.year-status {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--gold-soft);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.year-status.is-error { color: var(--ivory); }
 
 .year-field input {
   width: 6.2rem;
@@ -623,7 +654,7 @@ body.page-member .on-navy {
 
   .edit-toggle { margin-left: 0.7rem; }
 
-  .year-field {
+  .year-edit {
     order: 4;
     margin-left: 0.7rem;
   }

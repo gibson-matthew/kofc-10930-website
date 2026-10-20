@@ -253,6 +253,7 @@ export default function HonorsSection() {
   const [fallback, setFallback] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [pending, setPending] = useState(false);
   const [editor, setEditor] = useState(null);
   const [confirmId, setConfirmId] = useState(null);
@@ -296,12 +297,14 @@ export default function HonorsSection() {
   async function onSave(fields, file, id) {
     setPending(true);
     setError("");
+    setNotice("");
     try {
       if (id) await updateHonor(id, fields, file);
       else await createHonor(fields, file);
       setEditor(null);
       try {
         await reload();
+        setNotice("Saved");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Saved, but the list could not be reloaded.");
       }
@@ -315,16 +318,19 @@ export default function HonorsSection() {
   async function onRemove(id) {
     setPending(true);
     setError("");
+    setNotice("");
     try {
       await deleteHonor(id);
       setConfirmId(null);
       setHonors((current) => current.filter((item) => item.id !== id));
+      setNotice("Saved");
       try {
         await reload();
       } catch {
         /* The removed entry is already hidden. */
       }
     } catch (err) {
+      setNotice("");
       setError(err instanceof Error ? err.message : "Could not remove the past honor.");
     } finally {
       setPending(false);
@@ -429,6 +435,11 @@ export default function HonorsSection() {
       </div>
       {fallback ? (
         <p className="settings-hint">Showing the example list while the council records are unavailable.</p>
+      ) : null}
+      {notice ? (
+        <p className="settings-notice is-confirm" role="status">
+          {notice}
+        </p>
       ) : null}
       {error ? (
         <p className="signin-error" role="alert">

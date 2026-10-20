@@ -33,7 +33,7 @@ These are logged only after Accept. Browser events also include language and tim
 
 - `page.view` — path
 - `page.leave` — path and approximate seconds on that page (capped at one day)
-- `ui.click` — EDIT PAGE, SAVE CHANGES, CANCEL CHANGES, View more, View less, Read More..., Show less, library Open, library Download
+- `ui.click` — Edit, Done, View more, View less, Read More..., Show less, library Open, library Download
 - `search.query` — past-honors and both library searches, with the query and result count (`used` is false)
 - `search.use` — a search result was opened, downloaded, or edited (`used` is true)
 - `document.preview` — PDF Open in the Treasurer or Financial Secretary library

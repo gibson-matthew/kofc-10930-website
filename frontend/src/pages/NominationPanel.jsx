@@ -99,6 +99,7 @@ export default function NominationPanel({ isAdmin }) {
   const [fallback, setFallback] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [pending, setPending] = useState(false);
   const [category, setCategory] = useState("knight_month");
   const [memberId, setMemberId] = useState("");
@@ -216,6 +217,7 @@ export default function NominationPanel({ isAdmin }) {
   async function onSubmit(event) {
     event.preventDefault();
     if (pending || fallback) return;
+    setNotice("");
     const cleanedReason = cleanReason(reason);
     if (cleanedReason.length > 280) {
       setError("Reason must be 280 characters or fewer.");
@@ -246,6 +248,7 @@ export default function NominationPanel({ isAdmin }) {
       await saveNomination(fields);
       try {
         await reload();
+        setNotice("Saved");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Saved, but the nominations could not be reloaded.");
       }
@@ -260,13 +263,16 @@ export default function NominationPanel({ isAdmin }) {
     if (!numericId(id) || fallback) return;
     setPending(true);
     setError("");
+    setNotice("");
     try {
       await withdrawNomination(id);
       setConfirmId(null);
+      setNotice("Saved");
       try {
         await reload();
       } catch (err) {
         setNominations((current) => current.filter((item) => item.id !== id));
+        setNotice("");
         setError(err instanceof Error ? err.message : "Withdrawn, but the nominations could not be reloaded.");
       }
     } catch (err) {
@@ -283,6 +289,11 @@ export default function NominationPanel({ isAdmin }) {
     <>
       {fallback ? (
         <p className="settings-hint">Nominations are unavailable right now.</p>
+      ) : null}
+      {notice ? (
+        <p className="settings-notice is-confirm" role="status">
+          {notice}
+        </p>
       ) : null}
       {error ? (
         <p className="signin-error" role="alert">
