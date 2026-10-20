@@ -39,8 +39,21 @@ const SLOTS = [
 
 const EMPTY_MEMBER = { memberid: "", password: "", display_name: "", title: "", birth_month: "", birth_day: "" };
 
+const DIRECTORY_PREVIEW = 3;
+const MEDIA_PREVIEW = 2;
+
 function collapse(value) {
   return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+function searchNeedle(value) {
+  return collapse(value).toLowerCase().replace(/[\u2013\u2014-]/g, "-");
+}
+
+function memberMatches(member, needle) {
+  if (!needle) return true;
+  const haystack = searchNeedle(`${member.display_name || ""} ${member.memberid || ""} ${titleText(member.title)}`);
+  return haystack.includes(needle);
 }
 
 function titleText(title) {
@@ -182,6 +195,41 @@ function BirthdayEditor({ member, onSave }) {
   );
 }
 
+function ListPanel({ open, canToggle, onToggle, query, onQuery, placeholder, noMatches, gridClass, children }) {
+  return (
+    <>
+      {canToggle ? (
+        <div className="signin-actions recog-actions">
+          <button type="button" className="btn btn-quiet" aria-expanded={open} onClick={onToggle}>
+            {open ? "View less" : "View all"}
+          </button>
+        </div>
+      ) : null}
+      {open ? (
+        <label className="signin-field">
+          <span>Search</span>
+          <input
+            type="search"
+            value={query}
+            placeholder={placeholder}
+            autoComplete="off"
+            onChange={(event) => onQuery(event.target.value)}
+          />
+        </label>
+      ) : null}
+      {noMatches ? (
+        <p className="settings-hint" role="status">
+          No matches.
+        </p>
+      ) : (
+        <div className={open && canToggle ? "settings-scroll" : undefined}>
+          <div className={gridClass}>{children}</div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function Photo({ user, className }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -198,6 +246,12 @@ export default function SettingsView() {
   const admin = Boolean(user?.is_admin);
   const [members, setMembers] = useState([]);
   const [images, setImages] = useState([]);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [membersQuery, setMembersQuery] = useState("");
+  const [adminsOpen, setAdminsOpen] = useState(false);
+  const [adminsQuery, setAdminsQuery] = useState("");
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [mediaQuery, setMediaQuery] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState(false);
@@ -479,6 +533,37 @@ export default function SettingsView() {
   }
 
   const adminCount = members.filter((member) => member.is_admin).length;
+  const memberNeedle = membersOpen ? searchNeedle(membersQuery) : "";
+  const shownMembers = membersOpen
+    ? members.filter((member) => memberMatches(member, memberNeedle))
+    : members.slice(0, DIRECTORY_PREVIEW);
+  const adminNeedle = adminsOpen ? searchNeedle(adminsQuery) : "";
+  const shownAdmins = adminsOpen
+    ? members.filter((member) => memberMatches(member, adminNeedle))
+    : members.slice(0, DIRECTORY_PREVIEW);
+  const mediaNeedle = mediaOpen ? searchNeedle(mediaQuery) : "";
+  const shownImages = mediaOpen
+    ? images.filter((image) => {
+        if (!mediaNeedle) return true;
+        const slot = SLOTS.find(([value]) => value === image.slot);
+        return searchNeedle(`${image.original_name || ""} ${slot ? slot[1] : ""}`).includes(mediaNeedle);
+      })
+    : images.slice(0, MEDIA_PREVIEW);
+
+  function toggleMembers() {
+    if (membersOpen) setMembersQuery("");
+    setMembersOpen((open) => !open);
+  }
+
+  function toggleAdmins() {
+    if (adminsOpen) setAdminsQuery("");
+    setAdminsOpen((open) => !open);
+  }
+
+  function toggleMedia() {
+    if (mediaOpen) setMediaQuery("");
+    setMediaOpen((open) => !open);
+  }
 
   return (
     <div className="container settings-view">
@@ -488,13 +573,14 @@ export default function SettingsView() {
           <h2 id="settingsHeading">Settings</h2>
           <p>{memberLabel(user)}</p>
           {admin ? (
-            <p className="settings-jump">
+            <nav className="settings-jump" aria-label="Settings sections">
+              <a href="#profile">Profile photo</a>
               <a href="#new-member">New member</a>
               <a href="#members">Members</a>
               <a href="#admin-access">Admin access</a>
               <a href="#media">Media</a>
               <a href="#logs">Logs & activity</a>
-            </p>
+            </nav>
           ) : null}
         </div>
         {error ? (
@@ -509,7 +595,7 @@ export default function SettingsView() {
         ) : null}
 
         <div className="settings-stack">
-          <article className="card settings-card">
+          <article className="card settings-card" id="profile">
             <h3>Profile photo</h3>
             <p>One photo. It is public and appears wherever you are shown.</p>
             {editor ? (
@@ -649,8 +735,17 @@ export default function SettingsView() {
             </form>
           </article>
           {loadingAdmin ? <p>Loading members…</p> : null}
-          <div className="officer-grid">
-            {members.map((member) => (
+          <ListPanel
+            open={membersOpen}
+            canToggle={members.length > DIRECTORY_PREVIEW}
+            onToggle={toggleMembers}
+            query={membersQuery}
+            onQuery={setMembersQuery}
+            placeholder="Name or membership ID"
+            noMatches={membersOpen && memberNeedle && shownMembers.length === 0}
+            gridClass="officer-grid"
+          >
+            {shownMembers.map((member) => (
               <article className="officer" key={member.memberid}>
                 <Photo user={member} className="portrait-sm" />
                 <div>
@@ -674,7 +769,7 @@ export default function SettingsView() {
                 </div>
               </article>
             ))}
-          </div>
+          </ListPanel>
         </section>
       ) : null}
 
@@ -684,10 +779,24 @@ export default function SettingsView() {
             <div className="eyebrow left-only">Webmaster</div>
             <h2 id="adminHeading">Admin access</h2>
             <p>Full edit access uses the same Edit page, Save changes, and Cancel changes controls.</p>
+            {loadingAdmin ? null : (
+              <p className="settings-hint">
+                {adminCount === 1 ? "1 member has full edit access." : `${adminCount} members have full edit access.`}
+              </p>
+            )}
           </div>
           {loadingAdmin ? <p>Loading members…</p> : null}
-          <div className="officer-grid">
-            {members.map((member) => {
+          <ListPanel
+            open={adminsOpen}
+            canToggle={members.length > DIRECTORY_PREVIEW}
+            onToggle={toggleAdmins}
+            query={adminsQuery}
+            onQuery={setAdminsQuery}
+            placeholder="Name or membership ID"
+            noMatches={adminsOpen && adminNeedle && shownAdmins.length === 0}
+            gridClass="officer-grid"
+          >
+            {shownAdmins.map((member) => {
               const lastAdmin = member.is_admin && adminCount < 2;
               return (
                 <article className="officer" key={member.memberid}>
@@ -709,7 +818,7 @@ export default function SettingsView() {
                 </article>
               );
             })}
-          </div>
+          </ListPanel>
         </section>
       ) : null}
 
@@ -726,8 +835,17 @@ export default function SettingsView() {
               <input type="file" accept={PHOTO_ACCEPT} hidden onChange={onUpload} disabled={pending} />
             </label>
           </div>
-          <div className="media-grid">
-            {images.map((image) => (
+          <ListPanel
+            open={mediaOpen}
+            canToggle={images.length > MEDIA_PREVIEW}
+            onToggle={toggleMedia}
+            query={mediaQuery}
+            onQuery={setMediaQuery}
+            placeholder="File name"
+            noMatches={mediaOpen && mediaNeedle && shownImages.length === 0}
+            gridClass="media-grid"
+          >
+            {shownImages.map((image) => (
               <article className="card media-card" key={image.id}>
                 <img src={image.url} alt="" />
                 <strong>{image.original_name}</strong>
@@ -763,7 +881,7 @@ export default function SettingsView() {
                 </div>
               </article>
             ))}
-          </div>
+          </ListPanel>
         </section>
       ) : null}
 

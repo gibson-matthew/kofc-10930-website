@@ -80,6 +80,32 @@ function detailsText(details) {
   }
 }
 
+const LOG_PREVIEW = 2;
+
+function LogRow({ row, members }) {
+  const choice = choiceLabel(row.choice);
+  const meta = [
+    row.kind === "consent" && choice ? choice : "",
+    row.kind === "consent" ? `version ${row.version || "1"}` : "",
+    tierLabel(row.tier),
+    personText(row, members),
+    row.ip || "",
+    row.user_agent || "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <article className="log-row">
+      <div className="log-row-head">
+        <strong>{row.kind === "consent" ? "Cookie choice" : row.event_type}</strong>
+        <time dateTime={row.created_at || undefined}>{formatWhen(row.created_at)}</time>
+      </div>
+      <p className="log-meta">{meta}</p>
+      <pre className="log-details">{detailsText(row.details)}</pre>
+    </article>
+  );
+}
+
 export default function ActivityLog({ members = [] }) {
   const [eventType, setEventType] = useState("");
   const [memberId, setMemberId] = useState("");
@@ -90,6 +116,20 @@ export default function ActivityLog({ members = [] }) {
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [problem, setProblem] = useState("");
+  const [open, setOpen] = useState(false);
+
+  function onToggle() {
+    if (open) {
+      setEventType("");
+      setMemberId("");
+      setDateFrom("");
+      setDateTo("");
+      setQuery("");
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+  }
 
   useEffect(() => {
     let cancel = false;
@@ -132,64 +172,72 @@ export default function ActivityLog({ members = [] }) {
 
   const filtered = Boolean(eventType || memberId.trim() || dateFrom || dateTo || query.trim());
   const datesReversed = Boolean(dateFrom && dateTo && dateFrom > dateTo);
+  const visible = open ? rows : rows.slice(0, LOG_PREVIEW);
 
   return (
     <div>
-      <div className="log-filters">
-        <label className="signin-field">
-          <span>Event type</span>
-          <select value={eventType} onChange={(event) => setEventType(event.target.value)}>
-            <option value="">All</option>
-            {EVENT_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="signin-field">
-          <span>From</span>
-          <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
-        </label>
-        <label className="signin-field">
-          <span>To</span>
-          <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-        </label>
-        <label className="signin-field">
-          <span>Member</span>
-          <input
-            type="text"
-            name="log-member"
-            autoComplete="off"
-            spellCheck={false}
-            maxLength={80}
-            placeholder="Name or membership ID"
-            value={memberId}
-            onChange={(event) => setMemberId(event.target.value)}
-          />
-        </label>
-        <label className="signin-field">
-          <span>Search</span>
-          <input
-            type="search"
-            name="log-search"
-            autoComplete="off"
-            spellCheck={false}
-            maxLength={120}
-            placeholder="Event, member, or details"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
+      <div className="signin-actions recog-actions">
+        <button type="button" className="btn btn-quiet" aria-expanded={open} onClick={onToggle}>
+          {open ? "View less" : "View all"}
+        </button>
       </div>
-      {datesReversed ? <p className="settings-hint">The From date is after the To date.</p> : null}
+      {open ? (
+        <div className="log-filters">
+          <label className="signin-field">
+            <span>Event type</span>
+            <select value={eventType} onChange={(event) => setEventType(event.target.value)}>
+              <option value="">All</option>
+              {EVENT_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="signin-field">
+            <span>From</span>
+            <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+          </label>
+          <label className="signin-field">
+            <span>To</span>
+            <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+          </label>
+          <label className="signin-field">
+            <span>Member</span>
+            <input
+              type="text"
+              name="log-member"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={80}
+              placeholder="Name or membership ID"
+              value={memberId}
+              onChange={(event) => setMemberId(event.target.value)}
+            />
+          </label>
+          <label className="signin-field">
+            <span>Search</span>
+            <input
+              type="search"
+              name="log-search"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={120}
+              placeholder="Event, member, or details"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
+        </div>
+      ) : null}
+      {open && datesReversed ? <p className="settings-hint">The From date is after the To date.</p> : null}
       {problem ? (
         <p className="signin-error" role="alert">
           {problem}
         </p>
       ) : null}
       {loading && rows.length === 0 && !problem ? <p className="settings-hint">Loading activity…</p> : null}
-      {!loading && !problem && truncated ? (
+      {open && !loading && !problem && truncated ? (
         <p className="settings-hint" role="status">
           Showing the newest 200 matching rows.
         </p>
@@ -199,31 +247,11 @@ export default function ActivityLog({ members = [] }) {
           {filtered ? "No matches." : "No activity recorded."}
         </p>
       ) : null}
-      {rows.length > 0 ? (
-        <div className="log-scroll" tabIndex={0} aria-label="Activity log">
-          {rows.map((row) => {
-            const choice = choiceLabel(row.choice);
-            const meta = [
-              row.kind === "consent" && choice ? choice : "",
-              row.kind === "consent" ? `version ${row.version || "1"}` : "",
-              tierLabel(row.tier),
-              personText(row, members),
-              row.ip || "",
-              row.user_agent || "",
-            ]
-              .filter(Boolean)
-              .join(" · ");
-            return (
-              <article className="log-row" key={`${row.kind || "event"}-${row.id}`}>
-                <div className="log-row-head">
-                  <strong>{row.kind === "consent" ? "Cookie choice" : row.event_type}</strong>
-                  <time dateTime={row.created_at || undefined}>{formatWhen(row.created_at)}</time>
-                </div>
-                <p className="log-meta">{meta}</p>
-                <pre className="log-details">{detailsText(row.details)}</pre>
-              </article>
-            );
-          })}
+      {visible.length > 0 ? (
+        <div className={open ? "log-scroll" : undefined} tabIndex={open ? 0 : undefined} aria-label="Activity log">
+          {visible.map((row) => (
+            <LogRow key={`${row.kind || "event"}-${row.id}`} row={row} members={members} />
+          ))}
         </div>
       ) : null}
     </div>
