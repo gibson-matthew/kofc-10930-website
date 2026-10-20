@@ -467,6 +467,11 @@ body.page-public .section-head p {
   overflow: hidden;
 }
 
+/* Clears the fixed public header. member.css sets 9rem on every section[id]. */
+body.page-public #join {
+  scroll-margin-top: calc(0.7rem + 50px + 0.7rem + 1px);
+}
+
 .join-section::before {
   content: "";
   position: absolute;
@@ -581,8 +586,19 @@ body.page-public .section-head p {
   margin-top: 0.2rem;
 }
 
+body.page-login {
+  background:
+    radial-gradient(ellipse 80% 55% at 50% -15%, rgba(201, 162, 39, 0.14), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(110, 20, 35, 0.12), transparent 50%),
+    linear-gradient(165deg, var(--navy-deep) 0%, var(--navy) 48%, var(--navy-mid) 100%);
+}
+
 .login-screen {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -590,13 +606,44 @@ body.page-public .section-head p {
   gap: 1.35rem;
   padding: 1.5rem;
   background:
-    radial-gradient(ellipse at top, rgba(201, 162, 39, 0.16), transparent 55%),
-    var(--navy-deep);
+    radial-gradient(ellipse 80% 55% at 50% -15%, rgba(201, 162, 39, 0.14), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(110, 20, 35, 0.12), transparent 50%),
+    linear-gradient(165deg, var(--navy-deep) 0%, var(--navy) 48%, var(--navy-mid) 100%);
 }
 
-.login-brand { text-decoration: none; }
+.login-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.04;
+  background-image:
+    repeating-linear-gradient(45deg, var(--gold) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(-45deg, var(--gold) 0 1px, transparent 1px 48px);
+  pointer-events: none;
+}
+
+.login-screen::after {
+  content: "";
+  position: absolute;
+  width: 480px;
+  height: 480px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(201, 162, 39, 0.09), transparent 70%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -55%);
+  pointer-events: none;
+}
+
+.login-brand {
+  position: relative;
+  z-index: 1;
+  text-decoration: none;
+}
 
 .login-card {
+  position: relative;
+  z-index: 1;
   width: min(420px, 100%);
 }
 

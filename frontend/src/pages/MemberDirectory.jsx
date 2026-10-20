@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchDirectory, setMemberHonorary } from "../api";
+import { fetchDirectory } from "../api";
 import CroppedPhoto from "../components/CroppedPhoto";
 import { PortraitSm } from "../components/Marks";
 import { DIRECTORY_EXAMPLES } from "../content/directory";
@@ -47,11 +47,7 @@ export default function MemberDirectory({ canManage }) {
   const [items, setItems] = useState([]);
   const [fallback, setFallback] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [pendingId, setPendingId] = useState("");
   const [query, setQuery] = useState("");
-  const manage = Boolean(canManage) && !fallback;
   const showContact = Boolean(canManage);
 
   useEffect(() => {
@@ -76,27 +72,6 @@ export default function MemberDirectory({ canManage }) {
     };
   }, [canManage]);
 
-  async function onHonorary(member, next) {
-    setPendingId(member.memberid);
-    setError("");
-    setNotice("");
-    try {
-      const updated = await setMemberHonorary(member.memberid, next);
-      setNotice("Saved");
-      setItems((current) =>
-        current.map((item) =>
-          item.memberid === member.memberid
-            ? { ...item, honorary_life: Boolean(updated?.honorary_life) }
-            : item,
-        ),
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update Honorary Life Member.");
-    } finally {
-      setPendingId("");
-    }
-  }
-
   const needle = searchText({ display_name: query, title: "" });
   const shown = needle ? items.filter((item) => searchText(item).includes(needle)) : items;
 
@@ -104,16 +79,6 @@ export default function MemberDirectory({ canManage }) {
     <>
       {fallback ? (
         <p className="settings-hint">Showing the example list while the council records are unavailable.</p>
-      ) : null}
-      {notice ? (
-        <p className="settings-notice is-confirm" role="status">
-          {notice}
-        </p>
-      ) : null}
-      {error ? (
-        <p className="signin-error" role="alert">
-          {error}
-        </p>
       ) : null}
       {!loaded ? <p className="settings-hint">Loading…</p> : null}
       {loaded && items.length === 0 ? <p className="settings-hint">None recorded yet.</p> : null}
@@ -139,7 +104,6 @@ export default function MemberDirectory({ canManage }) {
             <ul className="doc-list">
               {shown.map((item) => {
                 const office = titleLabel(item.title);
-                const pending = pendingId === item.memberid;
                 return (
                   <li key={item.memberid}>
                     <div className="member-row">
@@ -147,21 +111,9 @@ export default function MemberDirectory({ canManage }) {
                       <div>
                         <h3>{item.display_name || "Member"}</h3>
                         {office ? <p>{office}</p> : null}
-                        {item.honorary_life && !manage ? <p className="member-honor">Honorary Life Member</p> : null}
+                        {item.honorary_life ? <p className="member-honor">Honorary Life Member</p> : null}
                         {showContact && item.phone ? <p className="settings-hint">{item.phone}</p> : null}
                         {showContact && item.email ? <p className="settings-hint">{item.email}</p> : null}
-                        {manage ? (
-                          <label className="admin-toggle">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(item.honorary_life)}
-                              disabled={Boolean(pendingId)}
-                              onChange={(event) => onHonorary(item, event.target.checked)}
-                            />
-                            Honorary Life Member
-                          </label>
-                        ) : null}
-                        {pending ? <p className="settings-hint">Saving…</p> : null}
                       </div>
                     </div>
                   </li>
