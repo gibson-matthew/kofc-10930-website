@@ -5,10 +5,11 @@
 -- The API reads DATABASE_URL
 -- (default postgresql://postgres:postgres@localhost:5432/koc10930).
 -- Passwords are bcrypt hashes. The API creates membership id 1000000
--- on startup when that row is missing, with officer title GK and admin
--- access. It also creates membership id 1000001 without admin access.
+-- on startup when that row is missing, with officer title GK, admin
+-- access, and webmaster access. It also creates membership id 1000001
+-- without admin or webmaster access.
 -- Test roster ids 1000100 through 1000149 are created the same way.
--- They share the password Password123! with 1000000 (David Hernandez, GK, admin)
+-- They share the password Password123! with 1000000 (David Hernandez, GK, admin, webmaster)
 -- and 1000001 (Sample Brother, not an admin).
 -- Profile photos are images/seed/members/<membership id>.png.
 -- A test-roster profile photo is attached only when that member row is first created.
@@ -16,6 +17,8 @@
 --   .\.venv\Scripts\python.exe backend\seed_member.py
 -- members.title stores one officer-title abbreviation, or NULL.
 -- members.is_admin grants full edit access.
+-- members.is_webmaster grants that same access plus Logs & activity.
+-- Only a webmaster can grant or revoke webmaster access. The last webmaster stays.
 -- members.birth_month and members.birth_day store a birthday, or both stay NULL.
 -- members.honorary_life marks an Honorary Life Member.
 -- members.phone and members.email are optional. The member list omits them for non-admins.
@@ -48,6 +51,7 @@ CREATE TABLE IF NOT EXISTS members (
   display_name TEXT NOT NULL,
   title TEXT,
   is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  is_webmaster BOOLEAN NOT NULL DEFAULT FALSE,
   birth_month SMALLINT,
   birth_day SMALLINT,
   honorary_life BOOLEAN NOT NULL DEFAULT FALSE,
@@ -57,6 +61,7 @@ CREATE TABLE IF NOT EXISTS members (
 
 ALTER TABLE members ADD COLUMN IF NOT EXISTS title TEXT;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS is_webmaster BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_month SMALLINT;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_day SMALLINT;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS honorary_life BOOLEAN NOT NULL DEFAULT FALSE;
@@ -443,6 +448,11 @@ SET is_admin = TRUE,
     title = COALESCE(title, 'GK')
 WHERE membership_id = '1000000'
   AND NOT EXISTS (SELECT 1 FROM members WHERE is_admin);
+
+UPDATE members
+SET is_webmaster = TRUE
+WHERE membership_id = '1000000'
+  AND NOT EXISTS (SELECT 1 FROM members WHERE is_webmaster);
 
 CREATE TABLE IF NOT EXISTS honors (
   id SERIAL PRIMARY KEY,

@@ -488,7 +488,7 @@ def login_success(request, member: dict) -> None:
         member_id=member_id,
         details={"session_id": uuid4().hex},
     )
-    if member.get("is_admin"):
+    if member.get("is_admin") or member.get("is_webmaster"):
         record(request, "auth.admin_login", tier="necessary", member_id=member_id, details={"result": "success"})
 
 
@@ -605,18 +605,19 @@ def title_changes(request, admin_id, before_rows, after_rows) -> None:
     )
 
 
-def flag_change(request, admin_id, target_id, before, after) -> None:
-    old = None if before is None else bool(before.get("is_admin"))
-    new = None if after is None else bool(after.get("is_admin"))
+def flag_change(request, admin_id, target_id, before, after, flag: str = "is_admin") -> None:
+    old = None if before is None else bool(before.get(flag))
+    new = None if after is None else bool(after.get(flag))
     if before is not None and old == new:
         return
+    content_type = "webmaster_flag" if flag == "is_webmaster" else "admin_flag"
     record(
         request,
         "admin.flag_change",
         tier="necessary",
         member_id=admin_id,
         details={
-            "content_type": "admin_flag",
+            "content_type": content_type,
             "record_id": str(target_id),
             "before": old,
             "after": new,
@@ -764,7 +765,7 @@ _HIDDEN_DETAIL_KEYS = {"password", "password_hash", "token", "authorization", "c
 
 
 def _unavailable() -> dict:
-    return {"available": False, "truncated": False, "rows": []}
+    return {"available": False, "truncated": False, "rows": [], "summary": None}
 
 
 def _clip(value, limit: int) -> str:
@@ -1014,6 +1015,131 @@ def _consent_row(record: dict) -> dict:
     }
 
 
+def _as_dict(value) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _day_span(today: str, count: int = 14) -> list[str]:
+    try:
+        end = datetime.strptime(str(today)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        end = datetime.now(timezone.utc).date()
+    return [(end - timedelta(days=offset)).isoformat() for offset in range(count - 1, -1, -1)]
+
+
+def _activity_summary(cur) -> dict:
+    """Totals for the webmaster charts. Independent of the table filters."""
+    cur.execute(
+        """
+        SELECT event_type, tier, COUNT(*)::int AS count
+        FROM audit_events
+        GROUP BY event_type, tier
+        """
+    )
+    counts: dict[str, int] = {}
+    necessary = 0
+    accept = 0
+    for row in cur.fetchall():
+        event_type = str(row["event_type"] or "")
+        count = int(row["count"] or 0)
+        counts[event_type] = counts.get(event_type, 0) + count
+        if row["tier"] == "accept":
+            accept += count
+        else:
+            necessary += count
+    cur.execute("SELECT to_char((NOW() AT TIME ZONE 'America/Chicago')::date, 'YYYY-MM-DD') AS today")
+    today_row = cur.fetchone()
+    today = str(today_row["today"]) if today_row and today_row["today"] else datetime.now(timezone.utc).date().isoformat()
+    days = _day_span(today)
+    cur.execute(
+        """
+        SELECT to_char((created_at AT TIME ZONE 'America/Chicago')::date, 'YYYY-MM-DD') AS day,
+               event_type,
+               COUNT(*)::int AS count
+        FROM audit_events
+        WHERE event_type IN ('auth.login_success', 'auth.login_failure', 'page.view')
+          AND (created_at AT TIME ZONE 'America/Chicago')::date >= %s::date
+        GROUP BY 1, 2
+        """,
+        (days[0],),
+    )
+    by_day: dict[str, dict[str, int]] = {day: {} for day in days}
+    for row in cur.fetchall():
+        day = str(row["day"] or "")
+        if day in by_day:
+            by_day[day][str(row["event_type"] or "")] = int(row["count"] or 0)
+    cur.execute(
+        """
+        SELECT choice, COUNT(*)::int AS count
+        FROM consent_choices
+        GROUP BY choice
+        """
+    )
+    consent = {"accepted": 0, "declined": 0}
+    for row in cur.fetchall():
+        choice = str(row["choice"] or "")
+        if choice in consent:
+            consent[choice] = int(row["count"] or 0)
+    cur.execute(
+        """
+        SELECT e.event_type, e.created_at, e.membership_id, e.details, m.display_name
+        FROM audit_events e
+        LEFT JOIN members m ON m.membership_id = e.membership_id
+        WHERE e.event_type IN ('admin.content_create', 'admin.content_update', 'admin.content_delete')
+        ORDER BY e.created_at DESC
+        LIMIT 6
+        """
+    )
+    changes = []
+    for row in cur.fetchall():
+        details = _as_dict(row["details"])
+        changes.append(
+            {
+                "event_type": str(row["event_type"] or ""),
+                "created_at": _iso(row["created_at"]),
+                "membership_id": str(row["membership_id"] or ""),
+                "display_name": str(row["display_name"] or ""),
+                "content_type": str(details.get("content_type") or ""),
+                "record_id": str(details.get("record_id") or ""),
+            }
+        )
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:8]
+    return {
+        "events": necessary + accept,
+        "necessary": necessary,
+        "accept": accept,
+        "login_success": counts.get("auth.login_success", 0),
+        "login_failure": counts.get("auth.login_failure", 0),
+        "login_bursts": counts.get("security.login_burst", 0),
+        "logins_by_day": [
+            {
+                "day": day,
+                "success": by_day[day].get("auth.login_success", 0),
+                "failure": by_day[day].get("auth.login_failure", 0),
+            }
+            for day in days
+        ],
+        "top_events": [{"event_type": name, "count": count} for name, count in ranked],
+        "consent_accepted": consent["accepted"],
+        "consent_declined": consent["declined"],
+        "document_downloads": counts.get("document.download", 0),
+        "document_previews": counts.get("document.preview", 0),
+        "page_views": counts.get("page.view", 0),
+        "page_views_by_day": [
+            {"day": day, "count": by_day[day].get("page.view", 0)} for day in days
+        ],
+        "content_changes": changes,
+    }
+
+
 def list_activity(
     *,
     event_type: str = "",
@@ -1088,7 +1214,12 @@ def list_activity(
                 elif isinstance(attempted, str) and attempted in names:
                     row["display_name"] = names[attempted]
                 row.pop("_sort", None)
-        return {"available": True, "truncated": truncated, "rows": visible}
+            summary = None
+            try:
+                summary = _activity_summary(cur)
+            except Exception as exc:
+                log.warning("Could not summarize activity: %s", exc)
+        return {"available": True, "truncated": truncated, "rows": visible, "summary": summary}
     except Exception as exc:
         log.warning("Could not read the activity log: %s", exc)
         return _unavailable()

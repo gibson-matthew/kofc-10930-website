@@ -17,6 +17,7 @@ import {
   setMemberAdmin,
   setMemberBirthday,
   setMemberHonorary,
+  setMemberWebmaster,
   updateMyCrop,
   uploadMedia,
   uploadMyPhoto,
@@ -54,6 +55,12 @@ function memberMatches(member, needle) {
   if (!needle) return true;
   const haystack = searchNeedle(`${member.display_name || ""} ${member.memberid || ""} ${titleText(member.title)}`);
   return haystack.includes(needle);
+}
+
+function accessLabel(member) {
+  if (member.is_webmaster) return "Webmaster";
+  if (member.is_admin) return "Admin";
+  return "Member";
 }
 
 function titleText(title) {
@@ -243,7 +250,8 @@ function Photo({ user, className }) {
 
 export default function SettingsView() {
   const { user, refresh } = useAuth();
-  const admin = Boolean(user?.is_admin);
+  const webmaster = Boolean(user?.is_webmaster);
+  const admin = Boolean(user?.is_admin || webmaster);
   const [members, setMembers] = useState([]);
   const [images, setImages] = useState([]);
   const [membersOpen, setMembersOpen] = useState(false);
@@ -536,6 +544,14 @@ export default function SettingsView() {
     }, next ? "Admin access granted." : "Admin access removed.");
   }
 
+  function onWebmaster(member, next) {
+    run("admin", async () => {
+      const updated = await setMemberWebmaster(member.memberid, next);
+      setMembers((current) => current.map((item) => (item.memberid === updated.memberid ? updated : item)));
+      if (updated.memberid === user?.memberid) await refresh();
+    }, next ? "Webmaster access granted." : "Webmaster access removed.");
+  }
+
   function onHonorary(member, next) {
     run("members", async () => {
       const updated = await setMemberHonorary(member.memberid, next);
@@ -548,6 +564,7 @@ export default function SettingsView() {
   }
 
   const adminCount = members.filter((member) => member.is_admin).length;
+  const webmasterCount = members.filter((member) => member.is_webmaster).length;
   const memberNeedle = membersOpen ? searchNeedle(membersQuery) : "";
   const shownMembers = membersOpen
     ? members.filter((member) => memberMatches(member, memberNeedle))
@@ -594,7 +611,7 @@ export default function SettingsView() {
               <a href="#members">Members</a>
               <a href="#admin-access">Admin access</a>
               <a href="#media">Media</a>
-              <a href="#logs">Logs & activity</a>
+              {webmaster ? <a href="#logs">Logs & activity</a> : null}
             </nav>
           ) : null}
         </div>
@@ -766,7 +783,7 @@ export default function SettingsView() {
                   <p className="settings-hint">
                     {titleText(member.title)}
                     {" · "}
-                    {member.is_admin ? "Admin" : "Member"}
+                    {accessLabel(member)}
                   </p>
                   <label className="admin-toggle">
                     <input
@@ -796,6 +813,11 @@ export default function SettingsView() {
                 {adminCount === 1 ? "1 member has full edit access." : `${adminCount} members have full edit access.`}
               </p>
             )}
+            {webmaster && !loadingAdmin ? (
+              <p className="settings-hint">
+                {webmasterCount === 1 ? "1 member is a webmaster." : `${webmasterCount} members are webmasters.`}
+              </p>
+            ) : null}
           </div>
           <Flash scope="admin" />
           {loadingAdmin ? <p>Loading members…</p> : null}
@@ -811,6 +833,7 @@ export default function SettingsView() {
           >
             {shownAdmins.map((member) => {
               const lastAdmin = member.is_admin && adminCount < 2;
+              const lastWebmaster = member.is_webmaster && webmasterCount < 2;
               return (
                 <article className="officer" key={member.memberid}>
                   <Photo user={member} className="portrait-sm" />
@@ -827,6 +850,20 @@ export default function SettingsView() {
                       Full edit access
                     </label>
                     {lastAdmin ? <p className="settings-hint">The council needs at least one admin.</p> : null}
+                    {webmaster ? (
+                      <label className="admin-toggle">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(member.is_webmaster)}
+                          disabled={pending || lastWebmaster}
+                          onChange={(event) => onWebmaster(member, event.target.checked)}
+                        />
+                        Webmaster
+                      </label>
+                    ) : null}
+                    {webmaster && lastWebmaster ? (
+                      <p className="settings-hint">The council needs at least one webmaster.</p>
+                    ) : null}
                   </div>
                 </article>
               );
@@ -899,7 +936,7 @@ export default function SettingsView() {
         </section>
       ) : null}
 
-      {admin ? (
+      {webmaster ? (
         <section className="block" id="logs" aria-labelledby="logsHeading">
           <div className="section-head">
             <div className="eyebrow left-only">Webmaster</div>

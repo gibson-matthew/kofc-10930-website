@@ -176,6 +176,7 @@ class Store:
                 status = _upsert_test_member(cur, hashed)
                 _ensure_sample_member(cur, hashed)
                 _ensure_admin(cur)
+                _ensure_webmaster(cur)
                 _rename_test_member(cur)
                 _ensure_test_roster(cur, hashed)
             conn.commit()
@@ -389,6 +390,7 @@ class Store:
             "display_name": record["display_name"],
             "title": title,
             "is_admin": bool(record.get("is_admin")),
+            "is_webmaster": bool(record.get("is_webmaster")),
             "photo_url": photo_url,
             "crop_x": float(record.get("crop_x") or 0),
             "crop_y": float(record.get("crop_y") or 0),
@@ -571,6 +573,60 @@ class Store:
             raise StoreError("Member was not found.", 404)
         return member
 
+    def set_webmaster(self, memberid: str, is_webmaster: bool) -> dict:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                target = next((item for item in self._members if item["membership_id"] == memberid), None)
+                if target is None:
+                    raise StoreError("Member was not found.", 404)
+                if target.get("is_webmaster") and not is_webmaster:
+                    webmasters = sum(1 for item in self._members if item.get("is_webmaster"))
+                    if webmasters <= 1:
+                        raise StoreError("The council needs at least one webmaster.", 400)
+                target["is_webmaster"] = bool(is_webmaster)
+            record = self._memory_member(memberid)
+            if record is None:
+                raise StoreError("Member was not found.", 404)
+            return self._public_member(record)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT membership_id, is_webmaster
+                    FROM members
+                    WHERE membership_id = %s OR is_webmaster
+                    ORDER BY membership_id
+                    FOR UPDATE
+                    """,
+                    (memberid,),
+                )
+                rows = cur.fetchall()
+                target = next((item for item in rows if item[0] == memberid), None)
+                if target is None:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Member was not found.", 404)
+                if target[1] and not is_webmaster and sum(1 for item in rows if item[1]) <= 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("The council needs at least one webmaster.", 400)
+                cur.execute(
+                    "UPDATE members SET is_webmaster = %s WHERE membership_id = %s",
+                    (bool(is_webmaster), memberid),
+                )
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not update webmaster access.", 503) from exc
+        member = self.get_member(memberid)
+        if member is None:
+            raise StoreError("Member was not found.", 404)
+        return member
+
     def assign_roles(self, officer: list[dict], director: list[dict]) -> list[dict]:
         desired, managed = _role_plan(officer, director)
         conn = self._open()
@@ -649,6 +705,7 @@ class Store:
                     "display_name": name,
                     "title": cleaned,
                     "is_admin": False,
+                    "is_webmaster": False,
                     "birth_month": birth_month,
                     "birth_day": birth_day,
                     "honorary_life": False,
@@ -685,6 +742,7 @@ class Store:
                         "display_name": name,
                         "title": cleaned,
                         "is_admin": False,
+                        "is_webmaster": False,
                         "birth_month": month,
                         "birth_day": day,
                         "honorary_life": False,
@@ -746,6 +804,7 @@ class Store:
             "display_name": row[1],
             "title": saved_title,
             "is_admin": bool(row[3]),
+            "is_webmaster": False,
             "photo_url": None,
             "crop_x": 0.0,
             "crop_y": 0.0,
@@ -2692,6 +2751,7 @@ CREATE TABLE IF NOT EXISTS members (
   display_name TEXT NOT NULL,
   title TEXT,
   is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  is_webmaster BOOLEAN NOT NULL DEFAULT FALSE,
   birth_month SMALLINT,
   birth_day SMALLINT,
   honorary_life BOOLEAN NOT NULL DEFAULT FALSE,
@@ -2703,7 +2763,8 @@ CREATE TABLE IF NOT EXISTS members (
 _MEMBER_SELECT = """
 SELECT m.membership_id, m.password_hash, m.display_name, m.title, m.is_admin,
        i.id, i.path, i.crop_x, i.crop_y, i.crop_scale,
-       m.birth_month, m.birth_day, m.honorary_life, m.phone, m.email
+       m.birth_month, m.birth_day, m.honorary_life, m.phone, m.email,
+       m.is_webmaster
 FROM members m
 LEFT JOIN images i
   ON i.owner_membership_id = m.membership_id AND i.purpose = 'profile'
@@ -2735,6 +2796,7 @@ def _memory_member_rows(hashed: str) -> list[dict]:
             "display_name": TEST_MEMBER_NAME,
             "title": TEST_MEMBER_TITLE,
             "is_admin": True,
+            "is_webmaster": True,
             "birth_month": None,
             "birth_day": None,
             **_memory_contact(TEST_MEMBER_ID),
@@ -2745,6 +2807,7 @@ def _memory_member_rows(hashed: str) -> list[dict]:
             "display_name": SAMPLE_MEMBER_NAME,
             "title": None,
             "is_admin": False,
+            "is_webmaster": False,
             "birth_month": None,
             "birth_day": None,
             **_memory_contact(SAMPLE_MEMBER_ID),
@@ -2758,6 +2821,7 @@ def _memory_member_rows(hashed: str) -> list[dict]:
                 "display_name": member.display_name,
                 "title": member.title,
                 "is_admin": member.is_admin,
+                "is_webmaster": False,
                 "birth_month": member.birth_month,
                 "birth_day": member.birth_day,
                 **_memory_contact(member.membership_id),
@@ -2852,6 +2916,7 @@ def _record_from_row(row) -> dict:
         "honorary_life": bool(row[12]) if len(row) > 12 and row[12] is not None else False,
         "phone": str(row[13] or "").strip() if len(row) > 13 else "",
         "email": str(row[14] or "").strip() if len(row) > 14 else "",
+        "is_webmaster": bool(row[15]) if len(row) > 15 and row[15] is not None else False,
     }
 
 
@@ -3949,6 +4014,15 @@ def _ensure_schema(cur) -> None:
     cur.execute(
         "ALTER TABLE members ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE"
     )
+    webmaster_existed = members_existed and _column_exists(cur, "members", "is_webmaster")
+    cur.execute(
+        "ALTER TABLE members ADD COLUMN IF NOT EXISTS is_webmaster BOOLEAN NOT NULL DEFAULT FALSE"
+    )
+    if members_existed and not webmaster_existed:
+        cur.execute(
+            "UPDATE members SET is_webmaster = TRUE WHERE membership_id = %s",
+            (TEST_MEMBER_ID,),
+        )
     cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_month SMALLINT")
     cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_day SMALLINT")
     cur.execute(
@@ -4067,9 +4141,10 @@ def _upsert_test_member(cur, hashed: str) -> str:
     cur.execute(
         """
         INSERT INTO members (
-          membership_id, password_hash, display_name, title, is_admin, honorary_life, phone, email
+          membership_id, password_hash, display_name, title, is_admin, is_webmaster,
+          honorary_life, phone, email
         )
-        VALUES (%s, %s, %s, %s, TRUE, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, TRUE, TRUE, %s, %s, %s)
         ON CONFLICT (membership_id) DO NOTHING
         RETURNING id
         """,
@@ -4100,8 +4175,8 @@ def _upsert_test_member(cur, hashed: str) -> str:
 def _ensure_sample_member(cur, hashed: str) -> None:
     cur.execute(
         """
-        INSERT INTO members (membership_id, password_hash, display_name, title, is_admin)
-        VALUES (%s, %s, %s, NULL, FALSE)
+        INSERT INTO members (membership_id, password_hash, display_name, title, is_admin, is_webmaster)
+        VALUES (%s, %s, %s, NULL, FALSE, FALSE)
         ON CONFLICT (membership_id) DO NOTHING
         """,
         (SAMPLE_MEMBER_ID, hashed, SAMPLE_MEMBER_NAME),
@@ -4119,6 +4194,16 @@ def _ensure_admin(cur) -> None:
         WHERE membership_id = %s
         """,
         (TEST_MEMBER_TITLE, TEST_MEMBER_ID),
+    )
+
+
+def _ensure_webmaster(cur) -> None:
+    cur.execute("SELECT COUNT(*) FROM members WHERE is_webmaster")
+    if cur.fetchone()[0]:
+        return
+    cur.execute(
+        "UPDATE members SET is_webmaster = TRUE WHERE membership_id = %s",
+        (TEST_MEMBER_ID,),
     )
 
 

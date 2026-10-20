@@ -24,6 +24,10 @@ import { DIRECTOR_ROLES, memberLabel, OFFICER_ROLES } from "../titles";
 
 const TITLE = SITE_TITLE;
 
+function canManageSite(user) {
+  return Boolean(user?.is_admin || user?.is_webmaster);
+}
+
 const LINK_CARDS = [
   {
     title: "links.0.title",
@@ -944,7 +948,7 @@ function MemberView() {
             <span />
             <span />
           </button>
-          {user?.is_admin && !onSettings ? (
+          {canManageSite(user) && !onSettings ? (
             <div className="admin-cluster">
               <EditBar />
             </div>
@@ -1210,19 +1214,19 @@ function MemberView() {
                           shown ? (
                             <DocumentLibrary
                               library={card.library}
-                              canManage={Boolean(editing && user?.is_admin)}
+                              canManage={Boolean(editing && canManageSite(user))}
                             />
                           ) : null
                         ) : card.announcements ? (
                           shown ? (
-                            <AnnouncementList canManage={Boolean(editing && user?.is_admin)} />
+                            <AnnouncementList canManage={Boolean(editing && canManageSite(user))} />
                           ) : null
                         ) : card.roster ? (
-                          shown ? <MemberDirectory canManage={Boolean(user?.is_admin)} /> : null
+                          shown ? <MemberDirectory canManage={canManageSite(user)} /> : null
                         ) : card.prayers ? (
-                          shown ? <PrayerList isAdmin={Boolean(user?.is_admin)} /> : null
+                          shown ? <PrayerList isAdmin={canManageSite(user)} /> : null
                         ) : card.nominations ? (
-                          shown ? <NominationPanel isAdmin={Boolean(user?.is_admin)} /> : null
+                          shown ? <NominationPanel isAdmin={canManageSite(user)} /> : null
                         ) : birthdays ? (
                           <BirthdayList
                             roster={roster}
@@ -1316,7 +1320,7 @@ export default function MemberPage() {
   const path = usePath();
   const announcement = announcementPathId(path);
   return (
-    <ContentProvider slug="member" canEdit={Boolean(user?.is_admin)}>
+    <ContentProvider slug="member" canEdit={canManageSite(user)}>
       {announcement ? <AnnouncementReader id={announcement} /> : <MemberView />}
     </ContentProvider>
   );

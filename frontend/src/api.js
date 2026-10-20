@@ -233,6 +233,14 @@ export async function setMemberAdmin(memberid, isAdmin) {
   return readJson(response, "Could not update admin access.");
 }
 
+export async function setMemberWebmaster(memberid, isWebmaster) {
+  const response = await send(`/api/members/${encodeURIComponent(memberid)}/webmaster`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_webmaster: isWebmaster }),
+  });
+  return readJson(response, "Could not update webmaster access.");
+}
+
 export async function fetchMediaSlots() {
   const response = await fetch("/api/media/slots", { headers: { Accept: "application/json" } });
   if (!response.ok) throw new Error("media failed");

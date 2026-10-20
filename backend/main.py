@@ -117,6 +117,7 @@ class MemberOut(BaseModel):
     display_name: str
     title: str | None = None
     is_admin: bool = False
+    is_webmaster: bool = False
     photo_url: str | None = None
     crop_x: float = 0
     crop_y: float = 0
@@ -148,6 +149,10 @@ class AssignmentsIn(BaseModel):
 
 class AdminIn(BaseModel):
     is_admin: bool
+
+
+class WebmasterIn(BaseModel):
+    is_webmaster: bool
 
 
 class HonoraryIn(BaseModel):
@@ -483,12 +488,28 @@ def get_current_member(request: Request) -> dict:
     return member
 
 
+def has_edit_access(member: dict | None) -> bool:
+    if not member:
+        return False
+    return bool(member.get("is_admin") or member.get("is_webmaster"))
+
+
 def require_admin(request: Request, member: dict = Depends(get_current_member)) -> dict:
-    if not member.get("is_admin"):
+    if not has_edit_access(member):
         tracking.admin_denied(request, member.get("memberid"))
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access is required",
+        )
+    return member
+
+
+def require_webmaster(request: Request, member: dict = Depends(get_current_member)) -> dict:
+    if not member.get("is_webmaster"):
+        tracking.admin_denied(request, member.get("memberid"))
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Webmaster access is required",
         )
     return member
 
@@ -721,7 +742,7 @@ def member_directory(member: dict = Depends(get_current_member)) -> list[dict]:
         rows = store.list_directory()
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
-    admin = bool(member.get("is_admin"))
+    admin = has_edit_access(member)
     visible = []
     for row in rows:
         item = {key: row.get(key) for key in _DIRECTORY_PUBLIC}
@@ -749,6 +770,26 @@ def update_member_admin(
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
     tracking.flag_change(request, member.get("memberid"), memberid, before, updated)
+    return MemberOut(**updated)
+
+
+@api.patch("/members/{memberid}/webmaster", response_model=MemberOut)
+def update_member_webmaster(
+    memberid: str,
+    body: WebmasterIn,
+    request: Request,
+    member: dict = Depends(require_webmaster),
+) -> MemberOut:
+    before = None
+    try:
+        before = store.get_member(memberid)
+    except Exception:
+        before = None
+    try:
+        updated = store.set_webmaster(memberid, body.is_webmaster)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    tracking.flag_change(request, member.get("memberid"), memberid, before, updated, "is_webmaster")
     return MemberOut(**updated)
 
 
@@ -1426,10 +1467,10 @@ def delete_prayer(
     member: dict = Depends(get_current_member),
 ) -> Response:
     try:
-        store.delete_prayer(prayer_id, member.get("memberid"), bool(member.get("is_admin")))
+        store.delete_prayer(prayer_id, member.get("memberid"), has_edit_access(member))
     except StoreError as exc:
         _raise_store(exc)
-    if member.get("is_admin"):
+    if has_edit_access(member):
         tracking.admin_event(request, member.get("memberid"), "delete", "prayer_request", prayer_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1499,7 +1540,7 @@ def media_file(image_id: int, request: Request) -> FileResponse:
     visible = image["purpose"] == "profile" or bool(image.get("slot"))
     if not visible:
         member = optional_member(request)
-        if not (member and member.get("is_admin")):
+        if not has_edit_access(member):
             tracking.admin_denied(request, member.get("memberid") if member else None)
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image was not found.")
     try:
@@ -1533,10 +1574,9 @@ def audit_log(
     date_from: str = "",
     date_to: str = "",
     q: str = "",
-    admin: dict = Depends(require_admin),
+    admin: dict = Depends(require_webmaster),
 ) -> dict:
-    if not admin.get("is_admin"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access is required")
+    del admin
     return tracking.list_activity(
         event_type=event_type,
         member_id=member_id,

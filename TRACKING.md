@@ -24,7 +24,7 @@ These are logged without consent:
 - `file.upload` — success or failure for a profile photo, honor photo, library document, or media-library image, with type, size when known, and record id
 - `file.remove` — profile photo, honor photo, library document, or media-library image removed
 - `admin.content_create`, `admin.content_update`, `admin.content_delete` — content blocks, members, birthdays, honors, events, documents, announcements, prayer requests, and media-library images. Details include the admin id, record id, and content type. Content-block values, announcement HTML, and prayer text are not copied.
-- `admin.flag_change` — admin flag granted or removed
+- `admin.flag_change` — admin or webmaster flag granted or removed
 - `admin.title_change` — officer or director title changes, including a title cleared from the previous holder
 
 ## Accept
@@ -59,4 +59,4 @@ These are logged only after Accept. Browser events also include language and tim
 
 ## Admin review
 
-Administrators open Settings and use Logs & activity. The list shows `audit_events` and `consent_choices` (accepted or declined, time, and version), newest first. Filters cover event type, date, and member. Search matches event type, member, and details text. The list is read-only. A non-admin receives 403 and does not see the section. If Postgres is unavailable, that section shows a short notice and the rest of Settings still loads. Opening the log does not write a tracking event.
+Webmasters open Settings and use Logs & activity. Administrators do not see that section, and `GET /api/audit/log` returns 403 for anyone who is not a webmaster. The summary above the list charts sign-ins, failed sign-ins, top event types, cookie choices, document downloads and opens, page views, and recent content changes. The list shows `audit_events` and `consent_choices` (accepted or declined, time, and version), newest first. Filters cover event type, date, and member. Search matches event type, member, and details text. The list is read-only. If Postgres is unavailable, that section shows a short notice and the rest of Settings still loads. Opening the log does not write a tracking event.
