@@ -41,6 +41,7 @@ from media import (
     RECOG_SLOTS,
     SEED_DOCUMENTS,
     SEED_IMAGES,
+    absolute_path,
     clean_document_description,
     clean_document_title,
     delete_stored_file,
@@ -50,6 +51,7 @@ from media import (
     public_url,
     slot_check_sql,
     uploaded_on,
+    write_upload,
 )
 from security import hash_password, verify_password, verify_password_dummy
 from seed import EVENT_SEED, HONOR_SEED, PAGES
@@ -456,6 +458,8 @@ class Store:
             cleaned = normalize_title(title)
         except ValueError as exc:
             raise StoreError(str(exc), 400) from exc
+        if cleaned == "PGK":
+            raise StoreError("Enter the year this Past Grand Knight served.", 400)
         conn = self._open()
         if conn is None:
             with self._lock:
@@ -516,6 +520,131 @@ class Store:
         if member is None:
             raise StoreError("Member was not found.", 404)
         return member
+
+    def assign_pgk(self, memberid: str, period: str, note: str) -> dict:
+        memberid = str(memberid or "").strip()
+        preview = self.get_member(memberid)
+        if preview is None:
+            raise StoreError("Member was not found.", 404)
+        payload = _pgk_honor_payload(preview["display_name"], "PGK", period, note)
+        if payload is None:
+            raise StoreError("Enter the year this Past Grand Knight served.", 400)
+        conn = self._open()
+        if conn is None:
+            return self._assign_pgk_memory(memberid, payload)
+        copied = None
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT display_name
+                    FROM members
+                    WHERE membership_id = %s
+                    FOR UPDATE
+                    """,
+                    (memberid,),
+                )
+                locked = cur.fetchone()
+                if locked is None:
+                    raise StoreError("Member was not found.", 404)
+                payload = _pgk_honor_payload(locked[0], "PGK", period, note)
+                cur.execute(
+                    """
+                    SELECT path, crop_x, crop_y, crop_scale
+                    FROM images
+                    WHERE owner_membership_id = %s AND purpose = 'profile'
+                    """,
+                    (memberid,),
+                )
+                photo_row = cur.fetchone()
+                existing = _lock_past_gk(cur, payload["name"], payload["period"])
+                photo = None
+                crop = (0.0, 0.0, 1.0)
+                if (existing is None or not existing[1]) and photo_row and photo_row[0]:
+                    photo, crop = _copy_member_photo(photo_row[0], photo_row[1], photo_row[2], photo_row[3])
+                    copied = photo[0] if photo else None
+                unused = _save_past_gk(cur, payload, existing, photo, crop)
+                if unused:
+                    delete_stored_file(unused)
+                    if unused == copied:
+                        copied = None
+                cur.execute(
+                    "UPDATE members SET title = NULL WHERE title = 'PGK' AND membership_id <> %s",
+                    (memberid,),
+                )
+                cur.execute(
+                    "UPDATE members SET title = 'PGK' WHERE membership_id = %s",
+                    (memberid,),
+                )
+            conn.commit()
+        except StoreError:
+            _rollback(conn)
+            if copied:
+                delete_stored_file(copied)
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            if copied:
+                delete_stored_file(copied)
+            raise StoreError("Could not save Past Grand Knight.", 503) from exc
+        try:
+            conn.close()
+        except Exception:
+            pass
+        member = self.get_member(memberid)
+        if member is None:
+            raise StoreError("Member was not found.", 404)
+        return member
+
+    def _assign_pgk_memory(self, memberid: str, payload: dict) -> dict:
+        record = self._memory_member(memberid)
+        if record is None:
+            raise StoreError("Member was not found.", 404)
+        photo = None
+        crop = (0.0, 0.0, 1.0)
+        copied = None
+        with self._lock:
+            match = None
+            for item in self._honors:
+                if item.get("category") != "past_gk":
+                    continue
+                if str(item.get("name") or "").casefold() != payload["name"].casefold():
+                    continue
+                if item.get("period") != payload["period"]:
+                    continue
+                if match is None or int(item["id"]) > int(match["id"]):
+                    match = item
+            needs_photo = match is None or not match.get("photo_path")
+        if needs_photo and record.get("photo_path"):
+            photo, crop = _copy_member_photo(
+                record.get("photo_path"),
+                record.get("crop_x"),
+                record.get("crop_y"),
+                record.get("crop_scale"),
+            )
+            copied = photo[0] if photo else None
+        try:
+            with self._lock:
+                target = next((item for item in self._members if item["membership_id"] == memberid), None)
+                if target is None:
+                    raise StoreError("Member was not found.", 404)
+                unused = _memory_save_past_gk(self, payload, photo, crop)
+                if unused:
+                    delete_stored_file(unused)
+                    if unused == copied:
+                        copied = None
+                for member in self._members:
+                    if member is not target and member.get("title") == "PGK":
+                        member["title"] = None
+                target["title"] = "PGK"
+        except StoreError:
+            if copied:
+                delete_stored_file(copied)
+            raise
+        updated = self.get_member(memberid)
+        if updated is None:
+            raise StoreError("Member was not found.", 404)
+        return updated
 
     def set_admin(self, memberid: str, is_admin: bool) -> dict:
         conn = self._open()
@@ -722,9 +851,12 @@ class Store:
         title: str | None,
         birth_month: int | None = None,
         birth_day: int | None = None,
+        pgk_period: str | None = None,
+        pgk_note: str | None = None,
     ) -> dict:
         memberid, name, cleaned = _member_create_fields(memberid, password, display_name, title)
         month, day = _clean_birthday(birth_month, birth_day)
+        honor_payload = _pgk_honor_payload(name, cleaned, pgk_period, pgk_note)
         hashed = hash_password(password)
         conn = self._open()
         if conn is None:
@@ -750,6 +882,8 @@ class Store:
                         "email": "",
                     }
                 )
+                if honor_payload is not None:
+                    _memory_save_past_gk(self, honor_payload, None, (0.0, 0.0, 1.0))
             record = self._memory_member(memberid)
             if record is None:
                 raise StoreError("Could not create the member.", 503)
@@ -760,6 +894,14 @@ class Store:
             _guard_member_ids(conn)
             with conn.cursor() as cur:
                 row = _insert_member_row(cur, memberid, hashed, name, cleaned, month, day)
+                if honor_payload is not None:
+                    _save_past_gk(
+                        cur,
+                        honor_payload,
+                        _lock_past_gk(cur, honor_payload["name"], honor_payload["period"]),
+                        None,
+                        (0.0, 0.0, 1.0),
+                    )
             conn.commit()
         except StoreError:
             _rollback(conn)
@@ -776,6 +918,14 @@ class Store:
                     _ensure_member_id_default(cur)
                     _sync_member_id_sequence(cur)
                     row = _insert_member_row(cur, memberid, hashed, name, cleaned, month, day)
+                    if honor_payload is not None:
+                        _save_past_gk(
+                            cur,
+                            honor_payload,
+                            _lock_past_gk(cur, honor_payload["name"], honor_payload["period"]),
+                            None,
+                            (0.0, 0.0, 1.0),
+                        )
                 conn.commit()
             except StoreError:
                 _rollback(conn)
@@ -3016,6 +3166,112 @@ def _clean_line(value, limit: int, label: str, required: bool) -> str:
     return text
 
 
+def _pgk_honor_payload(name: str, title: str | None, period: str | None, note: str | None):
+    if title != "PGK":
+        return None
+    if not str(period or "").strip():
+        raise StoreError("Enter the year this Past Grand Knight served.", 400)
+    return _honor_fields(
+        {
+            "category": "past_gk",
+            "name": name,
+            "note": note or "",
+            "period": period or "",
+            "year": "",
+            "month": "",
+        }
+    )
+
+
+def _copy_member_photo(path, crop_x, crop_y, crop_scale):
+    crop = (float(crop_x or 0), float(crop_y or 0), float(crop_scale or 1))
+    normalized = str(path or "").replace("\\", "/")
+    lower = normalized.lower()
+    if lower.endswith(".jpg") or lower.endswith(".jpeg"):
+        ext = "jpg"
+    elif lower.endswith(".webp"):
+        ext = "webp"
+    elif lower.endswith(".png"):
+        ext = "png"
+    else:
+        return None, crop
+    try:
+        data = absolute_path(normalized).read_bytes()
+        if not data:
+            return None, crop
+        stored = write_upload(data, ext)
+    except Exception:
+        return None, crop
+    content = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp"}[ext]
+    return (stored, content), crop
+
+
+def _lock_past_gk(cur, name: str, period: str):
+    cur.execute(
+        """
+        SELECT id, photo_path, note
+        FROM honors
+        WHERE category = 'past_gk' AND lower(name) = lower(%s) AND period = %s
+        ORDER BY id DESC
+        LIMIT 1
+        FOR UPDATE
+        """,
+        (name, period),
+    )
+    return cur.fetchone()
+
+
+def _save_past_gk(cur, payload: dict, existing, photo, crop) -> str | None:
+    """Create or update one Past Grand Knights row. A blank note keeps the saved note.
+
+    Returns a copied photo path that was not stored.
+    """
+    note = payload["note"] or ((existing[2] or "") if existing else "")
+    if existing is None:
+        body = dict(payload)
+        body["note"] = note
+        _insert_honor_sql(cur, body, photo, crop)
+        return None
+    if existing[1]:
+        cur.execute(
+            "UPDATE honors SET name = %s, note = %s WHERE id = %s",
+            (payload["name"], note, existing[0]),
+        )
+        return photo[0] if photo else None
+    path, content_type = photo if photo else (None, None)
+    cur.execute(
+        """
+        UPDATE honors
+        SET name = %s, note = %s, photo_path = %s, photo_type = %s,
+            crop_x = %s, crop_y = %s, crop_scale = %s
+        WHERE id = %s
+        """,
+        (
+            payload["name"],
+            note,
+            path,
+            content_type,
+            crop[0],
+            crop[1],
+            crop[2],
+            existing[0],
+        ),
+    )
+    return None
+
+
+def _insert_honor_sql(cur, payload: dict, photo, crop) -> None:
+    cur.execute(
+        """
+        INSERT INTO honors
+          (category, name, period, sort_year, sort_month, note, photo_path, photo_type,
+           crop_x, crop_y, crop_scale)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        _honor_params(payload, photo, crop),
+    )
+
+
 def _honor_fields(fields: dict) -> dict:
     category = str(fields.get("category") or "").strip()
     if category not in HONOR_CATEGORIES:
@@ -3107,6 +3363,37 @@ def _honor_params(payload: dict, photo: tuple[str, str] | None, crop: tuple[floa
         crop_y,
         crop_scale,
     )
+
+
+def _memory_save_past_gk(store, payload: dict, photo, crop) -> str | None:
+    """Create or update one in-memory Past Grand Knights row. Caller holds the lock."""
+    match = None
+    for item in store._honors:
+        if item.get("category") != "past_gk":
+            continue
+        if str(item.get("name") or "").casefold() != str(payload["name"]).casefold():
+            continue
+        if item.get("period") != payload["period"]:
+            continue
+        if match is None or int(item["id"]) > int(match["id"]):
+            match = item
+    note = payload["note"] or ((match.get("note") or "") if match else "")
+    if match is None:
+        honor_id = store._honor_seq
+        store._honor_seq += 1
+        body = dict(payload)
+        body["note"] = note
+        store._honors.append(_memory_honor(honor_id, body, photo, crop))
+        return None
+    match["name"] = payload["name"]
+    match["note"] = note
+    if match.get("photo_path"):
+        return photo[0] if photo else None
+    if photo is not None:
+        match["photo_path"] = photo[0]
+        match["photo_type"] = photo[1]
+        match["crop_x"], match["crop_y"], match["crop_scale"] = crop
+    return None
 
 
 def _memory_honor(
@@ -4121,6 +4408,24 @@ def _ensure_schema(cur) -> None:
     except Exception as exc:
         log.warning("Could not store the fraternal year: %s", exc)
         cur.execute("ROLLBACK TO SAVEPOINT fraternal_year")
+    cur.execute("SAVEPOINT nomination_card_title")
+    try:
+        cur.execute(
+            """
+            UPDATE content_blocks AS b
+            SET value = %s
+            FROM pages AS p
+            WHERE b.page_id = p.id
+              AND p.slug = 'member'
+              AND b."key" = 'links.11.title'
+              AND b.value = %s
+            """,
+            ("Knight & Family Nominations", "Knight and Family of the Month"),
+        )
+        cur.execute("RELEASE SAVEPOINT nomination_card_title")
+    except Exception as exc:
+        log.warning("Could not rename the nominations card: %s", exc)
+        cur.execute("ROLLBACK TO SAVEPOINT nomination_card_title")
 
 
 def _seed_images(cur) -> None:

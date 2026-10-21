@@ -101,7 +101,7 @@ export default function NominationPanel({ isAdmin }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pending, setPending] = useState(false);
-  const [category, setCategory] = useState("knight_month");
+  const [category, setCategory] = useState("");
   const [memberId, setMemberId] = useState("");
   const [name, setName] = useState("");
   const [reason, setReason] = useState("");
@@ -301,52 +301,27 @@ export default function NominationPanel({ isAdmin }) {
         </p>
       ) : null}
       {!loaded ? <p className="settings-hint">Loading…</p> : null}
-      {admin ? (
-        <div className="signin-actions recog-actions">
+      <div className="nomination-pick" role="group" aria-label="Nomination category">
+        {NOMINATION_CATEGORIES.map(([value, label]) => (
           <button
             type="button"
-            className={showResults ? "btn btn-quiet" : "btn"}
-            onClick={() => setShowResults((current) => !current)}
-          >
-            {showResults ? "Hide results" : "View results"}
-          </button>
-        </div>
-      ) : null}
-      {admin && showResults ? (
-        fallback ? (
-          <>
-            <p className="settings-hint">Showing the example list while the council records are unavailable.</p>
-            <ResultsList results={NOMINATION_RESULT_EXAMPLES} />
-          </>
-        ) : resultsError ? (
-          <p className="signin-error" role="alert">
-            {resultsError}
-          </p>
-        ) : !resultsLoaded ? (
-          <p className="settings-hint">Loading…</p>
-        ) : (
-          <ResultsList results={results} />
-        )
-      ) : null}
-      <form className="doc-form" onSubmit={onSubmit}>
-        <label className="signin-field">
-          <span>Category</span>
-          <select
-            value={category}
-            disabled={locked}
-            onChange={(event) => {
+            key={value}
+            className={category === value ? "btn" : "btn btn-quiet"}
+            aria-pressed={category === value}
+            disabled={pending}
+            onClick={() => {
               setError("");
-              setCategory(event.target.value);
+              setConfirmId(null);
+              setCategory(value);
             }}
           >
-            {NOMINATION_CATEGORIES.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          {periodLabel ? <p className="settings-hint">Nominations for {periodLabel}.</p> : null}
-        </label>
+            {label}
+          </button>
+        ))}
+      </div>
+      {category ? (
+      <form className="doc-form" onSubmit={onSubmit}>
+        <p className="settings-hint">{meta[1]}{periodLabel ? ` · Nominations for ${periodLabel}.` : ""}</p>
         {knight ? (
           <label className="signin-field">
             <span>Member</span>
@@ -391,70 +366,63 @@ export default function NominationPanel({ isAdmin }) {
           <p className="settings-hint">Optional.</p>
         </label>
         <div className="signin-actions recog-actions">
-          <button type="submit" className="btn" disabled={locked}>
-            {saved ? "Update nomination" : "Submit nomination"}
-          </button>
+          {saved && confirmId === saved.id ? (
+            <>
+              <button type="button" className="btn" disabled={pending || fallback} onClick={() => onWithdraw(saved.id)}>
+                Withdraw
+              </button>
+              <button type="button" className="btn btn-quiet" disabled={pending} onClick={() => setConfirmId(null)}>
+                Keep
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="submit" className="btn" disabled={locked}>
+                {saved ? "Update nomination" : "Submit nomination"}
+              </button>
+              {saved ? (
+                <button
+                  type="button"
+                  className="btn btn-quiet"
+                  disabled={pending || fallback}
+                  onClick={() => {
+                    setError("");
+                    setConfirmId(saved.id);
+                  }}
+                >
+                  Withdraw
+                </button>
+              ) : null}
+            </>
+          )}
         </div>
       </form>
-      {nominations.length > 0 ? (
-        <div className="doc-scroll">
-          <ul className="doc-list">
-            {nominations.map((item) => {
-              const confirming = confirmId === item.id;
-              const label = categoryMeta(item.category)[1];
-              return (
-                <li key={item.id}>
-                  <h3>{label}</h3>
-                  <p>{item.nominee_name}</p>
-                  {formatPeriod(item.period) ? <p>{formatPeriod(item.period)}</p> : null}
-                  {item.reason ? <p>{item.reason}</p> : null}
-                  <div className="signin-actions recog-actions">
-                    {confirming ? (
-                      <>
-                        <button type="button" className="btn" disabled={pending} onClick={() => onWithdraw(item.id)}>
-                          Withdraw
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-quiet"
-                          disabled={pending}
-                          onClick={() => setConfirmId(null)}
-                        >
-                          Keep
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="btn btn-quiet"
-                          disabled={pending || fallback}
-                          onClick={() => {
-                            setError("");
-                            setConfirmId(null);
-                            setCategory(item.category);
-                          }}
-                        >
-                          Update
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-quiet"
-                          disabled={pending || fallback}
-                          onClick={() => {
-                            setError("");
-                            setConfirmId(item.id);
-                          }}
-                        >
-                          Withdraw
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+      ) : (
+        <p className="settings-hint">Choose a category to nominate.</p>
+      )}
+      {admin ? (
+        <div className="nomination-results">
+          <div className="signin-actions recog-actions">
+            <button type="button" className="btn btn-quiet" onClick={() => setShowResults((current) => !current)}>
+              {showResults ? "Hide results" : "View results"}
+            </button>
+          </div>
+          {showResults ? (
+            fallback ? (
+              <>
+                <p className="settings-hint">Showing the example list while the council records are unavailable.</p>
+                <ResultsList results={NOMINATION_RESULT_EXAMPLES} />
+              </>
+            ) : resultsError ? (
+              <p className="signin-error" role="alert">
+                {resultsError}
+              </p>
+            ) : !resultsLoaded ? (
+              <p className="settings-hint">Loading…</p>
+            ) : (
+              <ResultsList results={results} />
+            )
+          ) : null}
         </div>
       ) : null}
     </>

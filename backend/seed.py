@@ -312,7 +312,7 @@ _member.extend(
         text("links.9.before", "Record hours and visits at"),
         text("links.9.link", "www.UKnightMobile.org"),
         text("links.9.after", "."),
-        text("links.11.title", "Knight and Family of the Month"),
+        text("links.11.title", "Knight & Family Nominations"),
         text("links.11.action", "Submit a nomination"),
         text("links.11.detail", "Include the name and a short reason for the nomination."),
         text("links.12.title", "Financial Secretary library"),

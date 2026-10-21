@@ -7,6 +7,7 @@ import { daysInMonth } from "../birthdays";
 import { MONTHS } from "../content/records";
 import {
   assignMediaSlot,
+  assignPastGrandKnight,
   createMember,
   deleteMedia,
   deleteMyPhoto,
@@ -26,19 +27,46 @@ import { OFFICER_TITLES, memberLabel } from "../titles";
 import { navigate } from "../router";
 import ActivityLog from "./ActivityLog";
 
-const SLOTS = [
-  ["logo", "Logo"],
-  ["carousel.1", "Carousel photo 1"],
-  ["carousel.2", "Carousel photo 2"],
-  ["carousel.3", "Carousel photo 3"],
-  ["carousel.4", "Carousel photo 4"],
-  ["recog.0", "Family of the Month"],
-  ["recog.1", "Knight of the Month"],
-  ["recog.2", "Family of the Year"],
-  ["recog.3", "Knight of the Year"],
+const MEDIA_SECTIONS = [
+  {
+    id: "logo",
+    label: "Logo",
+    slots: [["logo", "Logo"]],
+  },
+  {
+    id: "carousel",
+    label: "Carousel",
+    slots: [
+      ["carousel.1", "Carousel photo 1"],
+      ["carousel.2", "Carousel photo 2"],
+      ["carousel.3", "Carousel photo 3"],
+      ["carousel.4", "Carousel photo 4"],
+    ],
+  },
+  {
+    id: "about",
+    label: "About",
+    slots: [
+      ["recog.0", "Family of the Month"],
+      ["recog.1", "Knight of the Month"],
+      ["recog.2", "Family of the Year"],
+      ["recog.3", "Knight of the Year"],
+    ],
+  },
 ];
 
-const EMPTY_MEMBER = { memberid: "", password: "", display_name: "", title: "", birth_month: "", birth_day: "" };
+const EMPTY_MEMBER = {
+  memberid: "",
+  password: "",
+  display_name: "",
+  title: "",
+  birth_month: "",
+  birth_day: "",
+  pgk_period: "",
+  pgk_note: "",
+};
+
+const PGK_PERIOD = /^(\d{4})(?:[-\u2013](\d{2}))?$/;
 
 const DIRECTORY_PREVIEW = 3;
 const MEDIA_PREVIEW = 2;
@@ -90,6 +118,16 @@ function birthdayProblem(month, day) {
   return "";
 }
 
+function pgkPeriodProblem(period) {
+  const value = collapse(period);
+  if (!value) return "Enter the year this Past Grand Knight served.";
+  const match = PGK_PERIOD.exec(value);
+  if (!match) return "Enter a year, such as 2024 or 2024–25.";
+  const year = Number(match[1]);
+  if (year < 1900 || year > 2100) return "Enter a year between 1900 and 2100.";
+  return "";
+}
+
 function memberProblem(form) {
   const memberid = String(form.memberid || "").trim();
   if (!/^\d{1,32}$/.test(memberid)) return "Membership ID must contain only digits.";
@@ -101,6 +139,11 @@ function memberProblem(form) {
   if (name.length > 80) return "Name is too long.";
   if (form.title && !OFFICER_TITLES.some(([, abbrev]) => abbrev === form.title)) {
     return "Choose a title from the list.";
+  }
+  if (form.title === "PGK") {
+    const period = pgkPeriodProblem(form.pgk_period);
+    if (period) return period;
+    if (collapse(form.pgk_note).length > 280) return "Description is too long.";
   }
   const birthday = birthdayProblem(form.birth_month, form.birth_day);
   if (birthday) return birthday;
@@ -260,6 +303,10 @@ export default function SettingsView() {
   const [adminsQuery, setAdminsQuery] = useState("");
   const [mediaOpen, setMediaOpen] = useState(false);
   const [mediaQuery, setMediaQuery] = useState("");
+  const [mediaSection, setMediaSection] = useState("");
+  const [pgkForm, setPgkForm] = useState({ memberid: "", period: "", note: "" });
+  const [pgkNotice, setPgkNotice] = useState("");
+  const [pgkError, setPgkError] = useState("");
   const [error, setError] = useState("");
   const [flash, setFlash] = useState({});
   const [pending, setPending] = useState(false);
@@ -423,7 +470,13 @@ export default function SettingsView() {
     setImages(await fetchMedia());
   }
 
-  function onUpload(event) {
+  function chooseMediaSection(id) {
+    setMediaSection(id);
+    setMediaOpen(false);
+    setMediaQuery("");
+  }
+
+  function onAddToSlot(slot, event) {
     const file = event.target.files && event.target.files[0];
     event.target.value = "";
     const problem = imageFileError(file);
@@ -432,7 +485,17 @@ export default function SettingsView() {
       return;
     }
     run("media", async () => {
-      await uploadMedia(file);
+      const image = await uploadMedia(file);
+      try {
+        await assignMediaSlot(image.id, slot);
+      } catch (err) {
+        try {
+          await deleteMedia(image.id);
+        } catch {
+          /* The unused upload stays out of the section list. */
+        }
+        throw err;
+      }
       await reloadMedia();
     }, "Image uploaded.");
   }
@@ -458,30 +521,6 @@ export default function SettingsView() {
     }, "Image removed.");
   }
 
-  function onSlot(image, slot) {
-    const previous = images;
-    setImages((current) =>
-      current.map((item) => {
-        if (item.id === image.id) return { ...item, slot: slot || null };
-        if (slot && item.slot === slot) return { ...item, slot: null };
-        return item;
-      }),
-    );
-    run("media", async () => {
-      try {
-        await assignMediaSlot(image.id, slot);
-      } catch (err) {
-        try {
-          await reloadMedia();
-        } catch {
-          setImages(previous);
-        }
-        throw err;
-      }
-      await reloadMedia();
-    }, "Image placement saved.");
-  }
-
   async function onCreateMember(event) {
     event.preventDefault();
     const problem = memberProblem(memberForm);
@@ -499,6 +538,8 @@ export default function SettingsView() {
       title: memberForm.title || null,
       birth_month: memberForm.birth_month ? Number(memberForm.birth_month) : null,
       birth_day: memberForm.birth_day ? Number(memberForm.birth_day) : null,
+      pgk_period: memberForm.title === "PGK" ? collapse(memberForm.pgk_period) : "",
+      pgk_note: memberForm.title === "PGK" ? collapse(memberForm.pgk_note) : "",
     };
     setPending(true);
     setError("");
@@ -509,7 +550,9 @@ export default function SettingsView() {
       setMemberForm(EMPTY_MEMBER);
       setMemberNotice("Member created. They can sign in with that membership ID.");
       setMembers((current) => {
-        const next = current.filter((item) => item.memberid !== created.memberid);
+        const next = current
+          .filter((item) => item.memberid !== created.memberid)
+          .map((item) => (created.title === "PGK" && item.title === "PGK" ? { ...item, title: null } : item));
         next.push(created);
         next.sort(
           (a, b) =>
@@ -563,6 +606,50 @@ export default function SettingsView() {
     }, next ? "Honorary Life Member set." : "Honorary Life Member cleared.");
   }
 
+  async function onAssignPgk(event) {
+    event.preventDefault();
+    const periodProblem = pgkPeriodProblem(pgkForm.period);
+    if (!pgkForm.memberid) {
+      setPgkError("Choose a member from the list.");
+      setPgkNotice("");
+      return;
+    }
+    if (periodProblem) {
+      setPgkError(periodProblem);
+      setPgkNotice("");
+      return;
+    }
+    if (collapse(pgkForm.note).length > 280) {
+      setPgkError("Description is too long.");
+      setPgkNotice("");
+      return;
+    }
+    const memberid = pgkForm.memberid;
+    setPending(true);
+    setPgkError("");
+    setPgkNotice("");
+    try {
+      const updated = await assignPastGrandKnight(memberid, {
+        period: collapse(pgkForm.period),
+        note: collapse(pgkForm.note),
+      });
+      setMembers((current) =>
+        current.map((item) => {
+          if (item.memberid === updated.memberid) return { ...item, ...updated };
+          if (item.title === "PGK") return { ...item, title: null };
+          return item;
+        }),
+      );
+      setPgkForm({ memberid: "", period: "", note: "" });
+      setPgkNotice("Past Grand Knight saved.");
+      if (updated.memberid === user?.memberid) await refresh();
+    } catch (err) {
+      setPgkError(err instanceof Error ? err.message : "Could not save Past Grand Knight.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   const adminCount = members.filter((member) => member.is_admin).length;
   const webmasterCount = members.filter((member) => member.is_webmaster).length;
   const memberNeedle = membersOpen ? searchNeedle(membersQuery) : "";
@@ -573,14 +660,21 @@ export default function SettingsView() {
   const shownAdmins = adminsOpen
     ? members.filter((member) => memberMatches(member, adminNeedle))
     : members.slice(0, DIRECTORY_PREVIEW);
+  const chosenMedia = MEDIA_SECTIONS.find((section) => section.id === mediaSection) || null;
+  const mediaSlots = chosenMedia
+    ? chosenMedia.slots.map(([value, label]) => ({
+        value,
+        label,
+        image: images.find((image) => image.slot === value) || null,
+      }))
+    : [];
   const mediaNeedle = mediaOpen ? searchNeedle(mediaQuery) : "";
-  const shownImages = mediaOpen
-    ? images.filter((image) => {
-        if (!mediaNeedle) return true;
-        const slot = SLOTS.find(([value]) => value === image.slot);
-        return searchNeedle(`${image.original_name || ""} ${slot ? slot[1] : ""}`).includes(mediaNeedle);
-      })
-    : images.slice(0, MEDIA_PREVIEW);
+  const filteredMedia = mediaNeedle
+    ? mediaSlots.filter((slot) =>
+        searchNeedle(`${slot.label} ${slot.image?.original_name || ""}`).includes(mediaNeedle),
+      )
+    : mediaSlots;
+  const shownMedia = mediaOpen ? filteredMedia : filteredMedia.slice(0, MEDIA_PREVIEW);
 
   function toggleMembers() {
     if (membersOpen) setMembersQuery("");
@@ -738,6 +832,34 @@ export default function SettingsView() {
                 </select>
                 <p className="settings-hint">Optional. A title can belong to one member. Later changes are made with Edit on the members page.</p>
               </label>
+              {memberForm.title === "PGK" ? (
+                <>
+                  <label className="signin-field">
+                    <span>Year served</span>
+                    <input
+                      type="text"
+                      maxLength={12}
+                      value={memberForm.pgk_period}
+                      disabled={pending}
+                      onChange={(event) =>
+                        setMemberForm((current) => ({ ...current, pgk_period: event.target.value }))
+                      }
+                    />
+                    <p className="settings-hint">Required. 2024 or 2024–25.</p>
+                  </label>
+                  <label className="signin-field">
+                    <span>Description</span>
+                    <input
+                      type="text"
+                      maxLength={280}
+                      value={memberForm.pgk_note}
+                      disabled={pending}
+                      onChange={(event) => setMemberForm((current) => ({ ...current, pgk_note: event.target.value }))}
+                    />
+                    <p className="settings-hint">Optional. Saved with the Past Grand Knights entry.</p>
+                  </label>
+                </>
+              ) : null}
               <BirthdayFields
                 month={memberForm.birth_month}
                 day={memberForm.birth_day}
@@ -758,6 +880,72 @@ export default function SettingsView() {
               <div className="signin-actions">
                 <button type="submit" className="btn" disabled={pending}>
                   Create member
+                </button>
+              </div>
+            </form>
+          </article>
+          <article className="card settings-card members-create">
+            <h3>Past Grand Knight</h3>
+            <p className="settings-hint">
+              Year served is required. Saving writes the Past Grand Knights entry and sets that member’s title to PGK.
+            </p>
+            {pgkNotice ? (
+              <p className="settings-notice is-confirm" role="status">
+                {pgkNotice}
+              </p>
+            ) : null}
+            {pgkError ? (
+              <p className="signin-error" role="alert">
+                {pgkError}
+              </p>
+            ) : null}
+            <form autoComplete="off" onSubmit={onAssignPgk}>
+              <label className="signin-field">
+                <span>Member</span>
+                <select
+                  value={pgkForm.memberid}
+                  disabled={pending || loadingAdmin}
+                  onChange={(event) => setPgkForm((current) => ({ ...current, memberid: event.target.value }))}
+                >
+                  <option value="">Choose a member</option>
+                  {[...members]
+                    .sort(
+                      (a, b) =>
+                        String(a.display_name || "").localeCompare(String(b.display_name || "")) ||
+                        String(a.memberid).localeCompare(String(b.memberid)),
+                    )
+                    .map((member) => (
+                      <option key={member.memberid} value={member.memberid}>
+                        {member.display_name || "Member"} ({member.memberid})
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="signin-field">
+                <span>Year served</span>
+                <input
+                  type="text"
+                  maxLength={12}
+                  value={pgkForm.period}
+                  disabled={pending}
+                  onChange={(event) => setPgkForm((current) => ({ ...current, period: event.target.value }))}
+                />
+                <p className="settings-hint">2024 or 2024–25.</p>
+              </label>
+              <label className="signin-field">
+                <span>Description</span>
+                <input
+                  type="text"
+                  maxLength={280}
+                  value={pgkForm.note}
+                  disabled={pending}
+                  onChange={(event) => setPgkForm((current) => ({ ...current, note: event.target.value }))}
+                />
+                <p className="settings-hint">Optional.</p>
+              </label>
+              <div className="signin-actions">
+                <button type="submit" className="btn" disabled={pending || loadingAdmin}>
+                  Save
                 </button>
               </div>
             </form>
@@ -877,62 +1065,81 @@ export default function SettingsView() {
           <div className="section-head">
             <div className="eyebrow left-only">Library</div>
             <h2 id="mediaHeading">Media</h2>
-            <p>Upload a JPG, PNG, or WebP, then choose it for the logo, a carousel photo, or an About photo. Replace or remove any image. An empty slot uses the example image.</p>
+            <p>Choose the part of the site, then add, replace, or remove its photos. JPG, PNG, or WebP. An empty slot uses the example image.</p>
           </div>
           <Flash scope="media" />
-          <div className="signin-actions">
-            <label className="btn">
-              Upload image
-              <input type="file" accept={PHOTO_ACCEPT} hidden onChange={onUpload} disabled={pending} />
-            </label>
+          <div className="media-sections" role="group" aria-label="Photo sections">
+            {MEDIA_SECTIONS.map((section) => (
+              <button
+                type="button"
+                key={section.id}
+                className={mediaSection === section.id ? "btn" : "btn btn-quiet"}
+                aria-pressed={mediaSection === section.id}
+                onClick={() => chooseMediaSection(section.id)}
+              >
+                {section.label}
+              </button>
+            ))}
           </div>
+          {chosenMedia ? (
           <ListPanel
             open={mediaOpen}
-            canToggle={images.length > MEDIA_PREVIEW}
+            canToggle={mediaSlots.length > MEDIA_PREVIEW}
             onToggle={toggleMedia}
             query={mediaQuery}
             onQuery={setMediaQuery}
-            placeholder="File name"
-            noMatches={mediaOpen && mediaNeedle && shownImages.length === 0}
+            placeholder="File name or photo"
+            noMatches={mediaOpen && mediaNeedle && shownMedia.length === 0}
             gridClass="media-grid"
           >
-            {shownImages.map((image) => (
-              <article className="card media-card" key={image.id}>
-                <img src={image.url} alt="" />
-                <strong>{image.original_name}</strong>
-                <label className="signin-field">
-                  <span>Use for</span>
-                  <select
-                    value={image.slot || ""}
-                    disabled={pending}
-                    onChange={(event) => onSlot(image, event.target.value)}
-                  >
-                    <option value="">Not used</option>
-                    {SLOTS.map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+            {shownMedia.map((slot) => (
+              <article className="card media-card" key={slot.value}>
+                {slot.image ? <img src={slot.image.url} alt="" /> : null}
+                <strong>{slot.label}</strong>
+                {slot.image ? <p className="settings-hint">{slot.image.original_name}</p> : (
+                  <p className="settings-hint">No photo yet.</p>
+                )}
                 <div className="signin-actions">
-                  <label className="btn btn-quiet">
-                    Replace
-                    <input
-                      type="file"
-                      accept={PHOTO_ACCEPT}
-                      hidden
-                      disabled={pending}
-                      onChange={(event) => onReplace(image, event)}
-                    />
-                  </label>
-                  <button type="button" className="btn btn-quiet" disabled={pending} onClick={() => onRemove(image)}>
-                    Remove
-                  </button>
+                  {slot.image ? (
+                    <>
+                      <label className="btn btn-quiet">
+                        Replace
+                        <input
+                          type="file"
+                          accept={PHOTO_ACCEPT}
+                          hidden
+                          disabled={pending}
+                          onChange={(event) => onReplace(slot.image, event)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="btn btn-quiet"
+                        disabled={pending}
+                        onClick={() => onRemove(slot.image)}
+                      >
+                        Remove
+                      </button>
+                    </>
+                  ) : (
+                    <label className="btn">
+                      Add
+                      <input
+                        type="file"
+                        accept={PHOTO_ACCEPT}
+                        hidden
+                        disabled={pending}
+                        onChange={(event) => onAddToSlot(slot.value, event)}
+                      />
+                    </label>
+                  )}
                 </div>
               </article>
             ))}
           </ListPanel>
+          ) : (
+            <p className="settings-hint">Choose a section to see its photos.</p>
+          )}
         </section>
       ) : null}
 

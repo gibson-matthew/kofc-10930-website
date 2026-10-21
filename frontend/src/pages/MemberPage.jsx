@@ -991,6 +991,17 @@ function MemberView() {
           </div>
         </div>
         <nav className={navOpen ? "site-nav open" : "site-nav"} id="siteNav" aria-label="Page sections">
+          <a
+            className="nav-member-home"
+            href="/member"
+            onClick={(event) => {
+              closeNav();
+              event.preventDefault();
+              navigate("/member");
+            }}
+          >
+            Member area
+          </a>
           <Block id="nav.about" locked {...sectionProps("about")} />
           <Block id="nav.officers" locked {...sectionProps("officers")} />
           <Block id="nav.directors" locked {...sectionProps("directors")} />

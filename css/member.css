@@ -68,6 +68,8 @@ nav.site-nav {
 
 nav.site-nav a:hover { color: var(--gold-soft); }
 
+nav.site-nav a.nav-member-home { display: none; }
+
 .head-right {
   display: flex;
   align-items: center;
@@ -638,6 +640,8 @@ body.page-member .on-navy {
     gap: 0;
     padding: 0.75rem 1rem 0.55rem;
     align-items: stretch;
+    width: 100%;
+    background: var(--navy-deep);
   }
 
   body.page-member .brand { flex: 1 0 100%; }
@@ -666,9 +670,7 @@ body.page-member .on-navy {
   }
 
   .head-right {
-    position: sticky;
-    top: 3.4rem;
-    z-index: 70;
+    position: static;
     order: 2;
     flex: 1 0 100%;
     margin: 0.45rem 0 0.15rem;
@@ -727,7 +729,14 @@ body.page-member .on-navy {
     border-top: 0;
   }
 
-  nav.site-nav.open { display: flex; }
+  nav.site-nav.open {
+    display: flex;
+    background: var(--navy-deep);
+    position: relative;
+    z-index: 5;
+  }
+
+  nav.site-nav.open a.nav-member-home { display: block; }
 
   nav.site-nav a {
     display: block;
@@ -1263,6 +1272,26 @@ button.more {
 
 .members-create {
   margin-bottom: 0.7rem;
+}
+
+.media-sections {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.85rem;
+}
+
+.nomination-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.35rem 0 0.9rem;
+}
+
+.nomination-results {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--hairline);
 }
 
 #members .officer-grid {

@@ -156,6 +156,17 @@ export async function updateMyCrop(crop) {
   return readJson(response, "Could not save the viewing angle.");
 }
 
+export async function assignPastGrandKnight(memberid, fields) {
+  const response = await send(`/api/members/${encodeURIComponent(memberid)}/pgk`, {
+    method: "POST",
+    body: JSON.stringify({
+      period: fields.period || "",
+      note: fields.note || "",
+    }),
+  });
+  return readJson(response, "Could not save Past Grand Knight.");
+}
+
 export async function setMemberTitle(memberid, title) {
   const response = await send(`/api/members/${encodeURIComponent(memberid)}/title`, {
     method: "PATCH",

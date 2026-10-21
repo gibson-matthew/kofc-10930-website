@@ -131,6 +131,11 @@ class TitleIn(BaseModel):
     title: str | None = None
 
 
+class PgkIn(BaseModel):
+    period: str = Field(default="", max_length=12)
+    note: str = Field(default="", max_length=280)
+
+
 class CropIn(BaseModel):
     crop_x: float = 0
     crop_y: float = 0
@@ -171,6 +176,8 @@ class MemberCreateIn(BaseModel):
     title: str | None = None
     birth_month: int | None = None
     birth_day: int | None = None
+    pgk_period: str | None = Field(default=None, max_length=12)
+    pgk_note: str | None = Field(default=None, max_length=280)
 
     @field_validator("memberid")
     @classmethod
@@ -695,6 +702,8 @@ def create_member(body: MemberCreateIn, request: Request, member: dict = Depends
             body.title,
             body.birth_month,
             body.birth_day,
+            body.pgk_period,
+            body.pgk_note,
         )
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
@@ -852,6 +861,39 @@ def update_member_title(
     except Exception:
         after = [updated]
     tracking.title_changes(request, member.get("memberid"), before, after)
+    return MemberOut(**updated)
+
+
+@api.post("/members/{memberid}/pgk", response_model=MemberOut)
+def assign_past_grand_knight(
+    memberid: str,
+    body: PgkIn,
+    request: Request,
+    member: dict = Depends(require_admin),
+) -> MemberOut:
+    before = None
+    try:
+        before = store.list_members()
+    except Exception:
+        before = None
+    try:
+        updated = store.assign_pgk(memberid, body.period, body.note)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    after = None
+    try:
+        after = store.list_members()
+    except Exception:
+        after = [updated]
+    tracking.title_changes(request, member.get("memberid"), before, after)
+    tracking.admin_event(
+        request,
+        member.get("memberid"),
+        "update",
+        "honor",
+        memberid,
+        category="past_gk",
+    )
     return MemberOut(**updated)
 
 
