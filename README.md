@@ -25,7 +25,7 @@ Open http://localhost:5173 and use Sign in.
 
 Set `JWT_SECRET` to a long random string before any shared deployment. When it is empty, the API keeps a gitignored key in `.local/jwt_secret`. Set `COOKIE_SECURE=true` when the site is served over HTTPS. Do not commit `.env`.
 
-The dev server proxies `/api` to `API_PROXY_TARGET` (local API on port 8000). Leave `VITE_API_BASE` empty so the browser keeps calling same-origin `/api`. Redis and the mail settings are optional. If Redis is down, or `REDIS_URL=off`, cached reads use PostgreSQL or the in-memory fallback. Mail settings are unused until outbound mail is added.
+The dev server proxies `/api` to `API_PROXY_TARGET` (local API on port 8000). Leave `VITE_API_BASE` empty so the browser keeps calling same-origin `/api`. Redis and the mail settings are optional. If Redis is down, or `REDIS_URL=off`, cached reads use PostgreSQL or the in-memory fallback. Outbound mail settings are unused. Email routing reads `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ZONE_ID`, and `CLOUDFLARE_ROUTING_DOMAIN` (the testing domain is `mistymountains.dev`). If those routing values are empty, the rest of the site still runs. Settings shows that error only to the Cloudflare role.
 
 Page content, officers, honors, events, announcements, the member roster, document lists, prayer requests, and nomination totals are cached when Redis answers. Passwords, session tokens, audit rows, phone numbers, email addresses, and uploaded files are not.
 
@@ -40,12 +40,12 @@ Set `REDIS_URL` when Redis is not at `redis://localhost:6379/0`. On a dedicated 
 | Field | Value |
 | --- | --- |
 | Membership ID | `1000000` |
-| Name | David Hernandez (GK, admin, webmaster) |
+| Name | David Hernandez (GK, admin, webmaster, Cloudflare role) |
 | Password | `Password123!` |
 
 The API creates this member on startup when the row is missing. `backend\seed_member.py` does the same thing and exits with an error if PostgreSQL cannot be reached. If membership id `1000000` already has a different password, the stored password is left as it is.
 
-That same password is used by sample member `1000001` (Sample Brother, no title, not an admin) and by the test roster `1000100` through `1000149`. Starting the API, or running `backend\seed_member.py`, inserts any of those rows that are missing. Each roster member receives a profile photo when that member row is first created. Removing the photo leaves the default in place. A few of those accounts are also admins: `1000100`, `1000103`, `1000114`, `1000124`, `1000131`, and `1000140`. David Hernandez remains the known webmaster. Admins can edit the site. Only a webmaster can open Logs & activity or grant webmaster access.
+That same password is used by sample member `1000001` (Sample Brother, no title, not an admin) and by the test roster `1000100` through `1000149`. Starting the API, or running `backend\seed_member.py`, inserts any of those rows that are missing. Each roster member receives a profile photo when that member row is first created. Removing the photo leaves the default in place. A few of those accounts are also admins: `1000100`, `1000103`, `1000114`, `1000124`, `1000131`, and `1000140`. David Hernandez remains the known webmaster and the only seeded Cloudflare role. Admins can edit the site. Only a webmaster can open Logs & activity or grant webmaster access. Only the Cloudflare role can open Email routing or change where a role address forwards. Admins and webmasters do not receive that role unless the flag is also set. Officers and directors can save their own personal email from Settings.
 
 The same step loads past honors: 20 Knights of the Month, 20 Families of the Month, 20 Knights of the Year, 20 Families of the Year, and 20 Past Grand Knights. `backend\schema.sql` inserts any missing honor rows as well. If PostgreSQL is down, the API keeps this same roster and these same honors in memory. Several birthdays fall in October and November. A roster member or past-honor row that is still missing is inserted again the next time the API starts. Edits to an existing row are left in place, including a cleared photo.
 

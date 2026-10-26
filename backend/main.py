@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from db import StoreError, store
 import cache
+import routing
 import tracking
 from media import (
     MAX_DOCUMENT_BYTES,
@@ -116,6 +117,7 @@ class MemberOut(BaseModel):
     title: str | None = None
     is_admin: bool = False
     is_webmaster: bool = False
+    is_cloudflare: bool = False
     photo_url: str | None = None
     crop_x: float = 0
     crop_y: float = 0
@@ -156,6 +158,14 @@ class AdminIn(BaseModel):
 
 class WebmasterIn(BaseModel):
     is_webmaster: bool
+
+
+class CloudflareIn(BaseModel):
+    is_cloudflare: bool
+
+
+class EmailIn(BaseModel):
+    email: str = Field(default="", max_length=200)
 
 
 class HonoraryIn(BaseModel):
@@ -521,6 +531,34 @@ def require_webmaster(request: Request, member: dict = Depends(get_current_membe
     return member
 
 
+def require_cloudflare(request: Request, member: dict = Depends(get_current_member)) -> dict:
+    if not member.get("is_cloudflare"):
+        tracking.admin_denied(request, member.get("memberid"))
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cloudflare access is required",
+        )
+    return member
+
+
+def _raise_routing(exc: routing.RoutingError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+def _sync_routing(actor: dict, before, after) -> None:
+    """Update role routes after a title change made by a Cloudflare-role user.
+
+    `after` must be the full member list. A partial list is ignored so a
+    failed read cannot turn every other route off.
+    """
+    if not actor.get("is_cloudflare") or after is None:
+        return
+    try:
+        routing.sync_changed(before, after)
+    except Exception:
+        log.warning("Email routing was not updated after a title change.")
+
+
 def _actor_id(request: Request) -> str | None:
     member = optional_member(request)
     if member:
@@ -627,6 +665,32 @@ def save_member_page(body: SaveIn, request: Request, member: dict = Depends(requ
     return PageOut(**saved)
 
 
+@api.get("/members/me/email")
+def my_email(member: dict = Depends(get_current_member)) -> dict:
+    try:
+        email = store.get_email(member["memberid"])
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return {"email": email, "editable": routing.owns_role(member)}
+
+
+@api.patch("/members/me/email")
+def update_my_email(body: EmailIn, member: dict = Depends(get_current_member)) -> dict:
+    if not routing.owns_role(member):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Officers and directors can save their own personal email.",
+        )
+    try:
+        email = routing.clean_email(body.email)
+        saved = store.set_email(member["memberid"], email)
+    except routing.RoutingError as exc:
+        _raise_routing(exc)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return {"email": saved, "editable": True}
+
+
 @api.patch("/members/me", response_model=MemberOut)
 def update_me(member: dict = Depends(get_current_member)) -> MemberOut:
     del member
@@ -698,6 +762,11 @@ def delete_my_photo(request: Request, member: dict = Depends(get_current_member)
 
 @api.post("/members", response_model=MemberOut, status_code=status.HTTP_201_CREATED)
 def create_member(body: MemberCreateIn, request: Request, member: dict = Depends(require_admin)) -> MemberOut:
+    before = None
+    try:
+        before = store.list_members()
+    except Exception:
+        before = None
     try:
         created = store.create_member(
             body.memberid,
@@ -716,6 +785,12 @@ def create_member(body: MemberCreateIn, request: Request, member: dict = Depends
         cache.drop_honors()
     extra = {"title": created["title"]} if created.get("title") else {}
     tracking.admin_event(request, member.get("memberid"), "create", "member", created["memberid"], **extra)
+    after = None
+    try:
+        after = store.list_members()
+    except Exception:
+        after = None
+    _sync_routing(member, before, after)
     return MemberOut(**created)
 
 
@@ -811,6 +886,44 @@ def update_member_webmaster(
     return MemberOut(**updated)
 
 
+@api.patch("/members/{memberid}/cloudflare", response_model=MemberOut)
+def update_member_cloudflare(
+    memberid: str,
+    body: CloudflareIn,
+    request: Request,
+    member: dict = Depends(require_cloudflare),
+) -> MemberOut:
+    before = None
+    try:
+        before = store.get_member(memberid)
+    except Exception:
+        before = None
+    try:
+        updated = store.set_cloudflare(memberid, body.is_cloudflare)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    cache.drop_members()
+    tracking.flag_change(request, member.get("memberid"), memberid, before, updated, "is_cloudflare")
+    return MemberOut(**updated)
+
+
+@api.patch("/members/{memberid}/email")
+def update_member_email(
+    memberid: str,
+    body: EmailIn,
+    member: dict = Depends(require_cloudflare),
+) -> dict:
+    del member
+    try:
+        email = routing.clean_email(body.email)
+        saved = store.set_email(memberid, email)
+    except routing.RoutingError as exc:
+        _raise_routing(exc)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+    return {"memberid": memberid, "email": saved}
+
+
 @api.patch("/members/{memberid}/honorary", response_model=MemberOut)
 def update_member_honorary(
     memberid: str,
@@ -871,8 +984,9 @@ def update_member_title(
     try:
         after = store.list_members()
     except Exception:
-        after = [updated]
-    tracking.title_changes(request, member.get("memberid"), before, after)
+        after = None
+    tracking.title_changes(request, member.get("memberid"), before, after if after is not None else [updated])
+    _sync_routing(member, before, after)
     return MemberOut(**updated)
 
 
@@ -898,8 +1012,8 @@ def assign_past_grand_knight(
     try:
         after = store.list_members()
     except Exception:
-        after = [updated]
-    tracking.title_changes(request, member.get("memberid"), before, after)
+        after = None
+    tracking.title_changes(request, member.get("memberid"), before, after if after is not None else [updated])
     tracking.admin_event(
         request,
         member.get("memberid"),
@@ -908,6 +1022,7 @@ def assign_past_grand_knight(
         memberid,
         category="past_gk",
     )
+    _sync_routing(member, before, after)
     return MemberOut(**updated)
 
 
@@ -927,7 +1042,30 @@ def save_assignments(body: AssignmentsIn, request: Request, member: dict = Depen
         _raise_store(exc)
     cache.drop_members()
     tracking.title_changes(request, member.get("memberid"), before, rows)
+    _sync_routing(member, before, rows)
     return [MemberOut(**row) for row in rows]
+
+
+@api.get("/email-routing")
+def email_routing(member: dict = Depends(require_cloudflare)) -> dict:
+    del member
+    try:
+        return routing.snapshot()
+    except routing.RoutingError as exc:
+        _raise_routing(exc)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+
+
+@api.post("/email-routing/{title}/update")
+def update_email_route(title: str, member: dict = Depends(require_cloudflare)) -> dict:
+    del member
+    try:
+        return routing.update_role(title)
+    except routing.RoutingError as exc:
+        _raise_routing(exc)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
 
 
 def _optional_crop(crop_x: str | None, crop_y: str | None, crop_scale: str | None):

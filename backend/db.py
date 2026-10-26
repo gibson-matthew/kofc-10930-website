@@ -157,6 +157,7 @@ _MEMBER_CACHE_FIELDS = (
     "title",
     "is_admin",
     "is_webmaster",
+    "is_cloudflare",
     "photo_url",
     "crop_x",
     "crop_y",
@@ -283,6 +284,7 @@ class Store:
                 _ensure_sample_member(cur, hashed)
                 _ensure_admin(cur)
                 _ensure_webmaster(cur)
+                _ensure_cloudflare(cur)
                 _rename_test_member(cur)
                 _ensure_test_roster(cur, hashed)
             conn.commit()
@@ -497,6 +499,7 @@ class Store:
             "title": title,
             "is_admin": bool(record.get("is_admin")),
             "is_webmaster": bool(record.get("is_webmaster")),
+            "is_cloudflare": bool(record.get("is_cloudflare")),
             "photo_url": photo_url,
             "crop_x": float(record.get("crop_x") or 0),
             "crop_y": float(record.get("crop_y") or 0),
@@ -558,6 +561,7 @@ class Store:
                     "title": "str?",
                     "is_admin": "bool",
                     "is_webmaster": "bool",
+                    "is_cloudflare": "bool",
                     "photo_url": "str?",
                     "crop_x": "num",
                     "crop_y": "num",
@@ -888,6 +892,110 @@ class Store:
             raise StoreError("Member was not found.", 404)
         return member
 
+    def set_cloudflare(self, memberid: str, is_cloudflare: bool) -> dict:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                target = next((item for item in self._members if item["membership_id"] == memberid), None)
+                if target is None:
+                    raise StoreError("Member was not found.", 404)
+                if target.get("is_cloudflare") and not is_cloudflare:
+                    holders = sum(1 for item in self._members if item.get("is_cloudflare"))
+                    if holders <= 1:
+                        raise StoreError("The council needs at least one Cloudflare role.", 400)
+                target["is_cloudflare"] = bool(is_cloudflare)
+            record = self._memory_member(memberid)
+            if record is None:
+                raise StoreError("Member was not found.", 404)
+            return self._public_member(record)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT membership_id, is_cloudflare
+                    FROM members
+                    WHERE membership_id = %s OR is_cloudflare
+                    ORDER BY membership_id
+                    FOR UPDATE
+                    """,
+                    (memberid,),
+                )
+                rows = cur.fetchall()
+                target = next((item for item in rows if item[0] == memberid), None)
+                if target is None:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Member was not found.", 404)
+                if target[1] and not is_cloudflare and sum(1 for item in rows if item[1]) <= 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("The council needs at least one Cloudflare role.", 400)
+                cur.execute(
+                    "UPDATE members SET is_cloudflare = %s WHERE membership_id = %s",
+                    (bool(is_cloudflare), memberid),
+                )
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not update Cloudflare access.", 503) from exc
+        member = self.get_member(memberid)
+        if member is None:
+            raise StoreError("Member was not found.", 404)
+        return member
+
+    def get_email(self, memberid: str) -> str:
+        conn = self._open()
+        if conn is None:
+            record = self._memory_member(memberid)
+            if record is None:
+                raise StoreError("Member was not found.", 404)
+            return str(record.get("email") or "").strip()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT email FROM members WHERE membership_id = %s",
+                    (memberid,),
+                )
+                row = cur.fetchone()
+            conn.close()
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not load the personal email.", 503) from exc
+        if row is None:
+            raise StoreError("Member was not found.", 404)
+        return str(row[0] or "").strip()
+
+    def set_email(self, memberid: str, email: str) -> str:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                target = next((item for item in self._members if item["membership_id"] == memberid), None)
+                if target is None:
+                    raise StoreError("Member was not found.", 404)
+                target["email"] = email
+            return email
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE members SET email = %s WHERE membership_id = %s",
+                    (email or None, memberid),
+                )
+                if cur.rowcount != 1:
+                    conn.rollback()
+                    conn.close()
+                    raise StoreError("Member was not found.", 404)
+            conn.commit()
+            conn.close()
+        except StoreError:
+            raise
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not save the personal email.", 503) from exc
+        return email
+
     def assign_roles(self, officer: list[dict], director: list[dict]) -> list[dict]:
         desired, managed = _role_plan(officer, director)
         conn = self._open()
@@ -967,6 +1075,7 @@ class Store:
                     "title": cleaned,
                     "is_admin": False,
                     "is_webmaster": False,
+                    "is_cloudflare": False,
                     "birth_month": birth_month,
                     "birth_day": birth_day,
                     "honorary_life": False,
@@ -1007,6 +1116,7 @@ class Store:
                         "title": cleaned,
                         "is_admin": False,
                         "is_webmaster": False,
+                        "is_cloudflare": False,
                         "birth_month": month,
                         "birth_day": day,
                         "honorary_life": False,
@@ -1087,6 +1197,7 @@ class Store:
             "title": saved_title,
             "is_admin": bool(row[3]),
             "is_webmaster": False,
+            "is_cloudflare": False,
             "photo_url": None,
             "crop_x": 0.0,
             "crop_y": 0.0,
@@ -3143,6 +3254,7 @@ CREATE TABLE IF NOT EXISTS members (
   title TEXT,
   is_admin BOOLEAN NOT NULL DEFAULT FALSE,
   is_webmaster BOOLEAN NOT NULL DEFAULT FALSE,
+  is_cloudflare BOOLEAN NOT NULL DEFAULT FALSE,
   birth_month SMALLINT,
   birth_day SMALLINT,
   honorary_life BOOLEAN NOT NULL DEFAULT FALSE,
@@ -3155,7 +3267,7 @@ _MEMBER_SELECT = """
 SELECT m.membership_id, m.password_hash, m.display_name, m.title, m.is_admin,
        i.id, i.path, i.crop_x, i.crop_y, i.crop_scale,
        m.birth_month, m.birth_day, m.honorary_life, m.phone, m.email,
-       m.is_webmaster
+       m.is_webmaster, m.is_cloudflare
 FROM members m
 LEFT JOIN images i
   ON i.owner_membership_id = m.membership_id AND i.purpose = 'profile'
@@ -3188,6 +3300,7 @@ def _memory_member_rows(hashed: str) -> list[dict]:
             "title": TEST_MEMBER_TITLE,
             "is_admin": True,
             "is_webmaster": True,
+            "is_cloudflare": True,
             "birth_month": None,
             "birth_day": None,
             **_memory_contact(TEST_MEMBER_ID),
@@ -3199,6 +3312,7 @@ def _memory_member_rows(hashed: str) -> list[dict]:
             "title": None,
             "is_admin": False,
             "is_webmaster": False,
+            "is_cloudflare": False,
             "birth_month": None,
             "birth_day": None,
             **_memory_contact(SAMPLE_MEMBER_ID),
@@ -3213,6 +3327,7 @@ def _memory_member_rows(hashed: str) -> list[dict]:
                 "title": member.title,
                 "is_admin": member.is_admin,
                 "is_webmaster": False,
+                "is_cloudflare": False,
                 "birth_month": member.birth_month,
                 "birth_day": member.birth_day,
                 **_memory_contact(member.membership_id),
@@ -3308,6 +3423,7 @@ def _record_from_row(row) -> dict:
         "phone": str(row[13] or "").strip() if len(row) > 13 else "",
         "email": str(row[14] or "").strip() if len(row) > 14 else "",
         "is_webmaster": bool(row[15]) if len(row) > 15 and row[15] is not None else False,
+        "is_cloudflare": bool(row[16]) if len(row) > 16 and row[16] is not None else False,
     }
 
 
@@ -4588,6 +4704,15 @@ def _ensure_schema(cur) -> None:
             "UPDATE members SET is_webmaster = TRUE WHERE membership_id = %s",
             (TEST_MEMBER_ID,),
         )
+    cloudflare_existed = members_existed and _column_exists(cur, "members", "is_cloudflare")
+    cur.execute(
+        "ALTER TABLE members ADD COLUMN IF NOT EXISTS is_cloudflare BOOLEAN NOT NULL DEFAULT FALSE"
+    )
+    if members_existed and not cloudflare_existed:
+        cur.execute(
+            "UPDATE members SET is_cloudflare = TRUE WHERE membership_id = %s",
+            (TEST_MEMBER_ID,),
+        )
     cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_month SMALLINT")
     cur.execute("ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_day SMALLINT")
     cur.execute(
@@ -4725,9 +4850,9 @@ def _upsert_test_member(cur, hashed: str) -> str:
         """
         INSERT INTO members (
           membership_id, password_hash, display_name, title, is_admin, is_webmaster,
-          honorary_life, phone, email
+          honorary_life, phone, email, is_cloudflare
         )
-        VALUES (%s, %s, %s, %s, TRUE, TRUE, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, TRUE, TRUE, %s, %s, %s, TRUE)
         ON CONFLICT (membership_id) DO NOTHING
         RETURNING id
         """,
@@ -4758,8 +4883,10 @@ def _upsert_test_member(cur, hashed: str) -> str:
 def _ensure_sample_member(cur, hashed: str) -> None:
     cur.execute(
         """
-        INSERT INTO members (membership_id, password_hash, display_name, title, is_admin, is_webmaster)
-        VALUES (%s, %s, %s, NULL, FALSE, FALSE)
+        INSERT INTO members (
+          membership_id, password_hash, display_name, title, is_admin, is_webmaster, is_cloudflare
+        )
+        VALUES (%s, %s, %s, NULL, FALSE, FALSE, FALSE)
         ON CONFLICT (membership_id) DO NOTHING
         """,
         (SAMPLE_MEMBER_ID, hashed, SAMPLE_MEMBER_NAME),
@@ -4786,6 +4913,16 @@ def _ensure_webmaster(cur) -> None:
         return
     cur.execute(
         "UPDATE members SET is_webmaster = TRUE WHERE membership_id = %s",
+        (TEST_MEMBER_ID,),
+    )
+
+
+def _ensure_cloudflare(cur) -> None:
+    cur.execute("SELECT COUNT(*) FROM members WHERE is_cloudflare")
+    if cur.fetchone()[0]:
+        return
+    cur.execute(
+        "UPDATE members SET is_cloudflare = TRUE WHERE membership_id = %s",
         (TEST_MEMBER_ID,),
     )
 

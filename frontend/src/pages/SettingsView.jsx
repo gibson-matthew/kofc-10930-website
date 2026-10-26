@@ -13,10 +13,12 @@ import {
   deleteMyPhoto,
   fetchMedia,
   fetchMembers,
+  fetchMyEmail,
   mediaUrl,
   imageFileError,
   replaceMedia,
   setMemberAdmin,
+  saveMyEmail,
   setMemberBirthday,
   setMemberHonorary,
   setMemberWebmaster,
@@ -27,6 +29,7 @@ import {
 import { OFFICER_TITLES, memberLabel } from "../titles";
 import { navigate } from "../router";
 import ActivityLog from "./ActivityLog";
+import EmailRouting from "./EmailRouting";
 
 const MEDIA_SECTIONS = [
   {
@@ -281,6 +284,67 @@ function ListPanel({ open, canToggle, onToggle, query, onQuery, placeholder, noM
   );
 }
 
+function PersonalEmail({ initial, onSaved }) {
+  const [email, setEmail] = useState(initial || "");
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setEmail(initial || "");
+  }, [initial]);
+
+  async function save() {
+    setBusy(true);
+    setNotice("");
+    setError("");
+    try {
+      const saved = await saveMyEmail(email);
+      const next = saved.email || "";
+      setEmail(next);
+      setNotice("Saved.");
+      if (onSaved) onSaved(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save the personal email.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="card settings-card" id="personal-email">
+      <h3>Personal email</h3>
+      <p>Mail for your role address is forwarded to this inbox.</p>
+      <label className="signin-field">
+        <span>Personal email</span>
+        <input
+          type="email"
+          value={email}
+          maxLength={90}
+          autoComplete="email"
+          disabled={busy}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+      </label>
+      <div className="signin-actions">
+        <button type="button" className="btn btn-quiet" disabled={busy} onClick={save}>
+          Save email
+        </button>
+      </div>
+      {notice ? (
+        <p className="settings-notice is-confirm" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="signin-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
 function Photo({ user, className }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -295,6 +359,7 @@ function Photo({ user, className }) {
 export default function SettingsView() {
   const { user, refresh } = useAuth();
   const webmaster = Boolean(user?.is_webmaster);
+  const cloudflare = Boolean(user?.is_cloudflare);
   const admin = Boolean(user?.is_admin || webmaster);
   const [members, setMembers] = useState([]);
   const [images, setImages] = useState([]);
@@ -316,6 +381,8 @@ export default function SettingsView() {
   const [memberForm, setMemberForm] = useState(EMPTY_MEMBER);
   const [memberNotice, setMemberNotice] = useState("");
   const [memberError, setMemberError] = useState("");
+  const [ownEmail, setOwnEmail] = useState(null);
+  const [ownSaved, setOwnSaved] = useState(null);
   const editorRef = useRef(null);
   editorRef.current = editor;
 
@@ -325,6 +392,21 @@ export default function SettingsView() {
       if (current?.ownedUrl) URL.revokeObjectURL(current.src);
     };
   }, []);
+
+  useEffect(() => {
+    let cancel = false;
+    fetchMyEmail()
+      .then((row) => {
+        if (cancel) return;
+        setOwnEmail({ email: row.email || "", editable: Boolean(row.editable) });
+      })
+      .catch(() => {
+        if (!cancel) setOwnEmail({ email: "", editable: false });
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [user?.memberid]);
 
   useEffect(() => {
     if (!admin) return undefined;
@@ -699,13 +781,19 @@ export default function SettingsView() {
           <div className="eyebrow left-only">Account</div>
           <h2 id="settingsHeading">Settings</h2>
           <p>{memberLabel(user)}</p>
-          {admin ? (
+          {admin || cloudflare ? (
             <nav className="settings-jump" aria-label="Settings sections">
               <a href="#profile">Profile photo</a>
-              <a href="#new-member">New member</a>
-              <a href="#members">Members</a>
-              <a href="#admin-access">Admin access</a>
-              <a href="#media">Media</a>
+              {admin ? (
+                <>
+                  <a href="#new-member">New member</a>
+                  <a href="#members">Members</a>
+                  <a href="#admin-access">Admin access</a>
+                  {cloudflare ? <a href="#email-routing">Email routing</a> : null}
+                  <a href="#media">Media</a>
+                </>
+              ) : null}
+              {cloudflare && !admin ? <a href="#email-routing">Email routing</a> : null}
               {webmaster ? <a href="#logs">Logs & activity</a> : null}
             </nav>
           ) : null}
@@ -748,6 +836,15 @@ export default function SettingsView() {
               </div>
             )}
           </article>
+          {ownEmail?.editable ? (
+            <PersonalEmail
+              initial={ownEmail.email}
+              onSaved={(email) => {
+                setOwnEmail((current) => (current ? { ...current, email } : current));
+                setOwnSaved({ memberid: user?.memberid, email, nonce: Date.now() });
+              }}
+            />
+          ) : null}
         </div>
         <div className="signin-actions settings-back">
           <button type="button" className="btn btn-quiet" onClick={() => navigate("/member")}>
@@ -1059,6 +1156,13 @@ export default function SettingsView() {
             })}
           </ListPanel>
         </section>
+      ) : null}
+
+      {cloudflare ? (
+        <EmailRouting
+          ownSaved={ownSaved}
+          onOwnEmail={(email) => setOwnEmail((current) => (current ? { ...current, email } : current))}
+        />
       ) : null}
 
       {admin ? (

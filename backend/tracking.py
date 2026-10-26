@@ -610,7 +610,12 @@ def flag_change(request, admin_id, target_id, before, after, flag: str = "is_adm
     new = None if after is None else bool(after.get(flag))
     if before is not None and old == new:
         return
-    content_type = "webmaster_flag" if flag == "is_webmaster" else "admin_flag"
+    if flag == "is_webmaster":
+        content_type = "webmaster_flag"
+    elif flag == "is_cloudflare":
+        content_type = "cloudflare_flag"
+    else:
+        content_type = "admin_flag"
     record(
         request,
         "admin.flag_change",

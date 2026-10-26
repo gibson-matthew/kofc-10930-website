@@ -800,6 +800,10 @@ body.page-member .on-navy {
   color: var(--navy);
 }
 
+.settings-view .routing-address {
+  overflow-wrap: anywhere;
+}
+
 .settings-card > p,
 .settings-hint {
   color: var(--ink-soft);

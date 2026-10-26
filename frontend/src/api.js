@@ -269,6 +269,47 @@ export async function setMemberWebmaster(memberid, isWebmaster) {
   return readJson(response, "Could not update webmaster access.");
 }
 
+export async function fetchMyEmail() {
+  const response = await send("/api/members/me/email");
+  return readJson(response, "Could not load the personal email.");
+}
+
+export async function saveMyEmail(email) {
+  const response = await send("/api/members/me/email", {
+    method: "PATCH",
+    body: JSON.stringify({ email }),
+  });
+  return readJson(response, "Could not save the personal email.");
+}
+
+export async function saveMemberEmail(memberid, email) {
+  const response = await send(`/api/members/${encodeURIComponent(memberid)}/email`, {
+    method: "PATCH",
+    body: JSON.stringify({ email }),
+  });
+  return readJson(response, "Could not save the personal email.");
+}
+
+export async function setMemberCloudflare(memberid, isCloudflare) {
+  const response = await send(`/api/members/${encodeURIComponent(memberid)}/cloudflare`, {
+    method: "PATCH",
+    body: JSON.stringify({ is_cloudflare: isCloudflare }),
+  });
+  return readJson(response, "Could not update Cloudflare access.");
+}
+
+export async function fetchEmailRouting() {
+  const response = await send("/api/email-routing");
+  return readJson(response, "Could not load email routing.");
+}
+
+export async function updateEmailRoute(title) {
+  const response = await send(`/api/email-routing/${encodeURIComponent(title)}/update`, {
+    method: "POST",
+  });
+  return readJson(response, "Could not update the route.");
+}
+
 export async function fetchMediaSlots() {
   const response = await fetch(apiUrl("/api/media/slots"), { headers: { Accept: "application/json" } });
   if (!response.ok) throw new Error("media failed");

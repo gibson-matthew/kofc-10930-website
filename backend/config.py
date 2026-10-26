@@ -173,6 +173,19 @@ def cloudflare_email_token() -> str:
     return os.environ.get("CLOUDFLARE_EMAIL_TOKEN", "").strip()
 
 
+def cloudflare_api_token() -> str:
+    return _raw("CLOUDFLARE_API_TOKEN")
+
+
+def cloudflare_zone_id() -> str:
+    return _raw("CLOUDFLARE_ZONE_ID")
+
+
+def cloudflare_routing_domain() -> str:
+    raw = _raw("CLOUDFLARE_ROUTING_DOMAIN").lower().rstrip(".")
+    return raw or "mistymountains.dev"
+
+
 def mail_from() -> str:
     return _raw("MAIL_FROM")
 
