@@ -3,13 +3,30 @@ const JSON_HEADERS = {
   Accept: "application/json",
 };
 
+export function apiUrl(path) {
+  const value = String(path || "");
+  if (/^https?:\/\//i.test(value)) return value;
+  const base = String(import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+  const suffix = value.startsWith("/") ? value : `/${value}`;
+  return `${base}${suffix}`;
+}
+
+export function mediaUrl(src) {
+  const value = String(src || "");
+  if (!value || /^(https?:|blob:|data:)/i.test(value)) return value;
+  if (value.startsWith("/api/") || value.startsWith("api/")) {
+    return apiUrl(value.startsWith("/") ? value : `/${value}`);
+  }
+  return value;
+}
+
 export const authBus = new EventTarget();
 
 let refreshPromise = null;
 
 function refreshSession() {
   if (!refreshPromise) {
-    refreshPromise = fetch("/api/auth/refresh", {
+    refreshPromise = fetch(apiUrl("/api/auth/refresh"), {
       method: "POST",
       credentials: "include",
       headers: { Accept: "application/json" },
@@ -36,7 +53,7 @@ async function errorMessage(response, fallback) {
 export async function login(memberid, password) {
   let response;
   try {
-    response = await fetch("/api/auth/login", {
+    response = await fetch(apiUrl("/api/auth/login"), {
       method: "POST",
       credentials: "include",
       headers: JSON_HEADERS,
@@ -57,7 +74,7 @@ export async function login(memberid, password) {
 export async function logout() {
   sessionStorage.removeItem("koc10930.token");
   try {
-    await fetch("/api/auth/logout", {
+    await fetch(apiUrl("/api/auth/logout"), {
       method: "POST",
       credentials: "include",
     });
@@ -67,14 +84,14 @@ export async function logout() {
 }
 
 export async function currentMember() {
-  let response = await fetch("/api/auth/me", {
+  let response = await fetch(apiUrl("/api/auth/me"), {
     credentials: "include",
     headers: { Accept: "application/json" },
   });
   if (response.status === 401) {
     const refreshed = await refreshSession();
     if (!refreshed) return null;
-    response = await fetch("/api/auth/me", {
+    response = await fetch(apiUrl("/api/auth/me"), {
       credentials: "include",
       headers: { Accept: "application/json" },
     });
@@ -86,7 +103,7 @@ export async function currentMember() {
 
 async function send(path, options = {}, retry = true) {
   const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
-  const response = await fetch(path, {
+  const response = await fetch(apiUrl(path), {
     credentials: "include",
     ...options,
     headers: {
@@ -253,7 +270,7 @@ export async function setMemberWebmaster(memberid, isWebmaster) {
 }
 
 export async function fetchMediaSlots() {
-  const response = await fetch("/api/media/slots", { headers: { Accept: "application/json" } });
+  const response = await fetch(apiUrl("/api/media/slots"), { headers: { Accept: "application/json" } });
   if (!response.ok) throw new Error("media failed");
   return response.json();
 }
@@ -395,7 +412,7 @@ export function documentFileError(file) {
 }
 
 export function documentFileUrl(id) {
-  return `/api/documents/${id}/file`;
+  return apiUrl(`/api/documents/${id}/file`);
 }
 
 export async function fetchDocuments(library) {

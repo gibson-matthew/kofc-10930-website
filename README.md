@@ -4,7 +4,7 @@ Public site and members area for Knights of Columbus Council 10930. The members 
 
 ## Run locally
 
-PostgreSQL must be running. The default connection is `postgresql://postgres:postgres@localhost:5432/koc10930`.
+Copy `.env.example` to `.env` in the repo root and set the database account there. `backend/config.py` reads that file. If `DATABASE_URL` and `POSTGRES_USER` are both empty, the API still starts and serves the in-memory roster.
 
 ```powershell
 & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -h localhost -c "CREATE DATABASE koc10930"
@@ -23,7 +23,17 @@ npm run dev
 
 Open http://localhost:5173 and use Sign in.
 
-Set `DATABASE_URL` if PostgreSQL is not on the default host, user, or password. Set `JWT_SECRET` to a long random string before any shared deployment. Set `COOKIE_SECURE=true` when the site is served over HTTPS.
+Set `JWT_SECRET` to a long random string before any shared deployment. When it is empty, the API keeps a gitignored key in `.local/jwt_secret`. Set `COOKIE_SECURE=true` when the site is served over HTTPS. Do not commit `.env`.
+
+The dev server proxies `/api` to `API_PROXY_TARGET` (local API on port 8000). Leave `VITE_API_BASE` empty so the browser keeps calling same-origin `/api`. Redis and the mail settings are optional. If Redis is down, or `REDIS_URL=off`, cached reads use PostgreSQL or the in-memory fallback. Mail settings are unused until outbound mail is added.
+
+Page content, officers, honors, events, announcements, the member roster, document lists, prayer requests, and nomination totals are cached when Redis answers. Passwords, session tokens, audit rows, phone numbers, email addresses, and uploaded files are not.
+
+```powershell
+docker run --name kofc-redis -p 6379:6379 redis:7
+```
+
+Set `REDIS_URL` when Redis is not at `redis://localhost:6379/0`. On a dedicated Redis host the API sets a 48GB `maxmemory` ceiling and `allkeys-lru` when Redis allows `CONFIG SET`. Set `REDIS_MAXMEMORY=off` on a small machine. A local `redis-server` on port 6379 works the same way.
 
 ## Test member
 

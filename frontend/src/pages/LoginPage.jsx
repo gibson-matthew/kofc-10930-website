@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useState } from "react";
-import { fetchMediaSlots } from "../api";
+import { fetchMediaSlots, mediaUrl } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { Block } from "../components/Block";
 import { ContentProvider, useContent } from "../content/ContentContext";
@@ -75,7 +75,7 @@ function LoginForm() {
           navigate("/");
         }}
       >
-        <img className="hero-medallion-navbar" src={logoSrc} alt="" />
+        <img className="hero-medallion-navbar" src={mediaUrl(logoSrc)} alt="" />
         <span className="brand-text">
           <Block id="brand.name" className="name" />
           <br />

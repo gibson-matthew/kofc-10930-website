@@ -13,6 +13,7 @@ import {
   deleteMyPhoto,
   fetchMedia,
   fetchMembers,
+  mediaUrl,
   imageFileError,
   replaceMedia,
   setMemberAdmin,
@@ -1094,7 +1095,7 @@ export default function SettingsView() {
           >
             {shownMedia.map((slot) => (
               <article className="card media-card" key={slot.value}>
-                {slot.image ? <img src={slot.image.url} alt="" /> : null}
+                {slot.image ? <img src={mediaUrl(slot.image.url)} alt="" /> : null}
                 <strong>{slot.label}</strong>
                 {slot.image ? <p className="settings-hint">{slot.image.original_name}</p> : (
                   <p className="settings-hint">No photo yet.</p>

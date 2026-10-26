@@ -8,9 +8,12 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from config import upload_dir
+
 BACKEND_DIR = Path(__file__).resolve().parent
 REPO_ROOT = BACKEND_DIR.parent
-UPLOAD_DIR = BACKEND_DIR / "uploads"
+UPLOAD_DIR = upload_dir()
+_UPLOAD_LOGICAL = "backend/uploads/"
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 RECOG_SLOTS: tuple[str, ...] = ("recog.0", "recog.1", "recog.2", "recog.3")
@@ -204,6 +207,17 @@ def absolute_path(relative: str) -> Path:
     normalized = relative.replace("\\", "/").lstrip("/")
     if not normalized or normalized.startswith("../") or "/../" in f"/{normalized}/":
         raise MediaError("Image path is not allowed.")
+    if normalized == "backend/uploads" or normalized.startswith(_UPLOAD_LOGICAL):
+        rest = normalized[len(_UPLOAD_LOGICAL):] if normalized.startswith(_UPLOAD_LOGICAL) else ""
+        if rest.startswith("/") or ".." in rest.split("/"):
+            raise MediaError("Image path is not allowed.")
+        root = UPLOAD_DIR.resolve()
+        full = (root / rest).resolve() if rest else root
+        try:
+            full.relative_to(root)
+        except ValueError as exc:
+            raise MediaError("Image path is not allowed.") from exc
+        return full
     full = (REPO_ROOT / normalized).resolve()
     try:
         full.relative_to(REPO_ROOT.resolve())

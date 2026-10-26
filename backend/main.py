@@ -15,6 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field, field_validator
 
 from db import StoreError, store
+import cache
 import tracking
 from media import (
     MAX_DOCUMENT_BYTES,
@@ -35,6 +36,7 @@ from media import (
     write_library_file,
     write_upload,
 )
+from config import cookie_samesite, cors_origin_regex, cors_origins, dev_secret_is_ephemeral
 from security import (
     ACCESS_COOKIE,
     ACCESS_MINUTES,
@@ -49,13 +51,6 @@ from security import (
     using_dev_secret,
 )
 
-try:
-    from dotenv import load_dotenv
-
-    load_dotenv()
-except Exception:
-    pass
-
 log = logging.getLogger("koc10930")
 
 
@@ -63,7 +58,13 @@ log = logging.getLogger("koc10930")
 async def lifespan(app: FastAPI):
     status_text = store.prepare()
     if using_dev_secret():
-        log.warning("JWT_SECRET is not set. Using the development secret.")
+        if dev_secret_is_ephemeral():
+            log.warning(
+                "JWT_SECRET is not set and the local secret file could not be written. "
+                "Sessions reset when the API restarts."
+            )
+        else:
+            log.warning("JWT_SECRET is not set. Using a gitignored local development secret.")
     if status_text == "memory":
         log.warning("PostgreSQL is unavailable. Sign-in is using the in-memory test member.")
     elif status_text == "different-password":
@@ -77,11 +78,8 @@ app = FastAPI(title="Council 10930", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):517\d",
+    allow_origins=cors_origins(),
+    allow_origin_regex=cors_origin_regex(),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -398,13 +396,14 @@ def _unauthorized() -> HTTPException:
 
 def _set_auth_cookies(response: Response, access: str, refresh: str) -> None:
     secure = cookie_secure()
+    same_site = cookie_samesite()
     response.set_cookie(
         ACCESS_COOKIE,
         access,
         max_age=ACCESS_MINUTES * 60,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite=same_site,
         path="/",
     )
     response.set_cookie(
@@ -413,7 +412,7 @@ def _set_auth_cookies(response: Response, access: str, refresh: str) -> None:
         max_age=REFRESH_DAYS * 24 * 60 * 60,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite=same_site,
         path="/api/auth",
     )
     response.headers["Cache-Control"] = "no-store"
@@ -421,8 +420,9 @@ def _set_auth_cookies(response: Response, access: str, refresh: str) -> None:
 
 def _clear_auth_cookies(response: Response) -> None:
     secure = cookie_secure()
-    response.delete_cookie(ACCESS_COOKIE, path="/", secure=secure, httponly=True, samesite="lax")
-    response.delete_cookie(REFRESH_COOKIE, path="/api/auth", secure=secure, httponly=True, samesite="lax")
+    same_site = cookie_samesite()
+    response.delete_cookie(ACCESS_COOKIE, path="/", secure=secure, httponly=True, samesite=same_site)
+    response.delete_cookie(REFRESH_COOKIE, path="/api/auth", secure=secure, httponly=True, samesite=same_site)
 
 
 def _session_response(member: dict) -> JSONResponse:
@@ -622,6 +622,7 @@ def save_member_page(body: SaveIn, request: Request, member: dict = Depends(requ
     except Exception:
         before = None
     saved = store.save_member(payload)
+    cache.drop_page("member")
     tracking.content_diff(request, member.get("memberid"), before, payload)
     return PageOut(**saved)
 
@@ -663,6 +664,7 @@ async def upload_my_photo(
         delete_stored_file(path)
         tracking.file_result(request, member_id, "profile", "failure", content_type=content_type, size=size)
         _raise_store(exc)
+    cache.drop_members()
     tracking.file_result(
         request, member_id, "profile", "success", content_type=content_type, size=size, record_id=member_id
     )
@@ -677,6 +679,7 @@ def update_my_crop(body: CropIn, request: Request, member: dict = Depends(get_cu
         updated = store.update_profile_crop(member["memberid"], crop)
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_members()
     tracking.feature_use(request, member["memberid"], "photo_change", {"action": "crop"})
     return MemberOut(**updated)
 
@@ -687,6 +690,7 @@ def delete_my_photo(request: Request, member: dict = Depends(get_current_member)
         updated = store.clear_profile_image(member["memberid"])
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_members()
     tracking.file_result(request, member["memberid"], "profile", "removed", record_id=member["memberid"])
     tracking.feature_use(request, member["memberid"], "photo_change", {"action": "remove"})
     return MemberOut(**updated)
@@ -707,6 +711,9 @@ def create_member(body: MemberCreateIn, request: Request, member: dict = Depends
         )
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_members()
+    if created.get("title") == "PGK":
+        cache.drop_honors()
     extra = {"title": created["title"]} if created.get("title") else {}
     tracking.admin_event(request, member.get("memberid"), "create", "member", created["memberid"], **extra)
     return MemberOut(**created)
@@ -778,6 +785,7 @@ def update_member_admin(
         updated = store.set_admin(memberid, body.is_admin)
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_members()
     tracking.flag_change(request, member.get("memberid"), memberid, before, updated)
     return MemberOut(**updated)
 
@@ -798,6 +806,7 @@ def update_member_webmaster(
         updated = store.set_webmaster(memberid, body.is_webmaster)
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_members()
     tracking.flag_change(request, member.get("memberid"), memberid, before, updated, "is_webmaster")
     return MemberOut(**updated)
 
@@ -813,6 +822,7 @@ def update_member_honorary(
         updated = store.set_honorary(memberid, body.honorary_life)
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_members()
     tracking.admin_event(
         request,
         member.get("memberid"),
@@ -835,6 +845,7 @@ def update_member_birthday(
         updated = store.set_birthday(memberid, body.birth_month, body.birth_day)
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_members()
     tracking.admin_event(request, member.get("memberid"), "update", "member_birthday", memberid)
     return MemberOut(**updated)
 
@@ -855,6 +866,7 @@ def update_member_title(
         updated = store.set_title(memberid, body.title)
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_members()
     after = None
     try:
         after = store.list_members()
@@ -880,6 +892,8 @@ def assign_past_grand_knight(
         updated = store.assign_pgk(memberid, body.period, body.note)
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_members()
+    cache.drop_honors()
     after = None
     try:
         after = store.list_members()
@@ -911,6 +925,7 @@ def save_assignments(body: AssignmentsIn, request: Request, member: dict = Depen
         )
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_members()
     tracking.title_changes(request, member.get("memberid"), before, rows)
     return [MemberOut(**row) for row in rows]
 
@@ -997,6 +1012,7 @@ async def create_honor(
             delete_stored_file(photo[0])
             tracking.file_result(request, member.get("memberid"), "honor", "failure", content_type=photo[1])
         _raise_store(exc)
+    cache.drop_honors()
     if photo:
         tracking.file_result(
             request,
@@ -1069,6 +1085,7 @@ async def update_honor(
                 request, member.get("memberid"), "honor", "failure", content_type=photo[1], record_id=honor_id
             )
         _raise_store(exc)
+    cache.drop_honors()
     if photo:
         tracking.file_result(
             request,
@@ -1091,6 +1108,7 @@ def remove_honor(honor_id: int, request: Request, member: dict = Depends(require
         store.delete_honor(honor_id)
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_honors()
     tracking.admin_event(request, member.get("memberid"), "delete", "honor", honor_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1111,6 +1129,7 @@ def create_event(body: EventIn, request: Request, member: dict = Depends(require
         created = store.create_event(body.model_dump())
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_events()
     tracking.admin_event(request, member.get("memberid"), "create", "event", created.get("id"))
     return EventOut(**created)
 
@@ -1121,6 +1140,7 @@ def update_event(event_id: int, body: EventIn, request: Request, member: dict = 
         updated = store.update_event(event_id, body.model_dump())
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_events()
     tracking.admin_event(request, member.get("memberid"), "update", "event", event_id)
     return EventOut(**updated)
 
@@ -1131,6 +1151,7 @@ def remove_event(event_id: int, request: Request, member: dict = Depends(require
         store.delete_event(event_id)
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_events()
     tracking.admin_event(request, member.get("memberid"), "delete", "event", event_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1403,6 +1424,7 @@ async def create_document(
         created.get("id"),
         library=cleaned_library,
     )
+    cache.drop_documents(cleaned_library)
     return DocumentOut(**created)
 
 
@@ -1438,6 +1460,7 @@ def create_announcement(
         created = store.create_announcement(body.title, body.summary, body.body, member.get("memberid"))
     except StoreError as exc:
         _raise_store(exc)
+    cache.drop_announcements()
     tracking.admin_event(request, member.get("memberid"), "create", "announcement", created.get("id"))
     return AnnouncementOut(**created)
 
@@ -1453,6 +1476,7 @@ def update_announcement(
         updated = store.update_announcement(announcement_id, body.title, body.summary, body.body)
     except StoreError as exc:
         _raise_store(exc)
+    cache.drop_announcements()
     tracking.admin_event(request, member.get("memberid"), "update", "announcement", announcement_id)
     return AnnouncementOut(**updated)
 
@@ -1467,6 +1491,7 @@ def delete_announcement(
         store.delete_announcement(announcement_id)
     except StoreError as exc:
         _raise_store(exc)
+    cache.drop_announcements()
     tracking.admin_event(request, member.get("memberid"), "delete", "announcement", announcement_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -1486,6 +1511,7 @@ def create_prayer(body: PrayerIn, member: dict = Depends(get_current_member)) ->
         created = store.create_prayer(body.title, body.body, member.get("memberid"))
     except StoreError as exc:
         _raise_store(exc)
+    cache.drop_prayers()
     return PrayerOut(**created)
 
 
@@ -1499,6 +1525,7 @@ def update_prayer(
         updated = store.update_prayer(prayer_id, body.title, body.body, member.get("memberid"))
     except StoreError as exc:
         _raise_store(exc)
+    cache.drop_prayers()
     return PrayerOut(**updated)
 
 
@@ -1512,6 +1539,7 @@ def delete_prayer(
         store.delete_prayer(prayer_id, member.get("memberid"), has_edit_access(member))
     except StoreError as exc:
         _raise_store(exc)
+    cache.drop_prayers()
     if has_edit_access(member):
         tracking.admin_event(request, member.get("memberid"), "delete", "prayer_request", prayer_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -1548,6 +1576,7 @@ def save_nomination(body: NominationIn, member: dict = Depends(get_current_membe
         )
     except StoreError as exc:
         _raise_store(exc)
+    cache.drop_nominations()
     return NominationOut(**saved)
 
 
@@ -1560,6 +1589,7 @@ def withdraw_nomination(
         store.withdraw_nomination(nomination_id, member.get("memberid"))
     except StoreError as exc:
         _raise_store(exc)
+    cache.drop_nominations()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -1569,6 +1599,7 @@ def delete_document(document_id: int, request: Request, member: dict = Depends(r
         store.delete_document(document_id)
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
+    cache.drop_documents()
     tracking.file_result(request, member.get("memberid"), "document", "removed", record_id=document_id)
     tracking.admin_event(request, member.get("memberid"), "delete", "document", document_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

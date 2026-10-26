@@ -2,8 +2,7 @@
 -- Create the database, then run this file:
 --   createdb koc10930
 --   psql -d koc10930 -f backend/schema.sql
--- The API reads DATABASE_URL
--- (default postgresql://postgres:postgres@localhost:5432/koc10930).
+-- The API reads DATABASE_URL from the environment. See .env.example.
 -- Passwords are bcrypt hashes. The API creates membership id 1000000
 -- on startup when that row is missing, with officer title GK, admin
 -- access, and webmaster access. It also creates membership id 1000001

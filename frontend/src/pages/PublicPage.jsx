@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { fetchMediaSlots } from "../api";
+import { fetchMediaSlots, mediaUrl } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { Block, Eyebrow } from "../components/Block";
 import { SvgSprite } from "../components/Marks";
@@ -95,7 +95,7 @@ function Carousel({ slides: slideList }) {
           return (
             <div className={slideIndex === index ? "carousel-slide is-active" : "carousel-slide"} key={slide.slot || src}>
               <img
-                src={src}
+                src={mediaUrl(src)}
                 alt={text(slide.altKey)}
                 width="800"
                 height="500"
@@ -212,7 +212,7 @@ function PublicView() {
       <SvgSprite />
       <header id="siteHeader" className={scrolled ? "is-scrolled" : undefined}>
         <a href="#top" className="brand">
-          <img className="hero-medallion-navbar" src={logoSrc} alt="" onError={keepExampleLogo} />
+          <img className="hero-medallion-navbar" src={mediaUrl(logoSrc)} alt="" onError={keepExampleLogo} />
           <span className="brand-text">
             <Block id="brand.name" className="name" />
             <br />
@@ -253,7 +253,7 @@ function PublicView() {
         <span className="corner bl" aria-hidden="true" />
         <span className="corner br" aria-hidden="true" />
         <div className="hero-inner">
-          <img className="hero-medallion" src={logoSrc} alt="" onError={keepExampleLogo} />
+          <img className="hero-medallion" src={mediaUrl(logoSrc)} alt="" onError={keepExampleLogo} />
           <Eyebrow id="hero.eyebrow" />
           <Block id="hero.title" as="h1" />
           <Block id="hero.place" as="div" className="place" />
@@ -386,7 +386,7 @@ function PublicView() {
             <span className="corner tr" aria-hidden="true" />
             <span className="corner bl" aria-hidden="true" />
             <span className="corner br" aria-hidden="true" />
-            <img className="hero-medallion-end" src={logoSrc} alt="" onError={keepExampleLogo} />
+            <img className="hero-medallion-end" src={mediaUrl(logoSrc)} alt="" onError={keepExampleLogo} />
             <Block id="join.title" as="h2" />
             <Block id="join.body" as="p" />
             <Block id="join.cta" className="btn btn-lg" href="#join" />
@@ -398,7 +398,7 @@ function PublicView() {
         <div className="container">
           <div className="footer-inner">
             <div className="footer-brand">
-              <img className="hero-medallion-navbar" src={logoSrc} alt="" onError={keepExampleLogo} />
+              <img className="hero-medallion-navbar" src={mediaUrl(logoSrc)} alt="" onError={keepExampleLogo} />
               <span>
                 <Block id="footer.name" className="name" locked />
                 <Block id="footer.sub" className="sub" locked />

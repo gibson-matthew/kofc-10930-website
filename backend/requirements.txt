@@ -6,3 +6,4 @@ psycopg[binary]
 bcrypt
 PyJWT
 python-multipart
+redis

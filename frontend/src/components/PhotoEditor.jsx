@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { mediaUrl } from "../api";
 import { clampCrop } from "../crop";
 import { PortraitSm } from "./Marks";
 
@@ -73,7 +74,7 @@ export default function PhotoEditor({
         <div className="photo-editor-window" ref={windowRef}>
           {src ? (
             <img
-              src={src}
+              src={mediaUrl(src)}
               alt=""
               draggable={false}
               style={{ transform: `translate(${crop.x * 100}%, ${crop.y * 100}%) scale(${crop.scale})` }}

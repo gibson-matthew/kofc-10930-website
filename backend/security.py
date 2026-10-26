@@ -7,7 +7,6 @@ accepted so non-browser clients can call protected routes.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -15,12 +14,13 @@ import bcrypt
 import jwt
 from fastapi import Request
 
+from config import cookie_secure, jwt_secret, using_dev_secret
+
 ACCESS_COOKIE = "access_token"
 REFRESH_COOKIE = "refresh_token"
 ACCESS_MINUTES = 15
 REFRESH_DAYS = 7
 _ALGORITHM = "HS256"
-_DEV_SECRET = "dev-only-change-me-council-10930"
 
 # Checked when the membership id is unknown so missing users take about as
 # long as a real password comparison.
@@ -29,18 +29,6 @@ _DUMMY_HASH = bcrypt.hashpw(b"not-a-real-password", bcrypt.gensalt(rounds=12))
 
 class TokenError(Exception):
     pass
-
-
-def jwt_secret() -> str:
-    return os.environ.get("JWT_SECRET") or _DEV_SECRET
-
-
-def using_dev_secret() -> bool:
-    return not os.environ.get("JWT_SECRET")
-
-
-def cookie_secure() -> bool:
-    return os.environ.get("COOKIE_SECURE", "").lower() in {"1", "true", "yes"}
 
 
 def hash_password(password: str) -> str:

@@ -1,3 +1,5 @@
+import { apiUrl } from "./api";
+
 const CONSENT_VERSION = "1";
 const CONSENT_COOKIE = "koc_consent";
 
@@ -21,7 +23,7 @@ export function consentChoice() {
 }
 
 export async function saveConsent(choice) {
-  const response = await fetch("/api/consent", {
+  const response = await fetch(apiUrl("/api/consent"), {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -46,7 +48,7 @@ export function flush() {
     language: navigator.language || "",
     events,
   });
-  fetch("/api/audit/events", {
+  fetch(apiUrl("/api/audit/events"), {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },

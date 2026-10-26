@@ -14,13 +14,6 @@ from __future__ import annotations
 
 import sys
 
-try:
-    from dotenv import load_dotenv
-
-    load_dotenv()
-except Exception:
-    pass
-
 from db import store
 
 

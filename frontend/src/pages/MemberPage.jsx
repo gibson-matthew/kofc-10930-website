@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { fetchMediaSlots, fetchRoster, imageFileError, replaceMedia, saveRoleAssignments, updateMediaCrop, uploadMedia, assignMediaSlot } from "../api";
+import { assignMediaSlot, fetchMediaSlots, fetchRoster, imageFileError, mediaUrl, replaceMedia, saveRoleAssignments, updateMediaCrop, uploadMedia } from "../api";
 import { useAuth } from "../auth/AuthContext";
 import { Block, Eyebrow } from "../components/Block";
 import CroppedPhoto from "../components/CroppedPhoto";
@@ -928,7 +928,7 @@ function MemberView() {
             navigate("/member");
           }}
         >
-          <img className="hero-medallion-navbar" src={logoSrc} alt="" onError={keepExampleLogo} />
+          <img className="hero-medallion-navbar" src={mediaUrl(logoSrc)} alt="" onError={keepExampleLogo} />
           <span>
             <Block id="brand.name" className="name" locked />
             <Block id="brand.sub" className="sub" locked />
@@ -1280,7 +1280,7 @@ function MemberView() {
         <div className="container">
           <div className="footer-inner">
             <div className="footer-brand">
-              <img className="hero-medallion-navbar" src={logoSrc} alt="" onError={keepExampleLogo} />
+              <img className="hero-medallion-navbar" src={mediaUrl(logoSrc)} alt="" onError={keepExampleLogo} />
               <span>
                 <Block id="footer.name" className="name" locked />
                 <Block id="footer.sub" className="sub" locked />

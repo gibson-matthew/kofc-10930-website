@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 import threading
 from copy import deepcopy
@@ -62,8 +61,9 @@ from titles import (
     TITLE_ABBREVS,
     normalize_title,
 )
+import cache
+from config import database_url
 
-DEFAULT_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/koc10930"
 # Documented local account. Created only when this membership id is missing.
 # Password123! is also the shared password for 1000001 and roster ids 1000100–1000149.
 TEST_MEMBER_ID = "1000000"
@@ -100,19 +100,123 @@ class StoreError(Exception):
         self.status_code = status_code
 
 
-def _database_url() -> str:
-    return os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
-
-
 def _connect():
+    url = database_url()
+    if not url:
+        return None
     try:
         import psycopg
     except ImportError:
         return None
     try:
-        return psycopg.connect(_database_url(), connect_timeout=2)
+        return psycopg.connect(url, connect_timeout=2)
     except Exception:
         return None
+
+
+def _field_ok(value, kind: str) -> bool:
+    if kind == "str":
+        return isinstance(value, str)
+    if kind == "str?":
+        return value is None or isinstance(value, str)
+    if kind == "int":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if kind == "int?":
+        return value is None or (isinstance(value, int) and not isinstance(value, bool))
+    if kind == "bool":
+        return isinstance(value, bool)
+    if kind == "num":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return False
+
+
+def _cache_list(
+    rows,
+    required: tuple[str, ...],
+    banned: tuple[str, ...] = (),
+    kinds: dict | None = None,
+) -> list | None:
+    """Return a cached list only when every row has the public fields and nothing sensitive."""
+    if not isinstance(rows, list):
+        return None
+    for item in rows:
+        if not isinstance(item, dict):
+            return None
+        if any(key in item for key in banned):
+            return None
+        if any(key not in item for key in required):
+            return None
+        if kinds is not None and any(not _field_ok(item.get(key), kind) for key, kind in kinds.items()):
+            return None
+    return rows
+
+
+_MEMBER_CACHE_FIELDS = (
+    "memberid",
+    "display_name",
+    "title",
+    "is_admin",
+    "is_webmaster",
+    "photo_url",
+    "crop_x",
+    "crop_y",
+    "crop_scale",
+    "birth_month",
+    "birth_day",
+    "honorary_life",
+)
+
+
+def _cached_page(slug: str, payload) -> dict | None:
+    if not isinstance(payload, dict) or payload.get("slug") != slug:
+        return None
+    blocks = payload.get("blocks")
+    if not isinstance(blocks, list):
+        return None
+    for block in blocks:
+        if not isinstance(block, dict):
+            return None
+        if not _field_ok(block.get("key"), "str") or not _field_ok(block.get("field_type"), "str"):
+            return None
+        if not _field_ok(block.get("value"), "str") or not _field_ok(block.get("sort_order"), "int"):
+            return None
+    return payload
+
+
+def _cached_tallies(payload) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    if not _field_ok(payload.get("month_period"), "str") or not _field_ok(payload.get("year_period"), "str"):
+        return None
+    categories = payload.get("categories")
+    if not isinstance(categories, list):
+        return None
+    for category in categories:
+        if not isinstance(category, dict):
+            return None
+        if not _field_ok(category.get("category"), "str") or not _field_ok(category.get("label"), "str"):
+            return None
+        nominees = category.get("nominees")
+        if not isinstance(nominees, list):
+            return None
+        for nominee in nominees:
+            if not isinstance(nominee, dict):
+                return None
+            if not _field_ok(nominee.get("nominee_name"), "str") or not _field_ok(nominee.get("votes"), "int"):
+                return None
+            if not _field_ok(nominee.get("nominee_member_id"), "str"):
+                return None
+            people = nominee.get("nominators")
+            if not isinstance(people, list):
+                return None
+            for person in people:
+                if not isinstance(person, dict):
+                    return None
+                if not _field_ok(person.get("member_id"), "str") or not _field_ok(person.get("display_name"), "str"):
+                    return None
+                if not _field_ok(person.get("reason"), "str"):
+                    return None
+    return payload
 
 
 class Store:
@@ -443,8 +547,36 @@ class Store:
         return [_record_from_row(row) for row in fetched]
 
     def list_members(self) -> list[dict]:
+        if self._cache_ready():
+            cached = _cache_list(
+                cache.get_json(cache.MEMBERS),
+                _MEMBER_CACHE_FIELDS,
+                ("password", "password_hash", "phone", "email", "token"),
+                {
+                    "memberid": "str",
+                    "display_name": "str",
+                    "title": "str?",
+                    "is_admin": "bool",
+                    "is_webmaster": "bool",
+                    "photo_url": "str?",
+                    "crop_x": "num",
+                    "crop_y": "num",
+                    "crop_scale": "num",
+                    "birth_month": "int?",
+                    "birth_day": "int?",
+                    "honorary_life": "bool",
+                },
+            )
+            if cached is not None:
+                return cached
+        with self._lock:
+            was_memory = self._prefer_memory
         rows = [self._public_member(record) for record in self._member_records()]
         rows.sort(key=lambda item: (item["display_name"].lower(), item["memberid"]))
+        with self._lock:
+            still_memory = self._prefer_memory
+        if not was_memory and not still_memory:
+            cache.store_roster(rows)
         return rows
 
     def list_directory(self) -> list[dict]:
@@ -1061,6 +1193,25 @@ class Store:
         return updated
 
     def list_honors(self) -> list[dict]:
+        if self._cache_ready():
+            cached = _cache_list(
+                cache.get_honors(),
+                ("id", "category", "name", "period", "note", "photo_url", "crop_x", "crop_y", "crop_scale"),
+                ("photo_path", "file_path"),
+                {
+                    "id": "int",
+                    "category": "str",
+                    "name": "str",
+                    "period": "str",
+                    "note": "str",
+                    "photo_url": "str?",
+                    "crop_x": "num",
+                    "crop_y": "num",
+                    "crop_scale": "num",
+                },
+            )
+            if cached is not None:
+                return cached
         conn = self._open()
         if conn is None:
             with self._lock:
@@ -1084,7 +1235,9 @@ class Store:
             except Exception:
                 pass
             raise StoreError("Could not load past honors.", 503) from exc
-        return [_public_honor(_honor_from_row(row)) for row in fetched]
+        rows = [_public_honor(_honor_from_row(row)) for row in fetched]
+        cache.store_honors(rows)
+        return rows
 
     def honor_file(self, honor_id: int) -> tuple[str, str] | None:
         row = self._honor_record(honor_id)
@@ -1251,6 +1404,22 @@ class Store:
             delete_stored_file(str(previous["photo_path"]))
 
     def list_events(self) -> list[dict]:
+        if self._cache_ready():
+            cached = _cache_list(
+                cache.get_json(cache.EVENTS),
+                ("id", "title", "event_date", "event_time", "location", "description"),
+                (),
+                {
+                    "id": "int",
+                    "title": "str",
+                    "event_date": "str",
+                    "event_time": "str?",
+                    "location": "str?",
+                    "description": "str",
+                },
+            )
+            if cached is not None:
+                return cached
         conn = self._open()
         if conn is None:
             with self._lock:
@@ -1275,7 +1444,9 @@ class Store:
             except Exception:
                 pass
             raise StoreError("Could not load events.", 503) from exc
-        return [_public_event(_event_from_row(row)) for row in fetched]
+        rows = [_public_event(_event_from_row(row)) for row in fetched]
+        cache.set_json(cache.EVENTS, rows, cache.TTL_FRESH)
+        return rows
 
     def create_event(self, fields: dict) -> dict:
         payload = _event_fields(fields)
@@ -1390,6 +1561,23 @@ class Store:
 
     def list_documents(self, library: str) -> list[dict]:
         cleaned = normalize_library(library)
+        if self._cache_ready():
+            cached = _cache_list(
+                cache.get_json(cache.document_key(cleaned)),
+                ("id", "library", "title", "description", "original_name", "content_type", "uploaded_on"),
+                ("file_path", "path"),
+                {
+                    "id": "int",
+                    "library": "str",
+                    "title": "str",
+                    "description": "str",
+                    "original_name": "str",
+                    "content_type": "str",
+                    "uploaded_on": "str",
+                },
+            )
+            if cached is not None:
+                return cached
         conn = self._open()
         if conn is None:
             with self._lock:
@@ -1414,7 +1602,9 @@ class Store:
             except Exception:
                 pass
             raise StoreError("Could not load documents.", 503) from exc
-        return [_public_document(_document_from_row(row)) for row in fetched]
+        rows = [_public_document(_document_from_row(row)) for row in fetched]
+        cache.set_json(cache.document_key(cleaned), rows, cache.TTL_DOCUMENTS)
+        return rows
 
     def document_file(self, document_id: int) -> tuple[str, str, str] | None:
         row = self._document_record(document_id)
@@ -1535,6 +1725,21 @@ class Store:
         delete_stored_file(str(previous.get("file_path") or ""))
 
     def list_announcements(self) -> list[dict]:
+        if self._cache_ready():
+            cached = _cache_list(
+                cache.get_json(cache.ANNOUNCEMENTS),
+                ("id", "title", "summary", "body", "posted_on"),
+                (),
+                {
+                    "id": "int",
+                    "title": "str",
+                    "summary": "str",
+                    "body": "str",
+                    "posted_on": "str",
+                },
+            )
+            if cached is not None:
+                return cached
         conn = self._open()
         if conn is None:
             with self._lock:
@@ -1557,7 +1762,9 @@ class Store:
             except Exception:
                 pass
             raise StoreError("Could not load announcements.", 503) from exc
-        return [_public_announcement(_announcement_from_row(row)) for row in fetched]
+        rows = [_public_announcement(_announcement_from_row(row)) for row in fetched]
+        cache.set_json(cache.ANNOUNCEMENTS, rows, cache.TTL_FRESH)
+        return rows
 
     def get_announcement(self, announcement_id: int) -> dict | None:
         conn = self._open()
@@ -1697,6 +1904,10 @@ class Store:
 
     def list_prayers(self, viewer_id: str | None) -> list[dict]:
         viewer = str(viewer_id or "").strip()
+        if self._cache_ready():
+            cached = _prayers_for_viewer(cache.get_json(cache.PRAYERS), viewer)
+            if cached is not None:
+                return cached
         conn = self._open()
         if conn is None:
             with self._lock:
@@ -1726,7 +1937,14 @@ class Store:
             except Exception:
                 pass
             raise StoreError("Could not load prayer requests.", 503) from exc
-        return [_public_prayer(_prayer_from_row(row), viewer, row[6]) for row in fetched]
+        public_rows = []
+        stored_rows = []
+        for row in fetched:
+            item = _prayer_from_row(row)
+            public_rows.append(_public_prayer(item, viewer, row[6]))
+            stored_rows.append(_prayer_cache_row(item, row[6]))
+        cache.set_json(cache.PRAYERS, stored_rows, cache.TTL_FRESH)
+        return public_rows
 
     def create_prayer(self, title: str, body: str, member_id: str | None) -> dict:
         cleaned_title = _prayer_value(clean_prayer_title, title)
@@ -1913,6 +2131,10 @@ class Store:
 
     def nomination_results(self) -> dict:
         month_period, year_period = active_periods()
+        if self._cache_ready():
+            cached = _cached_tallies(cache.get_json(cache.NOMINATIONS))
+            if cached is not None:
+                return cached
         conn = self._open()
         if conn is None:
             with self._lock:
@@ -1957,7 +2179,9 @@ class Store:
             item = _nomination_from_row(row)
             item["voter_name"] = row[8]
             rows.append(item)
-        return build_results(rows, month_period, year_period)
+        payload = build_results(rows, month_period, year_period)
+        cache.set_json(cache.NOMINATIONS, payload, cache.TTL_FRESH)
+        return payload
 
     def save_nomination(
         self,
@@ -2702,6 +2926,13 @@ class Store:
     def get_page(self, slug: str) -> dict:
         if slug not in PAGES:
             raise KeyError(slug)
+        if self._cache_ready():
+            cached = _cached_page(slug, cache.get_json(cache.page_key(slug)))
+            if cached is not None:
+                with self._lock:
+                    if not self._prefer_memory:
+                        self._memory[slug] = deepcopy(cached["blocks"])
+                        return cached
         with self._lock:
             if self._prefer_memory:
                 return self._page_payload(slug, self._memory[slug])
@@ -2718,7 +2949,9 @@ class Store:
         blocks = sorted(merged.values(), key=lambda block: (block["sort_order"], block["key"]))
         with self._lock:
             self._memory[slug] = deepcopy(blocks)
-        return self._page_payload(slug, blocks)
+        payload = self._page_payload(slug, blocks)
+        cache.store_page(slug, payload)
+        return payload
 
     def save_member(self, blocks: list[dict]) -> dict:
         normalized = self._normalize(blocks)
@@ -2738,7 +2971,15 @@ class Store:
         if not prefer_memory and not self._save_db(ordered):
             with self._lock:
                 self._prefer_memory = True
+            prefer_memory = True
+        if prefer_memory:
+            return self._page_payload("member", ordered)
+        cache.drop_page("member")
         return self.get_page("member")
+
+    def _cache_ready(self) -> bool:
+        with self._lock:
+            return not self._prefer_memory
 
     def _open(self):
         with self._lock:
@@ -3712,6 +3953,43 @@ def _public_prayer(row: dict, viewer_id: str, author_name) -> dict:
         "submitted_on": uploaded_on(row["created_at"]),
         "mine": bool(owner and owner == viewer),
     }
+
+
+def _prayer_cache_row(row: dict, author_name) -> dict:
+    """Shared prayer fields plus the owner id. `mine` is applied per viewer on read."""
+    shown = _public_prayer(row, "", author_name)
+    shown.pop("mine", None)
+    shown["member_id"] = str(row.get("member_id") or "").strip()
+    return shown
+
+
+def _prayers_for_viewer(rows, viewer: str) -> list[dict] | None:
+    if not isinstance(rows, list):
+        return None
+    viewer = str(viewer or "").strip()
+    visible = []
+    try:
+        for item in rows:
+            if not isinstance(item, dict) or not isinstance(item.get("member_id"), str):
+                return None
+            if not isinstance(item.get("title"), str) or not isinstance(item.get("body"), str):
+                return None
+            if not isinstance(item.get("author_name"), str) or not isinstance(item.get("submitted_on"), str):
+                return None
+            owner = item["member_id"].strip()
+            visible.append(
+                {
+                    "id": int(item["id"]),
+                    "title": item.get("title") or "",
+                    "body": item.get("body") or "",
+                    "author_name": item.get("author_name") or "Member",
+                    "submitted_on": item.get("submitted_on") or "",
+                    "mine": bool(owner and owner == viewer),
+                }
+            )
+    except (TypeError, ValueError, KeyError):
+        return None
+    return visible
 
 
 def _author_name(cur, member_id: str) -> str:

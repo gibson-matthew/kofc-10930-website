@@ -1,3 +1,5 @@
+import { mediaUrl } from "../api";
+
 export default function CroppedPhoto({ src, crop, className, alt = "", onError }) {
   const x = Number(crop?.crop_x ?? crop?.x ?? 0) || 0;
   const y = Number(crop?.crop_y ?? crop?.y ?? 0) || 0;
@@ -5,7 +7,7 @@ export default function CroppedPhoto({ src, crop, className, alt = "", onError }
   return (
     <span className={["crop-frame", className].filter(Boolean).join(" ")}>
       <img
-        src={src}
+        src={mediaUrl(src)}
         alt={alt}
         draggable={false}
         onError={onError}

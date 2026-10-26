@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import queue
 import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
+
+from config import database_url
 
 log = logging.getLogger("koc10930.tracking")
 
@@ -46,17 +47,16 @@ _jobs: queue.Queue = queue.Queue(maxsize=_QUEUE_LIMIT)
 _hits: dict[str, list[float]] = {}
 
 
-def _database_url() -> str:
-    return os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/koc10930")
-
-
 def _connect():
+    url = database_url()
+    if not url:
+        return None
     try:
         import psycopg
     except ImportError:
         return None
     try:
-        return psycopg.connect(_database_url(), connect_timeout=2)
+        return psycopg.connect(url, connect_timeout=2)
     except Exception:
         return None
 
@@ -317,7 +317,7 @@ def consent_choice(request) -> str | None:
 
 
 def apply_consent_cookie(response, choice: str) -> None:
-    from security import cookie_secure
+    from config import cookie_samesite, cookie_secure
 
     stamp = int(datetime.now(timezone.utc).timestamp())
     response.set_cookie(
@@ -326,7 +326,7 @@ def apply_consent_cookie(response, choice: str) -> None:
         max_age=CONSENT_MAX_AGE,
         httponly=False,
         secure=cookie_secure(),
-        samesite="lax",
+        samesite=cookie_samesite(),
         path="/",
     )
 
