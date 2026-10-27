@@ -168,6 +168,10 @@ class EmailIn(BaseModel):
     email: str = Field(default="", max_length=200)
 
 
+class RouteUpdateIn(BaseModel):
+    send_verification: bool = False
+
+
 class HonoraryIn(BaseModel):
     honorary_life: bool
 
@@ -1058,10 +1062,15 @@ def email_routing(member: dict = Depends(require_cloudflare)) -> dict:
 
 
 @api.post("/email-routing/{title}/update")
-def update_email_route(title: str, member: dict = Depends(require_cloudflare)) -> dict:
+def update_email_route(
+    title: str,
+    body: RouteUpdateIn | None = None,
+    member: dict = Depends(require_cloudflare),
+) -> dict:
     del member
+    send_verification = bool(body.send_verification) if body else False
     try:
-        return routing.update_role(title)
+        return routing.update_role(title, send_verification=send_verification)
     except routing.RoutingError as exc:
         _raise_routing(exc)
     except (StoreError, MediaError) as exc:

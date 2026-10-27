@@ -804,6 +804,54 @@ body.page-member .on-navy {
   overflow-wrap: anywhere;
 }
 
+.settings-view .routing-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  margin: 0.45rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+
+.settings-view .routing-mark {
+  width: 0.85rem;
+  height: 0.85rem;
+  margin-top: 0.15rem;
+  border-radius: 50%;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--hairline);
+  color: var(--navy);
+  font-size: 0.62rem;
+  line-height: 1;
+}
+
+.settings-view .routing-mark.is-verified {
+  background: var(--gold-muted);
+  border-color: var(--gold);
+}
+
+.settings-view .routing-mark.is-waiting {
+  border-color: var(--gold);
+  background: var(--gold-muted);
+  animation: routing-wait 1.4s ease-in-out infinite;
+}
+
+.settings-view .routing-mark.is-error {
+  border-color: var(--wine);
+  color: var(--wine);
+}
+
+@keyframes routing-wait {
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-view .routing-mark.is-waiting { animation: none; }
+}
+
 .settings-card > p,
 .settings-hint {
   color: var(--ink-soft);

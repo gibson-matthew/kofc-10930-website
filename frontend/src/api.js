@@ -303,9 +303,10 @@ export async function fetchEmailRouting() {
   return readJson(response, "Could not load email routing.");
 }
 
-export async function updateEmailRoute(title) {
+export async function updateEmailRoute(title, { sendVerification = false } = {}) {
   const response = await send(`/api/email-routing/${encodeURIComponent(title)}/update`, {
     method: "POST",
+    body: JSON.stringify({ send_verification: Boolean(sendVerification) }),
   });
   return readJson(response, "Could not update the route.");
 }
