@@ -29,6 +29,7 @@ import {
 import { OFFICER_TITLES, memberLabel } from "../titles";
 import { navigate } from "../router";
 import ActivityLog from "./ActivityLog";
+import EmailCompose from "./EmailCompose";
 import EmailRouting from "./EmailRouting";
 
 const MEDIA_SECTIONS = [
@@ -790,10 +791,12 @@ export default function SettingsView() {
                   <a href="#members">Members</a>
                   <a href="#admin-access">Admin access</a>
                   {cloudflare ? <a href="#email-routing">Email routing</a> : null}
+                  {cloudflare ? <a href="#council-email">Email</a> : null}
                   <a href="#media">Media</a>
                 </>
               ) : null}
               {cloudflare && !admin ? <a href="#email-routing">Email routing</a> : null}
+              {cloudflare && !admin ? <a href="#council-email">Email</a> : null}
               {webmaster ? <a href="#logs">Logs & activity</a> : null}
             </nav>
           ) : null}
@@ -1164,6 +1167,8 @@ export default function SettingsView() {
           onOwnEmail={(email) => setOwnEmail((current) => (current ? { ...current, email } : current))}
         />
       ) : null}
+
+      {cloudflare ? <EmailCompose /> : null}
 
       {admin ? (
         <section className="block" id="media" aria-labelledby="mediaHeading">

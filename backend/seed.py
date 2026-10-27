@@ -785,6 +785,24 @@ WHERE NOT EXISTS (SELECT 1 FROM council_events);
 """
 
 
+def sent_mail_schema_sql() -> str:
+    return """-- Mail sent by the Cloudflare role. The body and token are not stored.
+CREATE TABLE IF NOT EXISTS sent_mail (
+  id BIGSERIAL PRIMARY KEY,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sender_id TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  recipient_count INTEGER NOT NULL,
+  skipped_count INTEGER NOT NULL,
+  recipient_ids TEXT NOT NULL DEFAULT '',
+  success BOOLEAN NOT NULL,
+  error_code TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS sent_mail_sent_idx ON sent_mail (sent_at DESC);
+"""
+
+
 def render_schema() -> str:
     rows: list[str] = []
     for slug, blocks in PAGES.items():
@@ -841,7 +859,7 @@ def render_schema() -> str:
 -- members.is_admin grants full edit access.
 -- members.is_webmaster grants that same access plus Logs & activity.
 -- Only a webmaster can grant or revoke webmaster access. The last webmaster stays.
--- members.is_cloudflare grants Email Routing updates for role addresses.
+-- members.is_cloudflare grants Email Routing updates and outbound mail.
 -- Admins and webmasters do not receive it unless this flag is set.
 -- Only a member with the Cloudflare role can grant or revoke it. The last one stays.
 -- members.birth_month and members.birth_day store a birthday, or both stay NULL.
@@ -1035,6 +1053,8 @@ UPDATE members
 SET is_cloudflare = TRUE
 WHERE membership_id = '1000000'
   AND NOT EXISTS (SELECT 1 FROM members WHERE is_cloudflare);
+
+{sent_mail_schema_sql().rstrip()}
 
 {records_sql}
 COMMIT;

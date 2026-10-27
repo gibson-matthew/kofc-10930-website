@@ -852,6 +852,114 @@ body.page-member .on-navy {
   .settings-view .routing-mark.is-waiting { animation: none; }
 }
 
+.settings-view .mail-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem 0.8rem;
+}
+
+.settings-view .mail-line > span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wine);
+}
+
+.settings-view .mail-picks,
+.settings-view .mail-toolbar,
+.settings-view .mail-link {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.settings-view .mail-pick[aria-pressed="true"],
+.settings-view .mail-filter[aria-pressed="true"] {
+  border-color: var(--gold);
+  background: var(--gold-muted);
+  color: var(--navy);
+}
+
+.settings-view .mail-people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.settings-view .mail-people label {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+
+.settings-view .mail-id,
+.settings-view .mail-missing {
+  color: var(--ink-soft);
+}
+
+.settings-view .mail-body {
+  min-height: 9rem;
+  margin: 0.35rem 0 0.8rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid rgba(26, 23, 20, 0.16);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.45;
+}
+
+.settings-view .mail-body:empty::before {
+  content: attr(data-placeholder);
+  color: var(--ink-soft);
+}
+
+.settings-view .mail-signature {
+  margin: 0.2rem 0 0.8rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--gold);
+  color: var(--navy);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.settings-view .mail-link .signin-field {
+  flex: 1 1 12rem;
+  margin-bottom: 0;
+}
+
+.settings-view .mail-sent {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.settings-view .mail-sent article {
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.settings-view .mail-sent strong {
+  display: block;
+  color: var(--navy);
+}
+
+.settings-view .mail-ok {
+  color: var(--navy);
+  font-weight: 700;
+}
+
+.settings-view .mail-failed {
+  color: var(--wine);
+  font-weight: 700;
+}
+
 .settings-card > p,
 .settings-hint {
   color: var(--ink-soft);

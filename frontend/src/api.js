@@ -298,6 +298,24 @@ export async function setMemberCloudflare(memberid, isCloudflare) {
   return readJson(response, "Could not update Cloudflare access.");
 }
 
+export async function fetchEmailAudience() {
+  const response = await send("/api/email/audience");
+  return readJson(response, "Could not load members for email.");
+}
+
+export async function fetchSentMail() {
+  const response = await send("/api/email/sent");
+  return readJson(response, "Could not load sent mail.");
+}
+
+export async function sendCouncilEmail(payload) {
+  const response = await send("/api/email/send", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  return readJson(response, "Could not send the message.");
+}
+
 export async function fetchEmailRouting() {
   const response = await send("/api/email-routing");
   return readJson(response, "Could not load email routing.");

@@ -18,7 +18,7 @@
 -- members.is_admin grants full edit access.
 -- members.is_webmaster grants that same access plus Logs & activity.
 -- Only a webmaster can grant or revoke webmaster access. The last webmaster stays.
--- members.is_cloudflare grants Email Routing updates for role addresses.
+-- members.is_cloudflare grants Email Routing updates and outbound mail.
 -- Admins and webmasters do not receive it unless this flag is set.
 -- Only a member with the Cloudflare role can grant or revoke it. The last one stays.
 -- members.birth_month and members.birth_day store a birthday, or both stay NULL.
@@ -800,6 +800,22 @@ WHERE NOT EXISTS (
   SELECT 1 FROM nominations n
   WHERE n.member_id = v.member_id AND n.category = v.category AND n.period = v.period
 );
+
+-- Mail sent by the Cloudflare role. The body and token are not stored.
+CREATE TABLE IF NOT EXISTS sent_mail (
+  id BIGSERIAL PRIMARY KEY,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sender_id TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  recipient_count INTEGER NOT NULL,
+  skipped_count INTEGER NOT NULL,
+  recipient_ids TEXT NOT NULL DEFAULT '',
+  success BOOLEAN NOT NULL,
+  error_code TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS sent_mail_sent_idx
+  ON sent_mail (sent_at DESC);
 
 -- Necessary and optional site events. Writes must not block page requests.
 CREATE TABLE IF NOT EXISTS audit_events (

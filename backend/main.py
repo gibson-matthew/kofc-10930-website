@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from db import StoreError, store
 import cache
+import mailer
 import routing
 import tracking
 from media import (
@@ -170,6 +171,15 @@ class EmailIn(BaseModel):
 
 class RouteUpdateIn(BaseModel):
     send_verification: bool = False
+
+
+class MailSendIn(BaseModel):
+    subject: str = Field(default="", max_length=200)
+    body: str = Field(default="", max_length=40000)
+    officers: bool = False
+    directors: bool = False
+    all_members: bool = False
+    member_ids: list[str] = Field(default_factory=list, max_length=300)
 
 
 class HonoraryIn(BaseModel):
@@ -1073,6 +1083,42 @@ def update_email_route(
         return routing.update_role(title, send_verification=send_verification)
     except routing.RoutingError as exc:
         _raise_routing(exc)
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+
+
+@api.get("/email/audience")
+def email_audience(member: dict = Depends(require_cloudflare)) -> dict:
+    del member
+    try:
+        return mailer.audience()
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+
+
+@api.get("/email/sent")
+def email_sent(member: dict = Depends(require_cloudflare)) -> dict:
+    del member
+    try:
+        return {"items": store.list_sent_mail()}
+    except (StoreError, MediaError) as exc:
+        _raise_store(exc)
+
+
+@api.post("/email/send")
+def email_send(body: MailSendIn, member: dict = Depends(require_cloudflare)) -> dict:
+    try:
+        return mailer.send_message(
+            member,
+            subject=body.subject,
+            body=body.body,
+            officers=body.officers,
+            directors=body.directors,
+            all_members=body.all_members,
+            member_ids=body.member_ids,
+        )
+    except mailer.MailError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except (StoreError, MediaError) as exc:
         _raise_store(exc)
 

@@ -242,6 +242,8 @@ class Store:
         self._prayer_seq = len(self._prayers) + 1
         self._nomination_seq = len(self._nominations) + 1
         self._refresh: dict[str, dict] = {}
+        self._sent_mail: list[dict] = []
+        self._sent_seq = 1
         self._prefer_memory = False
 
     def prepare(self) -> str:
@@ -266,6 +268,8 @@ class Store:
             self._announcement_seq = len(self._announcements) + 1
             self._prayer_seq = len(self._prayers) + 1
             self._nomination_seq = len(self._nominations) + 1
+            self._sent_mail = []
+            self._sent_seq = 1
         conn = _connect()
         if conn is None:
             with self._lock:
@@ -995,6 +999,93 @@ class Store:
             _rollback(conn)
             raise StoreError("Could not save the personal email.", 503) from exc
         return email
+
+    def record_sent_mail(
+        self,
+        sender_id: str,
+        subject: str,
+        recipient_count: int,
+        skipped_count: int,
+        recipient_ids: list[str],
+        success: bool,
+        error_code: str,
+    ) -> None:
+        ids = ",".join(str(item) for item in recipient_ids if item)[:4000]
+        code = str(error_code or "")[:32]
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                self._sent_mail.append(
+                    {
+                        "id": self._sent_seq,
+                        "sent_at": datetime.now(timezone.utc).isoformat(),
+                        "sender_id": sender_id,
+                        "subject": subject,
+                        "recipient_count": int(recipient_count),
+                        "skipped_count": int(skipped_count),
+                        "recipient_ids": ids,
+                        "success": bool(success),
+                        "error_code": code,
+                    }
+                )
+                self._sent_seq += 1
+                if len(self._sent_mail) > 100:
+                    self._sent_mail = self._sent_mail[-100:]
+            return
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO sent_mail (
+                      sender_id, subject, recipient_count, skipped_count, recipient_ids, success, error_code
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (sender_id, subject, int(recipient_count), int(skipped_count), ids, bool(success), code),
+                )
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not record sent mail.", 503) from exc
+
+    def list_sent_mail(self) -> list[dict]:
+        conn = self._open()
+        if conn is None:
+            with self._lock:
+                rows = list(self._sent_mail)
+            rows.reverse()
+            return [_sent_public(row) for row in rows[:100]]
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, sent_at, subject, recipient_count, skipped_count, success, error_code
+                    FROM sent_mail
+                    ORDER BY sent_at DESC, id DESC
+                    LIMIT 100
+                    """
+                )
+                fetched = cur.fetchall()
+            conn.close()
+        except Exception as exc:
+            _rollback(conn)
+            raise StoreError("Could not load sent mail.", 503) from exc
+        items = []
+        for row in fetched:
+            sent_at = row[1]
+            items.append(
+                {
+                    "id": int(row[0]),
+                    "sent_at": sent_at.isoformat() if isinstance(sent_at, datetime) else str(sent_at or ""),
+                    "subject": row[2] or "",
+                    "recipient_count": int(row[3] or 0),
+                    "skipped_count": int(row[4] or 0),
+                    "success": bool(row[5]),
+                    "error_code": row[6] or "",
+                }
+            )
+        return items
 
     def assign_roles(self, officer: list[dict], director: list[dict]) -> list[dict]:
         desired, managed = _role_plan(officer, director)
@@ -4829,6 +4920,34 @@ def _ensure_schema(cur) -> None:
     except Exception as exc:
         log.warning("Could not rename the nominations card: %s", exc)
         cur.execute("ROLLBACK TO SAVEPOINT nomination_card_title")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sent_mail (
+          id BIGSERIAL PRIMARY KEY,
+          sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          sender_id TEXT NOT NULL,
+          subject TEXT NOT NULL,
+          recipient_count INTEGER NOT NULL,
+          skipped_count INTEGER NOT NULL,
+          recipient_ids TEXT NOT NULL DEFAULT '',
+          success BOOLEAN NOT NULL,
+          error_code TEXT NOT NULL DEFAULT ''
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS sent_mail_sent_idx ON sent_mail (sent_at DESC)")
+
+
+def _sent_public(row: dict) -> dict:
+    return {
+        "id": int(row["id"]),
+        "sent_at": row["sent_at"],
+        "subject": row["subject"],
+        "recipient_count": int(row["recipient_count"]),
+        "skipped_count": int(row["skipped_count"]),
+        "success": bool(row["success"]),
+        "error_code": row.get("error_code") or "",
+    }
 
 
 def _seed_images(cur) -> None:
