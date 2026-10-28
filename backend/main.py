@@ -16,10 +16,10 @@ from pydantic import BaseModel, Field, field_validator
 
 from db import StoreError, store
 import cache
-import mailer
-import routing
-import tracking
-from media import (
+from email_service import mailer
+from email_service import routing
+from content import activity as tracking
+from content.media import (
     MAX_DOCUMENT_BYTES,
     MAX_IMAGE_BYTES,
     RECOG_SLOTS,
@@ -39,7 +39,7 @@ from media import (
     write_upload,
 )
 from config import cookie_samesite, cors_origin_regex, cors_origins, dev_secret_is_ephemeral
-from security import (
+from auth.security import (
     ACCESS_COOKIE,
     ACCESS_MINUTES,
     REFRESH_COOKIE,

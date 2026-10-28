@@ -8,14 +8,14 @@ import threading
 from copy import deepcopy
 from datetime import date, datetime, timezone
 
-from announcements import (
+from content.announcements import (
     ANNOUNCEMENT_SEED,
     clean_announcement_body,
     clean_announcement_summary,
     clean_announcement_title,
     sanitize_html,
 )
-from prayers import (
+from content.prayers import (
     PRAYER_SEED,
     clean_prayer_body,
     clean_prayer_title,
@@ -23,7 +23,7 @@ from prayers import (
     display_prayer_body,
     display_prayer_title,
 )
-from nominations import (
+from content.nominations import (
     CATEGORY_ORDER,
     NOMINATION_SEED,
     active_periods,
@@ -36,7 +36,7 @@ from nominations import (
     period_for,
     resolve_nominee,
 )
-from media import (
+from content.media import (
     RECOG_SLOTS,
     SEED_DOCUMENTS,
     SEED_IMAGES,
@@ -52,10 +52,10 @@ from media import (
     uploaded_on,
     write_upload,
 )
-from security import hash_password, verify_password, verify_password_dummy
-from seed import EVENT_SEED, HONOR_SEED, PAGES
-from test_seed import DIRECTORY_SEED, MEMBER_SEED, directory_fields, ensure_seed_photos, member_photo_path
-from titles import (
+from auth.security import hash_password, verify_password, verify_password_dummy
+from content.seed import EVENT_SEED, HONOR_SEED, PAGES
+from members.roster import DIRECTORY_SEED, MEMBER_SEED, directory_fields, ensure_seed_photos, member_photo_path
+from members.titles import (
     DIRECTOR_ROLE_SET,
     OFFICER_ROLE_SET,
     TITLE_ABBREVS,
@@ -279,7 +279,7 @@ class Store:
             with conn.cursor() as cur:
                 _ensure_schema(cur)
                 _remove_retired_link_blocks(cur)
-                from tracking import ensure_audit_schema
+                from content.activity import ensure_audit_schema
 
                 ensure_audit_schema(cur)
                 _seed_images(cur)

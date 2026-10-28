@@ -20,7 +20,7 @@ import threading
 import time
 
 from config import redis_maxmemory, redis_maxmemory_policy, redis_url
-from titles import DIRECTOR_ROLE_ABBREVS, OFFICER_ROLE_ABBREVS
+from members.titles import DIRECTOR_ROLE_ABBREVS, OFFICER_ROLE_ABBREVS
 
 log = logging.getLogger("koc10930.cache")
 

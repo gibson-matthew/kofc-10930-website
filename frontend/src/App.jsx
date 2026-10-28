@@ -1,9 +1,9 @@
 import { useEffect } from "react";
 import { useAuth } from "./auth/AuthContext";
 import ConsentBanner, { PageView } from "./components/ConsentBanner";
-import LoginPage from "./pages/LoginPage";
-import MemberPage from "./pages/MemberPage";
-import PublicPage from "./pages/PublicPage";
+import LoginPage from "./auth/LoginPage";
+import MemberPage from "./member/MemberPage";
+import PublicPage from "./public/PublicPage";
 import { navigate, usePath } from "./router";
 
 function MemberGate() {
