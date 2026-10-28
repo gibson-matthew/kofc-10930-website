@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const imageRoot = path.resolve(dir, "../images");
@@ -35,17 +35,23 @@ function mockupImages() {
   };
 }
 
-export default defineConfig({
-  plugins: [react(), mockupImages()],
-  server: {
-    proxy: {
-      "/api": {
-        target: "http://127.0.0.1:8000",
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  const envDir = path.resolve(dir, "..");
+  const env = loadEnv(mode, envDir, "");
+  const proxyTarget = (env.API_PROXY_TARGET || "http://127.0.0.1:8000").replace(/\/$/, "");
+  return {
+    envDir,
+    plugins: [react(), mockupImages()],
+    server: {
+      proxy: {
+        "/api": {
+          target: proxyTarget,
+          changeOrigin: true,
+        },
+      },
+      fs: {
+        allow: [dir, envDir],
       },
     },
-    fs: {
-      allow: [dir, path.resolve(dir, "..")],
-    },
-  },
+  };
 });

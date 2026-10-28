@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { fetchPage, saveMember } from "../api";
 import { memberBlocks, publicBlocks, serialize, toMap } from "./seed";
+import { DEFAULT_YEAR, YEAR_KEY, withFraternalYear } from "./year";
 
 const StateContext = createContext(null);
 const ActionsContext = createContext(null);
@@ -50,12 +51,14 @@ function overlay(blocks, extra) {
   return map;
 }
 
-export function ContentProvider({ slug, children }) {
+export function ContentProvider({ slug, canEdit = false, children }) {
   const blocks = slug === "member" ? memberBlocks : publicBlocks;
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
+  const canEditRef = useRef(canEdit);
+  canEditRef.current = canEdit;
   const [saved, setSaved] = useState(() =>
-    slug === "member" ? overlay(blocks, readLocal()) : toMap(blocks),
+    slug === "member" && canEdit ? overlay(blocks, readLocal()) : toMap(blocks),
   );
   const savedRef = useRef(saved);
   savedRef.current = saved;
@@ -63,8 +66,7 @@ export function ContentProvider({ slug, children }) {
   const [editing, setEditing] = useState(false);
   const editingRef = useRef(false);
   const [epoch, setEpoch] = useState(0);
-  const [savedFlash, setSavedFlash] = useState(false);
-  const [saveCount, setSaveCount] = useState(0);
+  const saveQueue = useRef(Promise.resolve());
 
   useEffect(() => {
     let cancel = false;
@@ -78,7 +80,7 @@ export function ContentProvider({ slug, children }) {
         const map = overlay(blocksRef.current, incoming);
         setSaved(map);
         draftRef.current = map;
-        if (slug === "member") writeLocal(map);
+        if (slug === "member" && canEditRef.current) writeLocal(map);
       })
       .catch(() => {
         /* Seed and any local member edits stay on screen. */
@@ -86,13 +88,14 @@ export function ContentProvider({ slug, children }) {
     return () => {
       cancel = true;
     };
-  }, [slug]);
+  }, [slug, canEdit]);
 
   useEffect(() => {
-    if (!savedFlash) return undefined;
-    const timer = window.setTimeout(() => setSavedFlash(false), 2200);
-    return () => window.clearTimeout(timer);
-  }, [savedFlash, saveCount]);
+    if (canEdit || !editingRef.current) return;
+    draftRef.current = { ...savedRef.current };
+    editingRef.current = false;
+    setEditing(false);
+  }, [canEdit]);
 
   useEffect(() => {
     document.body.classList.toggle("is-editing", editing);
@@ -101,6 +104,45 @@ export function ContentProvider({ slug, children }) {
 
   const actionsRef = useRef(null);
   if (!actionsRef.current) {
+    async function persistFields(ids) {
+      if (!canEditRef.current) throw new Error("Admin access is required.");
+      const keys = Array.isArray(ids) ? ids.filter(Boolean) : [];
+      if (!keys.length) return;
+      const savedBefore = savedRef.current;
+      const draftBefore = draftRef.current;
+      const next = { ...savedBefore };
+      for (const id of keys) {
+        if (id === YEAR_KEY) continue;
+        const raw = Object.prototype.hasOwnProperty.call(draftBefore, id) ? draftBefore[id] : next[id];
+        const block = blocksRef.current.find((item) => item.key === id);
+        next[id] = normalizeValue(block ? block.field_type : "text", raw);
+      }
+      if (keys.includes(YEAR_KEY)) {
+        const raw = Object.prototype.hasOwnProperty.call(draftBefore, YEAR_KEY)
+          ? draftBefore[YEAR_KEY]
+          : next[YEAR_KEY];
+        const applied = withFraternalYear(next, raw);
+        if (!applied) throw new Error("Use a fraternal year such as 2026\u201327.");
+        Object.assign(next, applied);
+      }
+      await saveMember(serialize(blocksRef.current, next));
+      const latest = draftRef.current;
+      const merged = { ...next };
+      for (const key of Object.keys(latest)) {
+        const typedDuringSave = latest[key] !== draftBefore[key];
+        if (keys.includes(key)) {
+          if (typedDuringSave) merged[key] = latest[key];
+          continue;
+        }
+        if (typedDuringSave || latest[key] !== savedBefore[key]) merged[key] = latest[key];
+      }
+      savedRef.current = next;
+      draftRef.current = merged;
+      setSaved(next);
+      setEpoch((value) => value + 1);
+      writeLocal(next);
+    }
+
     actionsRef.current = {
       text(id) {
         return savedRef.current[id] ?? "";
@@ -114,50 +156,50 @@ export function ContentProvider({ slug, children }) {
       setDraft(id, value) {
         draftRef.current = { ...draftRef.current, [id]: value };
       },
+      setFraternalYear(raw) {
+        const trimmed = String(raw ?? "").slice(0, 9);
+        draftRef.current = { ...draftRef.current, [YEAR_KEY]: trimmed };
+        setEpoch((value) => value + 1);
+      },
+      applyFraternalYear() {
+        const raw = Object.prototype.hasOwnProperty.call(draftRef.current, YEAR_KEY)
+          ? draftRef.current[YEAR_KEY]
+          : DEFAULT_YEAR;
+        const next = withFraternalYear(draftRef.current, raw);
+        if (!next) throw new Error("Use a fraternal year such as 2026\u201327.");
+        draftRef.current = next;
+        setEpoch((value) => value + 1);
+      },
       startEdit() {
+        if (!canEditRef.current) return;
         draftRef.current = { ...savedRef.current };
         editingRef.current = true;
         setEditing(true);
         setEpoch((value) => value + 1);
       },
-      cancelEdit() {
+      exitEdit() {
         draftRef.current = { ...savedRef.current };
         editingRef.current = false;
         setEditing(false);
-        setSavedFlash(false);
       },
-      async saveEdits() {
-        const next = { ...savedRef.current };
-        for (const block of blocksRef.current) {
-          const raw = Object.prototype.hasOwnProperty.call(draftRef.current, block.key)
-            ? draftRef.current[block.key]
-            : next[block.key];
-          next[block.key] = normalizeValue(block.field_type, raw);
-        }
-        draftRef.current = next;
-        savedRef.current = next;
-        setSaved(next);
-        setEpoch((value) => value + 1);
-        writeLocal(next);
-        setSavedFlash(true);
-        setSaveCount((value) => value + 1);
-        try {
-          await saveMember(serialize(blocksRef.current, next));
-        } catch {
-          /* The text is already stored in memory and localStorage. */
-        }
+      async saveFields(ids) {
+        const job = saveQueue.current.then(() => persistFields(ids));
+        saveQueue.current = job.then(
+          () => undefined,
+          () => undefined,
+        );
+        return job;
       },
     };
   }
 
   const state = useMemo(
     () => ({
-      editing: slug === "member" && editing,
+      editing: Boolean(canEdit) && editing,
       epoch,
-      savedFlash,
       saved,
     }),
-    [slug, editing, epoch, savedFlash, saved],
+    [canEdit, editing, epoch, saved],
   );
 
   return (

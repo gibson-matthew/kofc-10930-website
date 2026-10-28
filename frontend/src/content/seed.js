@@ -236,7 +236,7 @@ memberList.push(
   text("directors.title", "Current Directors"),
   text(
     "directors.intro",
-    "Program directors for the 2026\u201327 fraternal year. Replace the sample names.",
+    "Program directors for the 2026\u201327 fraternal year.",
   ),
 );
 
@@ -297,40 +297,18 @@ memberList.push(
     "links.4.detail",
     "Restricted. Request the current roll from the Financial Secretary.",
   ),
-  text("links.5.title", "Our elder statesmen"),
-  text("links.5.action", "View honor roll"),
-  text("links.5.detail", "Replace with the elder statesmen list."),
   text("links.6.title", "Share a comment with an officer"),
   text("links.6.action", "Write the council"),
   text(
     "links.6.detail",
     "Address the Grand Knight or a trustee. Do not post private remarks publicly.",
   ),
-  text("links.7.title", "SFS officer roles"),
-  text("links.7.action", "Open role guide"),
-  text("links.7.detail", "Officer duty summaries belong in this members library."),
-  text("links.8.title", "Event management center"),
-  text("links.8.action", "Open chairmen tools"),
-  text(
-    "links.8.detail",
-    "Confirm the parish calendar before an event is announced.",
-  ),
   text("links.9.title", "Volunteer hours and visits"),
   text("links.9.action", "How to record hours"),
   text("links.9.before", "Record hours and visits at"),
   text("links.9.link", "www.UKnightMobile.org"),
   text("links.9.after", "."),
-  text("links.10.title", "Hours goal & blood donor status"),
-  text(
-    "links.10.body",
-    "Your Goal for this year (2026) is 0.00 hours per month. You are not a blood donor.",
-  ),
-  text("links.10.action", "Update goal"),
-  text(
-    "links.10.detail",
-    "Your Goal for this year (2026) is 0.00 hours per month. You are not a blood donor.",
-  ),
-  text("links.11.title", "Knight and Family of the Month"),
+  text("links.11.title", "Knight & Family Nominations"),
   text("links.11.action", "Submit a nomination"),
   text(
     "links.11.detail",
@@ -364,11 +342,52 @@ memberList.push(
     "\u00a9 2026 Knights of Columbus Council 10930 \u2014 Fort Worth, TX",
   ),
   text("footer.principles", "Charity \u00b7 Unity \u00b7 Fraternity \u00b7 Patriotism"),
+  text(
+    "recog.0.detail",
+    "Neighbors packed boxes on Saturday and delivered them to families after Sunday Mass.",
+  ),
+  text(
+    "recog.1.detail",
+    "He organized sizes, labeled bags, and stayed until every coat had a home.",
+  ),
+  text(
+    "recog.2.detail",
+    "The family hosted monthly rosaries and raised scholarship funds through the parish festival.",
+  ),
+  text(
+    "recog.3.detail",
+    "He logged charity hours each month and walked new members through their first meeting.",
+  ),
+  text(
+    "event.0.detail",
+    "Brothers meet online to review the month's business before the council meeting.",
+  ),
+  text(
+    "event.1.detail",
+    "The council prays the rosary together in the parish hall before the business meeting.",
+  ),
+  text(
+    "event.2.detail",
+    "Officers report, motions are heard, and brothers plan the next charity work.",
+  ),
+  text(
+    "event.3.detail",
+    "Give blood at the council hall. Appointments and walk-ins are both welcome.",
+  ),
+  text(
+    "event.4.detail",
+    "Sorted coats are handed out to families at the parish from the morning shift.",
+  ),
+  text("year.fraternal", "2026\u201327"),
 );
 
 export const memberBlocks = withOrder(memberList);
 
+export const LOGO_SRC = "/images/kofc-logo.png";
+export const SITE_TITLE = "Council 10930 | Knights of Columbus";
+
 export const slides = [1, 2, 3, 4].map((n) => ({
+  slot: `carousel.${n}`,
   src: `/images/carousel${n}.jpg`,
   altKey: `slide.${n}.alt`,
 }));

@@ -45,14 +45,21 @@ nav.primary-nav {
   gap: 2rem;
 }
 
+.header-tools {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-left: 1rem;
+}
+
 nav.primary-nav a,
-nav.primary-nav .nav-signin {
+button.nav-signin {
   position: relative;
   padding: 0.35rem 0;
   transition: color 0.3s var(--ease);
 }
 
-nav.primary-nav .nav-signin {
+button.nav-signin {
   background: none;
   border: 0;
   border-radius: 0;
@@ -66,7 +73,7 @@ nav.primary-nav .nav-signin {
 }
 
 nav.primary-nav a::after,
-nav.primary-nav .nav-signin::after {
+button.nav-signin::after {
   content: "";
   position: absolute;
   left: 0;
@@ -78,10 +85,26 @@ nav.primary-nav .nav-signin::after {
 }
 
 nav.primary-nav a:hover,
-nav.primary-nav .nav-signin:hover { color: var(--ivory); }
+button.nav-signin:hover { color: var(--ivory); }
 
 nav.primary-nav a:hover::after,
-nav.primary-nav .nav-signin:hover::after { width: 100%; }
+button.nav-signin:hover::after { width: 100%; }
+
+.footer-nav button.footer-signin {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: rgba(248, 244, 236, 0.65);
+}
+
+.footer-nav button.footer-signin:hover { color: var(--gold-soft); }
 
 .hero {
   position: relative;
@@ -444,6 +467,14 @@ body.page-public .section-head p {
   overflow: hidden;
 }
 
+/* Clears the fixed public header. member.css sets 9rem on every section[id]. */
+body.page-public #who,
+body.page-public #what,
+body.page-public #why,
+body.page-public #join {
+  scroll-margin-top: calc(0.7rem + 50px + 0.7rem + 1px);
+}
+
 .join-section::before {
   content: "";
   position: absolute;
@@ -558,17 +589,64 @@ body.page-public .section-head p {
   margin-top: 0.2rem;
 }
 
+body.page-login {
+  background:
+    radial-gradient(ellipse 80% 55% at 50% -15%, rgba(201, 162, 39, 0.14), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(110, 20, 35, 0.12), transparent 50%),
+    linear-gradient(165deg, var(--navy-deep) 0%, var(--navy) 48%, var(--navy-mid) 100%);
+}
+
 .login-screen {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.35rem;
   padding: 1.5rem;
   background:
-    radial-gradient(ellipse at top, rgba(201, 162, 39, 0.16), transparent 55%),
-    var(--navy-deep);
+    radial-gradient(ellipse 80% 55% at 50% -15%, rgba(201, 162, 39, 0.14), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(110, 20, 35, 0.12), transparent 50%),
+    linear-gradient(165deg, var(--navy-deep) 0%, var(--navy) 48%, var(--navy-mid) 100%);
+}
+
+.login-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.04;
+  background-image:
+    repeating-linear-gradient(45deg, var(--gold) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(-45deg, var(--gold) 0 1px, transparent 1px 48px);
+  pointer-events: none;
+}
+
+.login-screen::after {
+  content: "";
+  position: absolute;
+  width: 480px;
+  height: 480px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(201, 162, 39, 0.09), transparent 70%);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -55%);
+  pointer-events: none;
+}
+
+.login-brand {
+  position: relative;
+  z-index: 1;
+  text-decoration: none;
 }
 
 .login-card {
+  position: relative;
+  z-index: 1;
   width: min(420px, 100%);
 }
 
@@ -605,39 +683,49 @@ body.page-public .section-head p {
   body.page-public header.is-scrolled {
     padding-left: 4.25rem;
     padding-right: 4.25rem;
+    overflow: visible;
   }
 
-  body.page-public .nav-toggle { display: block; margin-left: auto; }
+  body.page-public .header-tools {
+    margin-left: auto;
+    position: relative;
+    z-index: 110;
+    gap: 0.65rem;
+  }
 
+  body.page-public .nav-toggle { display: block; margin-left: 0; }
+
+  body.page-public .brand-text .sub,
+  body.page-public .brand-text br { display: none; }
+
+  /* Absolute, not fixed: a scrolled header's backdrop-filter would collapse a fixed drawer. */
   nav.primary-nav {
-    position: fixed;
-    top: 4.75rem;
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
     right: 0;
-    bottom: 0;
-    width: min(80vw, 300px);
+    width: auto;
+    z-index: 120;
     background: var(--navy-deep);
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 0;
-    padding: 1.15rem 1.75rem 2rem;
-    transform: translateX(100%);
-    transition: transform 0.4s var(--ease);
-    border-left: 1px solid var(--hairline);
-    box-shadow: -20px 0 40px rgba(0, 0, 0, 0.3);
+    padding: 0.35rem 4.25rem 0.85rem;
+    border-top: 1px solid var(--hairline);
+    box-shadow: 0 18px 36px rgba(0, 0, 0, 0.28);
   }
 
-  nav.primary-nav.open { transform: translateX(0); }
+  nav.primary-nav.open { display: flex; }
 
-  nav.primary-nav a,
-  nav.primary-nav .nav-signin {
+  nav.primary-nav a {
     width: 100%;
     padding: 0.9rem 0;
     border-bottom: 1px solid rgba(248, 244, 236, 0.06);
     font-size: 0.82rem;
   }
 
-  nav.primary-nav a::after,
-  nav.primary-nav .nav-signin::after { display: none; }
+  nav.primary-nav a::after { display: none; }
 }
 
 @media (max-width: 780px) {
@@ -646,10 +734,7 @@ body.page-public .section-head p {
     overflow: hidden;
   }
 
-  body.page-public .brand-text br { display: none; }
-
-  body.page-public .brand-text .name,
-  body.page-public .brand-text .sub {
+  body.page-public .brand-text .name {
     display: block;
     overflow: hidden;
     text-overflow: ellipsis;

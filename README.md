@@ -4,7 +4,7 @@ Public site and members area for Knights of Columbus Council 10930. The members 
 
 ## Run locally
 
-PostgreSQL must be running. The default connection is `postgresql://postgres:postgres@localhost:5432/koc10930`.
+Copy `.env.example` to `.env` in the repo root and set the database account there. `backend/config.py` reads that file. If `DATABASE_URL` and `POSTGRES_USER` are both empty, the API still starts and serves the in-memory roster.
 
 ```powershell
 & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U postgres -h localhost -c "CREATE DATABASE koc10930"
@@ -23,16 +23,31 @@ npm run dev
 
 Open http://localhost:5173 and use Sign in.
 
-Set `DATABASE_URL` if PostgreSQL is not on the default host, user, or password. Set `JWT_SECRET` to a long random string before any shared deployment. Set `COOKIE_SECURE=true` when the site is served over HTTPS.
+Set `JWT_SECRET` to a long random string before any shared deployment. When it is empty, the API keeps a gitignored key in `.local/jwt_secret`. Set `COOKIE_SECURE=true` when the site is served over HTTPS. Do not commit `.env`.
+
+The dev server proxies `/api` to `API_PROXY_TARGET` (local API on port 8000). Leave `VITE_API_BASE` empty so the browser keeps calling same-origin `/api`. Redis and the mail settings are optional. If Redis is down, or `REDIS_URL=off`, cached reads use PostgreSQL or the in-memory fallback. Outbound mail stays off until `MAIL_ENABLED=true`. The Cloudflare role can send from Settings through `POST /accounts/{account_id}/email/sending/send`, using `CLOUDFLARE_EMAIL_TOKEN` and `MAIL_FROM` on the routing domain. That token is not the routing token. A failed send stays on the Email card. Email routing reads `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ZONE_ID`, and `CLOUDFLARE_ROUTING_DOMAIN` (the testing domain is `mistymountains.dev`). The token is sent as `Authorization: Bearer`. A route update lists and writes `/zones/{zone_id}/email/routing/rules` (Email Routing Rules: Write, zone limited to `mistymountains.dev`) and lists or creates `/accounts/{account_id}/email/routing/addresses` (Email Routing Addresses: Write, on the account that owns that zone). A zone-only token fails the address call even when the permission name is present. Account Rules write and the broad all-permissions token are not required. Saving or changing a destination calls the Email Routing Addresses API, which sends Cloudflare's verification email. Status is read again from addresses and zone rules. The page says forwarding only when that address is verified and an enabled rule points at it. A pending address shows a waiting state and a refresh does not send another verification email. If those routing values are empty, the rest of the site still runs. Settings shows that error only to the Cloudflare role.
+
+Page content, officers, honors, events, announcements, the member roster, document lists, prayer requests, and nomination totals are cached when Redis answers. Passwords, session tokens, audit rows, phone numbers, email addresses, and uploaded files are not.
+
+```powershell
+docker run --name kofc-redis -p 6379:6379 redis:7
+```
+
+Set `REDIS_URL` when Redis is not at `redis://localhost:6379/0`. On a dedicated Redis host the API sets a 48GB `maxmemory` ceiling and `allkeys-lru` when Redis allows `CONFIG SET`. Set `REDIS_MAXMEMORY=off` on a small machine. A local `redis-server` on port 6379 works the same way.
 
 ## Test member
 
 | Field | Value |
 | --- | --- |
 | Membership ID | `1000000` |
+| Name | David Hernandez (GK, admin, webmaster, Cloudflare role) |
 | Password | `Password123!` |
 
 The API creates this member on startup when the row is missing. `backend\seed_member.py` does the same thing and exits with an error if PostgreSQL cannot be reached. If membership id `1000000` already has a different password, the stored password is left as it is.
+
+That same password is used by sample member `1000001` (Sample Brother, no title, not an admin) and by the test roster `1000100` through `1000149`. Starting the API, or running `backend\seed_member.py`, inserts any of those rows that are missing. Each roster member receives a profile photo when that member row is first created. Removing the photo leaves the default in place. A few of those accounts are also admins: `1000100`, `1000103`, `1000114`, `1000124`, `1000131`, and `1000140`. David Hernandez remains the known webmaster and the only seeded Cloudflare role. Admins can edit the site. Only a webmaster can open Logs & activity or grant webmaster access. Only the Cloudflare role can open Email routing or change where a role address forwards. Admins and webmasters do not receive that role unless the flag is also set. Officers and directors can save their own personal email from Settings.
+
+The same step loads past honors: 20 Knights of the Month, 20 Families of the Month, 20 Knights of the Year, 20 Families of the Year, and 20 Past Grand Knights. `backend\schema.sql` inserts any missing honor rows as well. If PostgreSQL is down, the API keeps this same roster and these same honors in memory. Several birthdays fall in October and November. A roster member or past-honor row that is still missing is inserted again the next time the API starts. Edits to an existing row are left in place, including a cleared photo.
 
 ## Authentication
 

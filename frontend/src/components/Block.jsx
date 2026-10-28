@@ -382,10 +382,10 @@ export function Block({
   );
 }
 
-export function Eyebrow({ id, className = "eyebrow", style }) {
+export function Eyebrow({ id, className = "eyebrow", style, locked = false }) {
   const { editing } = useContentState();
   const { text } = useContentActions();
-  if (!editing) {
+  if (!editing || locked) {
     return (
       <div className={className} style={style}>
         {text(id)}

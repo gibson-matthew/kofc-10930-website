@@ -2,11 +2,47 @@
 -- Create the database, then run this file:
 --   createdb koc10930
 --   psql -d koc10930 -f backend/schema.sql
--- The API reads DATABASE_URL
--- (default postgresql://postgres:postgres@localhost:5432/koc10930).
+-- The API reads DATABASE_URL from the environment. See .env.example.
 -- Passwords are bcrypt hashes. The API creates membership id 1000000
--- on startup when that row is missing. You can also run:
+-- on startup when that row is missing, with officer title GK, admin
+-- access, webmaster access, and the Cloudflare role. It also creates
+-- membership id 1000001 without admin, webmaster, or Cloudflare access.
+-- Test roster ids 1000100 through 1000149 are created the same way.
+-- They share the password Password123! with 1000000 (David Hernandez, GK, admin, webmaster, Cloudflare role)
+-- and 1000001 (Sample Brother, not an admin).
+-- Profile photos are images/seed/members/<membership id>.png.
+-- A test-roster profile photo is attached only when that member row is first created.
+-- You can also run:
 --   .\.venv\Scripts\python.exe backend\seed_member.py
+-- members.title stores one officer-title abbreviation, or NULL.
+-- members.is_admin grants full edit access.
+-- members.is_webmaster grants that same access plus Logs & activity.
+-- Only a webmaster can grant or revoke webmaster access. The last webmaster stays.
+-- members.is_cloudflare grants Email Routing updates and outbound mail.
+-- Admins and webmasters do not receive it unless this flag is set.
+-- Only a member with the Cloudflare role can grant or revoke it. The last one stays.
+-- members.birth_month and members.birth_day store a birthday, or both stay NULL.
+-- members.honorary_life marks an Honorary Life Member.
+-- members.phone and members.email are optional. The member list omits them for non-admins.
+-- year.fraternal stores the current fraternal year, such as 2026–27.
+-- images holds the logo, carousel photos, About photos, uploads, and profile photos.
+-- Profile photos store crop_x, crop_y, and crop_scale for the viewing angle.
+-- About photos use slots recog.0 through recog.3.
+-- Membership 1000000 is renamed to David Hernandez when the row still says Test Member.
+-- honors stores past Knights and Families of the Month and Year, and Past Grand Knights.
+-- Each of those five lists is seeded with 20 rows. A row is inserted when that
+-- category, name, and period are not already stored. Photos are
+-- backend/uploads/seed/honors/<category>-NN.png.
+-- honors.crop_x, crop_y, and crop_scale store the viewing angle.
+-- A cleared honor photo is not filled back in.
+-- council_events stores the member-view upcoming events.
+-- council_events example rows are inserted when that table is empty.
+-- documents stores treasurer and financial secretary library files.
+-- library is treasurer or financial_secretary. uploaded_by is a membership id
+-- with no foreign key, so example rows can be stored before members exist.
+-- Example rows are inserted when that library and title are not already stored.
+-- The API inserts those examples only when the documents table is first created.
+-- Files are backend/uploads/treasurer/ and backend/uploads/financial-secretary/.
 
 BEGIN;
 
@@ -14,7 +50,62 @@ CREATE TABLE IF NOT EXISTS members (
   id SERIAL PRIMARY KEY,
   membership_id TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
-  display_name TEXT NOT NULL
+  display_name TEXT NOT NULL,
+  title TEXT,
+  is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+  is_webmaster BOOLEAN NOT NULL DEFAULT FALSE,
+  is_cloudflare BOOLEAN NOT NULL DEFAULT FALSE,
+  birth_month SMALLINT,
+  birth_day SMALLINT,
+  honorary_life BOOLEAN NOT NULL DEFAULT FALSE,
+  phone TEXT,
+  email TEXT
+);
+
+ALTER TABLE members ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS is_webmaster BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS is_cloudflare BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_month SMALLINT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS birth_day SMALLINT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS honorary_life BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS email TEXT;
+
+-- Example directory fields, only while that member still has the column defaults.
+UPDATE members
+SET honorary_life = TRUE, phone = '(817) 555-0140', email = 'david.hernandez@example.com'
+WHERE membership_id = '1000000' AND honorary_life = FALSE AND phone IS NULL AND email IS NULL;
+UPDATE members
+SET phone = '(817) 555-0142', email = 'christopher.nguyen@example.com'
+WHERE membership_id = '1000104' AND honorary_life = FALSE AND phone IS NULL AND email IS NULL;
+UPDATE members
+SET phone = '(817) 555-0144', email = 'andrew.callahan@example.com'
+WHERE membership_id = '1000105' AND honorary_life = FALSE AND phone IS NULL AND email IS NULL;
+UPDATE members
+SET honorary_life = TRUE, phone = '(817) 555-0168', email = 'richard.donnelly@example.com'
+WHERE membership_id = '1000121' AND honorary_life = FALSE AND phone IS NULL AND email IS NULL;
+UPDATE members
+SET honorary_life = TRUE, phone = '(817) 555-0176', email = 'walter.shaw@example.com'
+WHERE membership_id = '1000135' AND honorary_life = FALSE AND phone IS NULL AND email IS NULL;
+UPDATE members
+SET honorary_life = TRUE
+WHERE membership_id = '1000144' AND honorary_life = FALSE AND phone IS NULL AND email IS NULL;
+ALTER TABLE members DROP CONSTRAINT IF EXISTS members_title_abbrev;
+ALTER TABLE members ADD CONSTRAINT members_title_abbrev
+  CHECK (title IS NULL OR title IN ('GK', 'DGK', 'CH', 'CHP', 'REC', 'FS', 'TR', 'ADV', 'WRD', 'IG', 'OG', 'LEC', 'T1', 'T2', 'T3', 'PD', 'MD', 'FD', 'FAM', 'COM', 'LIFE', 'VOC', 'PGK'));
+ALTER TABLE members DROP CONSTRAINT IF EXISTS members_birthday_chk;
+ALTER TABLE members ADD CONSTRAINT members_birthday_chk CHECK (
+  (birth_month IS NULL AND birth_day IS NULL)
+  OR (
+    birth_month BETWEEN 1 AND 12
+    AND birth_day BETWEEN 1 AND 31
+    AND (
+      (birth_month = 2 AND birth_day <= 29)
+      OR (birth_month IN (4, 6, 9, 11) AND birth_day <= 30)
+      OR (birth_month IN (1, 3, 5, 7, 8, 10, 12) AND birth_day <= 31)
+    )
+  )
 );
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -191,7 +282,7 @@ Fort Worth, TX 76179 US$v$, 22),
   ('member', 'officer.14.name', 'text', $v$Steven Alvarez$v$, 67),
   ('member', 'directors.eyebrow', 'text', $v$Fraternal year 2026–27$v$, 68),
   ('member', 'directors.title', 'text', $v$Current Directors$v$, 69),
-  ('member', 'directors.intro', 'text', $v$Program directors for the 2026–27 fraternal year. Replace the sample names.$v$, 70),
+  ('member', 'directors.intro', 'text', $v$Program directors for the 2026–27 fraternal year.$v$, 70),
   ('member', 'director.0.role', 'text', $v$Program Director$v$, 71),
   ('member', 'director.0.name', 'text', $v$Sample Program Director$v$, 72),
   ('member', 'director.1.role', 'text', $v$Faith Director$v$, 73),
@@ -252,28 +343,15 @@ Fort Worth, TX 76179 US$v$, 22),
   ('member', 'links.4.title', 'text', $v$Members list$v$, 128),
   ('member', 'links.4.action', 'text', $v$Open members list$v$, 129),
   ('member', 'links.4.detail', 'text', $v$Restricted. Request the current roll from the Financial Secretary.$v$, 130),
-  ('member', 'links.5.title', 'text', $v$Our elder statesmen$v$, 131),
-  ('member', 'links.5.action', 'text', $v$View honor roll$v$, 132),
-  ('member', 'links.5.detail', 'text', $v$Replace with the elder statesmen list.$v$, 133),
   ('member', 'links.6.title', 'text', $v$Share a comment with an officer$v$, 134),
   ('member', 'links.6.action', 'text', $v$Write the council$v$, 135),
   ('member', 'links.6.detail', 'text', $v$Address the Grand Knight or a trustee. Do not post private remarks publicly.$v$, 136),
-  ('member', 'links.7.title', 'text', $v$SFS officer roles$v$, 137),
-  ('member', 'links.7.action', 'text', $v$Open role guide$v$, 138),
-  ('member', 'links.7.detail', 'text', $v$Officer duty summaries belong in this members library.$v$, 139),
-  ('member', 'links.8.title', 'text', $v$Event management center$v$, 140),
-  ('member', 'links.8.action', 'text', $v$Open chairmen tools$v$, 141),
-  ('member', 'links.8.detail', 'text', $v$Confirm the parish calendar before an event is announced.$v$, 142),
   ('member', 'links.9.title', 'text', $v$Volunteer hours and visits$v$, 143),
   ('member', 'links.9.action', 'text', $v$How to record hours$v$, 144),
   ('member', 'links.9.before', 'text', $v$Record hours and visits at$v$, 145),
   ('member', 'links.9.link', 'text', $v$www.UKnightMobile.org$v$, 146),
   ('member', 'links.9.after', 'text', $v$.$v$, 147),
-  ('member', 'links.10.title', 'text', $v$Hours goal & blood donor status$v$, 148),
-  ('member', 'links.10.body', 'text', $v$Your Goal for this year (2026) is 0.00 hours per month. You are not a blood donor.$v$, 149),
-  ('member', 'links.10.action', 'text', $v$Update goal$v$, 150),
-  ('member', 'links.10.detail', 'text', $v$Your Goal for this year (2026) is 0.00 hours per month. You are not a blood donor.$v$, 151),
-  ('member', 'links.11.title', 'text', $v$Knight and Family of the Month$v$, 152),
+  ('member', 'links.11.title', 'text', $v$Knight & Family Nominations$v$, 152),
   ('member', 'links.11.action', 'text', $v$Submit a nomination$v$, 153),
   ('member', 'links.11.detail', 'text', $v$Include the name and a short reason for the nomination.$v$, 154),
   ('member', 'links.12.title', 'text', $v$Financial Secretary library$v$, 155),
@@ -297,9 +375,486 @@ Fort Worth, TX 76179 US$v$, 22),
   ('member', 'footer.nav.links', 'text', $v$Member Links$v$, 173),
   ('member', 'footer.nav.public', 'text', $v$Public page$v$, 174),
   ('member', 'footer.copy', 'text', $v$© 2026 Knights of Columbus Council 10930 — Fort Worth, TX$v$, 175),
-  ('member', 'footer.principles', 'text', $v$Charity · Unity · Fraternity · Patriotism$v$, 176)
+  ('member', 'footer.principles', 'text', $v$Charity · Unity · Fraternity · Patriotism$v$, 176),
+  ('member', 'recog.0.detail', 'text', $v$Neighbors packed boxes on Saturday and delivered them to families after Sunday Mass.$v$, 177),
+  ('member', 'recog.1.detail', 'text', $v$He organized sizes, labeled bags, and stayed until every coat had a home.$v$, 178),
+  ('member', 'recog.2.detail', 'text', $v$The family hosted monthly rosaries and raised scholarship funds through the parish festival.$v$, 179),
+  ('member', 'recog.3.detail', 'text', $v$He logged charity hours each month and walked new members through their first meeting.$v$, 180)
 ) AS v(slug, block_key, field_type, value, sort_order)
 JOIN pages p ON p.slug = v.slug
 ON CONFLICT (page_id, "key") DO NOTHING;
+
+INSERT INTO content_blocks (page_id, "key", field_type, value, sort_order)
+SELECT p.id, 'year.fraternal', 'text', $v$2026–27$v$, 200
+FROM pages p
+WHERE p.slug = 'member'
+ON CONFLICT (page_id, "key") DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS images (
+  id SERIAL PRIMARY KEY,
+  path TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  purpose TEXT NOT NULL DEFAULT 'library',
+  slot TEXT,
+  owner_membership_id TEXT REFERENCES members (membership_id) ON DELETE SET NULL,
+  crop_x DOUBLE PRECISION NOT NULL DEFAULT 0,
+  crop_y DOUBLE PRECISION NOT NULL DEFAULT 0,
+  crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT images_purpose_chk CHECK (purpose IN ('library', 'profile')),
+  CONSTRAINT images_slot_chk CHECK (
+    slot IS NULL OR slot IN (
+      'logo', 'carousel.1', 'carousel.2', 'carousel.3', 'carousel.4',
+      'recog.0', 'recog.1', 'recog.2', 'recog.3'
+    )
+  )
+);
+
+ALTER TABLE images ADD COLUMN IF NOT EXISTS crop_x DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS crop_y DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE images ADD COLUMN IF NOT EXISTS crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1;
+ALTER TABLE images DROP CONSTRAINT IF EXISTS images_slot_chk;
+ALTER TABLE images ADD CONSTRAINT images_slot_chk CHECK (
+  slot IS NULL OR slot IN (
+    'logo', 'carousel.1', 'carousel.2', 'carousel.3', 'carousel.4',
+    'recog.0', 'recog.1', 'recog.2', 'recog.3'
+  )
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS images_slot_idx
+  ON images (slot) WHERE slot IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS images_profile_idx
+  ON images (owner_membership_id) WHERE purpose = 'profile';
+
+INSERT INTO images (path, original_name, content_type, purpose, slot)
+SELECT v.path, v.original_name, v.content_type, v.purpose, v.slot
+FROM (
+  VALUES
+  ('images/kofc-logo.png', 'kofc-logo.png', 'image/png', 'library', 'logo'),
+  ('images/carousel1.jpg', 'carousel1.jpg', 'image/jpeg', 'library', 'carousel.1'),
+  ('images/carousel2.jpg', 'carousel2.jpg', 'image/jpeg', 'library', 'carousel.2'),
+  ('images/carousel3.jpg', 'carousel3.jpg', 'image/jpeg', 'library', 'carousel.3'),
+  ('images/carousel4.jpg', 'carousel4.jpg', 'image/jpeg', 'library', 'carousel.4')
+) AS v(path, original_name, content_type, purpose, slot)
+WHERE NOT EXISTS (
+  SELECT 1 FROM images i WHERE i.path = v.path OR (v.slot IS NOT NULL AND i.slot = v.slot)
+);
+
+UPDATE members
+SET display_name = 'David Hernandez'
+WHERE membership_id = '1000000'
+  AND display_name = 'Test Member';
+
+UPDATE members
+SET is_admin = TRUE,
+    title = COALESCE(title, 'GK')
+WHERE membership_id = '1000000'
+  AND NOT EXISTS (SELECT 1 FROM members WHERE is_admin);
+
+UPDATE members
+SET is_webmaster = TRUE
+WHERE membership_id = '1000000'
+  AND NOT EXISTS (SELECT 1 FROM members WHERE is_webmaster);
+
+UPDATE members
+SET is_cloudflare = TRUE
+WHERE membership_id = '1000000'
+  AND NOT EXISTS (SELECT 1 FROM members WHERE is_cloudflare);
+
+CREATE TABLE IF NOT EXISTS honors (
+  id SERIAL PRIMARY KEY,
+  category TEXT NOT NULL,
+  name TEXT NOT NULL,
+  period TEXT NOT NULL,
+  sort_year INTEGER NOT NULL,
+  sort_month INTEGER,
+  note TEXT NOT NULL DEFAULT '',
+  photo_path TEXT,
+  photo_type TEXT,
+  crop_x DOUBLE PRECISION NOT NULL DEFAULT 0,
+  crop_y DOUBLE PRECISION NOT NULL DEFAULT 0,
+  crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1,
+  CONSTRAINT honors_category_chk CHECK (
+    category IN ('knight_month', 'family_month', 'knight_year', 'family_year', 'past_gk')
+  ),
+  CONSTRAINT honors_month_chk CHECK (
+    (category IN ('knight_month', 'family_month') AND sort_month BETWEEN 1 AND 12)
+    OR (category IN ('knight_year', 'family_year', 'past_gk') AND sort_month IS NULL)
+  )
+);
+
+CREATE INDEX IF NOT EXISTS honors_category_idx
+  ON honors (category, sort_year DESC, sort_month DESC);
+
+ALTER TABLE honors ADD COLUMN IF NOT EXISTS crop_x DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE honors ADD COLUMN IF NOT EXISTS crop_y DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE honors ADD COLUMN IF NOT EXISTS crop_scale DOUBLE PRECISION NOT NULL DEFAULT 1;
+
+CREATE TABLE IF NOT EXISTS council_events (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  event_date DATE NOT NULL,
+  event_time TEXT,
+  location TEXT,
+  description TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS council_events_date_idx
+  ON council_events (event_date, id);
+
+CREATE TEMP TABLE IF NOT EXISTS honor_seed_rows (
+  category TEXT,
+  name TEXT,
+  period TEXT,
+  sort_year INTEGER,
+  sort_month INTEGER,
+  note TEXT,
+  photo_path TEXT,
+  photo_type TEXT
+) ON COMMIT DROP;
+
+INSERT INTO honor_seed_rows (category, name, period, sort_year, sort_month, note, photo_path, photo_type)
+VALUES
+  ('knight_month', 'James Harrington', 'October 2025', 2025::integer, 10::integer, 'He chaired the Coats for Kids sorting crew.', 'backend/uploads/seed/honors/knight_month-01.png', 'image/png'),
+  ('knight_month', 'Peter Lang', 'September 2025', 2025::integer, 9::integer, 'He organized the wheelchair mission delivery.', 'backend/uploads/seed/honors/knight_month-02.png', 'image/png'),
+  ('knight_month', 'Marcus Webb', 'August 2025', 2025::integer, 8::integer, 'He recruited three new members at the parish festival.', 'backend/uploads/seed/honors/knight_month-03.png', 'image/png'),
+  ('knight_month', 'Owen Keller', 'July 2025', 2025::integer, 7::integer, 'He led the Saturday pancake breakfast crew.', 'backend/uploads/seed/honors/knight_month-04.png', 'image/png'),
+  ('knight_month', 'Nathan Cho', 'June 2025', 2025::integer, 6::integer, 'He coordinated the blood-drive volunteer shift.', 'backend/uploads/seed/honors/knight_month-05.png', 'image/png'),
+  ('knight_month', 'Elliot Marsh', 'May 2025', 2025::integer, 5::integer, 'He repaired the hall tables before the fish fry.', 'backend/uploads/seed/honors/knight_month-06.png', 'image/png'),
+  ('knight_month', 'Caleb Ruiz', 'April 2025', 2025::integer, 4::integer, 'He drove veterans to the monthly social.', 'backend/uploads/seed/honors/knight_month-07.png', 'image/png'),
+  ('knight_month', 'Dominic Price', 'March 2025', 2025::integer, 3::integer, 'He ran the Tootsie Roll weekend with the youth helpers.', 'backend/uploads/seed/honors/knight_month-08.png', 'image/png'),
+  ('knight_month', 'Isaac Romero', 'February 2025', 2025::integer, 2::integer, 'He set up the living rosary in the parish courtyard.', 'backend/uploads/seed/honors/knight_month-09.png', 'image/png'),
+  ('knight_month', 'Gabriel Santos', 'January 2025', 2025::integer, 1::integer, 'He collected winter coats from the school families.', 'backend/uploads/seed/honors/knight_month-10.png', 'image/png'),
+  ('knight_month', 'Felix Navarro', 'December 2024', 2024::integer, 12::integer, 'He hosted the exemplification reception.', 'backend/uploads/seed/honors/knight_month-11.png', 'image/png'),
+  ('knight_month', 'Hugo Bennett', 'November 2024', 2024::integer, 11::integer, 'He kept the scholarship applications moving.', 'backend/uploads/seed/honors/knight_month-12.png', 'image/png'),
+  ('knight_month', 'Adrian Cole', 'October 2024', 2024::integer, 10::integer, 'He led the Keep Christ in Christmas card sale.', 'backend/uploads/seed/honors/knight_month-13.png', 'image/png'),
+  ('knight_month', 'Wesley Grant', 'September 2024', 2024::integer, 9::integer, 'He paired new members with sponsors.', 'backend/uploads/seed/honors/knight_month-14.png', 'image/png'),
+  ('knight_month', 'Simon Pearce', 'August 2024', 2024::integer, 8::integer, 'He cooked for the widows'' luncheon.', 'backend/uploads/seed/honors/knight_month-15.png', 'image/png'),
+  ('knight_month', 'Julian Hart', 'July 2024', 2024::integer, 7::integer, 'He logged the council''s charity hours for the report.', 'backend/uploads/seed/honors/knight_month-16.png', 'image/png'),
+  ('knight_month', 'Vincent Rossi', 'June 2024', 2024::integer, 6::integer, 'He built a ramp for a brother knight''s porch.', 'backend/uploads/seed/honors/knight_month-17.png', 'image/png'),
+  ('knight_month', 'Malcolm Reid', 'May 2024', 2024::integer, 5::integer, 'He chaired the soccer challenge at the parish school.', 'backend/uploads/seed/honors/knight_month-18.png', 'image/png'),
+  ('knight_month', 'Oscar Pham', 'April 2024', 2024::integer, 4::integer, 'He delivered food boxes after the parish mission.', 'backend/uploads/seed/honors/knight_month-19.png', 'image/png'),
+  ('knight_month', 'Leon Duarte', 'March 2024', 2024::integer, 3::integer, 'He organized the corporate communion breakfast.', 'backend/uploads/seed/honors/knight_month-20.png', 'image/png'),
+  ('family_month', 'The Nguyen Family', 'September 2025', 2025::integer, 9::integer, 'They led the parish food pantry weekend.', 'backend/uploads/seed/honors/family_month-01.png', 'image/png'),
+  ('family_month', 'The Brennan Family', 'August 2025', 2025::integer, 8::integer, 'They hosted the council picnic and watched the younger children.', 'backend/uploads/seed/honors/family_month-02.png', 'image/png'),
+  ('family_month', 'The Alvarez Family', 'July 2025', 2025::integer, 7::integer, 'They sorted coats and stayed through the distribution.', 'backend/uploads/seed/honors/family_month-03.png', 'image/png'),
+  ('family_month', 'The Okonkwo Family', 'June 2025', 2025::integer, 6::integer, 'They led the family rosary after Sunday Mass.', 'backend/uploads/seed/honors/family_month-04.png', 'image/png'),
+  ('family_month', 'The Callahan Family', 'May 2025', 2025::integer, 5::integer, 'They baked for the Lenten fish fry every Friday.', 'backend/uploads/seed/honors/family_month-05.png', 'image/png'),
+  ('family_month', 'The Ramirez Family', 'April 2025', 2025::integer, 4::integer, 'They welcomed new families at the membership drive.', 'backend/uploads/seed/honors/family_month-06.png', 'image/png'),
+  ('family_month', 'The Patel Family', 'March 2025', 2025::integer, 3::integer, 'They staffed the Special Olympics hydration tent.', 'backend/uploads/seed/honors/family_month-07.png', 'image/png'),
+  ('family_month', 'The Kowalski Family', 'February 2025', 2025::integer, 2::integer, 'They prepared the hall for the widows'' luncheon.', 'backend/uploads/seed/honors/family_month-08.png', 'image/png'),
+  ('family_month', 'The Park Family', 'January 2025', 2025::integer, 1::integer, 'They ran the Christmas poster contest at the school.', 'backend/uploads/seed/honors/family_month-09.png', 'image/png'),
+  ('family_month', 'The Moretti Family', 'December 2024', 2024::integer, 12::integer, 'They delivered meals to homebound parishioners.', 'backend/uploads/seed/honors/family_month-10.png', 'image/png'),
+  ('family_month', 'The Vasquez Family', 'November 2024', 2024::integer, 11::integer, 'They helped measure children for winter coats.', 'backend/uploads/seed/honors/family_month-11.png', 'image/png'),
+  ('family_month', 'The Thompson Family', 'October 2024', 2024::integer, 10::integer, 'They kept the scholarship candy sale stocked.', 'backend/uploads/seed/honors/family_month-12.png', 'image/png'),
+  ('family_month', 'The Carter Family', 'September 2024', 2024::integer, 9::integer, 'They hosted a vocations dinner for seminarians.', 'backend/uploads/seed/honors/family_month-13.png', 'image/png'),
+  ('family_month', 'The Donnelly Family', 'August 2024', 2024::integer, 8::integer, 'They led the living nativity volunteers.', 'backend/uploads/seed/honors/family_month-14.png', 'image/png'),
+  ('family_month', 'The Ortega Family', 'July 2024', 2024::integer, 7::integer, 'They organized the parish festival kids'' games.', 'backend/uploads/seed/honors/family_month-15.png', 'image/png'),
+  ('family_month', 'The Wallace Family', 'June 2024', 2024::integer, 6::integer, 'They drove the food-pantry truck that Saturday.', 'backend/uploads/seed/honors/family_month-16.png', 'image/png'),
+  ('family_month', 'The Gallagher Family', 'May 2024', 2024::integer, 5::integer, 'They prayed the rosary with the council each week.', 'backend/uploads/seed/honors/family_month-17.png', 'image/png'),
+  ('family_month', 'The Santos Family', 'April 2024', 2024::integer, 4::integer, 'They set up and cleared the pancake breakfast.', 'backend/uploads/seed/honors/family_month-18.png', 'image/png'),
+  ('family_month', 'The Herrera Family', 'March 2024', 2024::integer, 3::integer, 'They welcomed guests at the blood drive.', 'backend/uploads/seed/honors/family_month-19.png', 'image/png'),
+  ('family_month', 'The Berg Family', 'February 2024', 2024::integer, 2::integer, 'They packed ultrasound-initiative appeal letters.', 'backend/uploads/seed/honors/family_month-20.png', 'image/png'),
+  ('knight_year', 'Robert Hale', '2025', 2025::integer, NULL::integer, 'He logged charity hours each month and mentored new members.', 'backend/uploads/seed/honors/knight_year-01.png', 'image/png'),
+  ('knight_year', 'Carl Mendel', '2024', 2024::integer, NULL::integer, 'He kept the coat drive and the blood drive fully staffed.', 'backend/uploads/seed/honors/knight_year-02.png', 'image/png'),
+  ('knight_year', 'Evan Brooks', '2023', 2023::integer, NULL::integer, 'He revived the council''s visit schedule for homebound brothers.', 'backend/uploads/seed/honors/knight_year-03.png', 'image/png'),
+  ('knight_year', 'Hugh Salazar', '2022', 2022::integer, NULL::integer, 'He led the soccer challenge and the free-throw contest.', 'backend/uploads/seed/honors/knight_year-04.png', 'image/png'),
+  ('knight_year', 'Martin Ellison', '2021', 2021::integer, NULL::integer, 'He balanced a full program calendar without missing a meeting.', 'backend/uploads/seed/honors/knight_year-05.png', 'image/png'),
+  ('knight_year', 'Derek Fontaine', '2020', 2020::integer, NULL::integer, 'He raised the scholarship fund past its goal.', 'backend/uploads/seed/honors/knight_year-06.png', 'image/png'),
+  ('knight_year', 'Philip Okada', '2019', 2019::integer, NULL::integer, 'He trained the new officers before the election.', 'backend/uploads/seed/honors/knight_year-07.png', 'image/png'),
+  ('knight_year', 'George Lanier', '2018', 2018::integer, NULL::integer, 'He organized disaster-relief collections after the spring storms.', 'backend/uploads/seed/honors/knight_year-08.png', 'image/png'),
+  ('knight_year', 'Arthur Nguyen', '2017', 2017::integer, NULL::integer, 'He grew the rosary attendance through the year.', 'backend/uploads/seed/honors/knight_year-09.png', 'image/png'),
+  ('knight_year', 'Lawrence Kim', '2016', 2016::integer, NULL::integer, 'He finished the hall accessibility repairs.', 'backend/uploads/seed/honors/knight_year-10.png', 'image/png'),
+  ('knight_year', 'Raymond Doyle', '2015', 2015::integer, NULL::integer, 'He chaired Coats for Kids from kickoff to the last delivery.', 'backend/uploads/seed/honors/knight_year-11.png', 'image/png'),
+  ('knight_year', 'Clifford Barnes', '2014', 2014::integer, NULL::integer, 'He mentored the youth programs through the school year.', 'backend/uploads/seed/honors/knight_year-12.png', 'image/png'),
+  ('knight_year', 'Harold Ibarra', '2013', 2013::integer, NULL::integer, 'He carried the ultrasound initiative appeal to every meeting.', 'backend/uploads/seed/honors/knight_year-13.png', 'image/png'),
+  ('knight_year', 'Eugene Moss', '2012', 2012::integer, NULL::integer, 'He kept the food pantry partnership running each month.', 'backend/uploads/seed/honors/knight_year-14.png', 'image/png'),
+  ('knight_year', 'Walter Brennan', '2011', 2011::integer, NULL::integer, 'He welcomed the largest exemplification class of the decade.', 'backend/uploads/seed/honors/knight_year-15.png', 'image/png'),
+  ('knight_year', 'Francis Delgado', '2010', 2010::integer, NULL::integer, 'He published the charity report the state council requested.', 'backend/uploads/seed/honors/knight_year-16.png', 'image/png'),
+  ('knight_year', 'Albert Shaw', '2009', 2009::integer, NULL::integer, 'He led the veterans'' breakfast through the winter.', 'backend/uploads/seed/honors/knight_year-17.png', 'image/png'),
+  ('knight_year', 'Clarence Holt', '2008', 2008::integer, NULL::integer, 'He restored the council''s contingent for the parish festival.', 'backend/uploads/seed/honors/knight_year-18.png', 'image/png'),
+  ('knight_year', 'Bernard Cruz', '2007', 2007::integer, NULL::integer, 'He paired every new knight with a working committee.', 'backend/uploads/seed/honors/knight_year-19.png', 'image/png'),
+  ('knight_year', 'Stanley Peck', '2006', 2006::integer, NULL::integer, 'He held the council''s charity budget on target.', 'backend/uploads/seed/honors/knight_year-20.png', 'image/png'),
+  ('family_year', 'The Ortiz Family', '2025', 2025::integer, NULL::integer, 'They hosted monthly rosaries and supported the scholarship fund.', 'backend/uploads/seed/honors/family_year-01.png', 'image/png'),
+  ('family_year', 'The Lang Family', '2024', 2024::integer, NULL::integer, 'They staffed every fish fry and the coat distribution.', 'backend/uploads/seed/honors/family_year-02.png', 'image/png'),
+  ('family_year', 'The Webb Family', '2023', 2023::integer, NULL::integer, 'They opened their home for the council''s family prayer night.', 'backend/uploads/seed/honors/family_year-03.png', 'image/png'),
+  ('family_year', 'The Keller Family', '2022', 2022::integer, NULL::integer, 'They led the parish festival meal line.', 'backend/uploads/seed/honors/family_year-04.png', 'image/png'),
+  ('family_year', 'The Cho Family', '2021', 2021::integer, NULL::integer, 'They tutored students before the free-throw and soccer events.', 'backend/uploads/seed/honors/family_year-05.png', 'image/png'),
+  ('family_year', 'The Marsh Family', '2020', 2020::integer, NULL::integer, 'They visited homebound parishioners with the council each month.', 'backend/uploads/seed/honors/family_year-06.png', 'image/png'),
+  ('family_year', 'The Ruiz Family', '2019', 2019::integer, NULL::integer, 'They ran the Christmas poster contest and the card sale.', 'backend/uploads/seed/honors/family_year-07.png', 'image/png'),
+  ('family_year', 'The Price Family', '2018', 2018::integer, NULL::integer, 'They cooked the veterans'' breakfast from January through November.', 'backend/uploads/seed/honors/family_year-08.png', 'image/png'),
+  ('family_year', 'The Romero Family', '2017', 2017::integer, NULL::integer, 'They kept the food pantry shelves labeled and full.', 'backend/uploads/seed/honors/family_year-09.png', 'image/png'),
+  ('family_year', 'The Navarro Family', '2016', 2016::integer, NULL::integer, 'They hosted seminarians during the vocations weekend.', 'backend/uploads/seed/honors/family_year-10.png', 'image/png'),
+  ('family_year', 'The Bennett Family', '2015', 2015::integer, NULL::integer, 'They organized rides for elderly members.', 'backend/uploads/seed/honors/family_year-11.png', 'image/png'),
+  ('family_year', 'The Cole Family', '2014', 2014::integer, NULL::integer, 'They prepared the hall for every major fundraiser.', 'backend/uploads/seed/honors/family_year-12.png', 'image/png'),
+  ('family_year', 'The Pearce Family', '2013', 2013::integer, NULL::integer, 'They led the family Mass ushers for the year.', 'backend/uploads/seed/honors/family_year-13.png', 'image/png'),
+  ('family_year', 'The Hart Family', '2012', 2012::integer, NULL::integer, 'They packed and delivered coats with their children.', 'backend/uploads/seed/honors/family_year-14.png', 'image/png'),
+  ('family_year', 'The Rossi Family', '2011', 2011::integer, NULL::integer, 'They chaired the Special Olympics family tent.', 'backend/uploads/seed/honors/family_year-15.png', 'image/png'),
+  ('family_year', 'The Reid Family', '2010', 2010::integer, NULL::integer, 'They supported the ultrasound initiative bake sales.', 'backend/uploads/seed/honors/family_year-16.png', 'image/png'),
+  ('family_year', 'The Pham Family', '2009', 2009::integer, NULL::integer, 'They welcomed new families at every membership drive.', 'backend/uploads/seed/honors/family_year-17.png', 'image/png'),
+  ('family_year', 'The Duarte Family', '2008', 2008::integer, NULL::integer, 'They kept the scholarship candy sale going each month.', 'backend/uploads/seed/honors/family_year-18.png', 'image/png'),
+  ('family_year', 'The Mendel Family', '2007', 2007::integer, NULL::integer, 'They hosted the corporate communion brunch.', 'backend/uploads/seed/honors/family_year-19.png', 'image/png'),
+  ('family_year', 'The Fontaine Family', '2006', 2006::integer, NULL::integer, 'They prayed with the council and staffed the blood drive.', 'backend/uploads/seed/honors/family_year-20.png', 'image/png'),
+  ('past_gk', 'William Grant', '2024–25', 2024::integer, NULL::integer, 'He led the council through the Coats for Kids year.', 'backend/uploads/seed/honors/past_gk-01.png', 'image/png'),
+  ('past_gk', 'Thomas Reilly', '2023–24', 2023::integer, NULL::integer, 'He handed the council a balanced charity budget.', 'backend/uploads/seed/honors/past_gk-02.png', 'image/png'),
+  ('past_gk', 'Edward Castillo', '2022–23', 2022::integer, NULL::integer, 'He restarted the monthly family picnic.', 'backend/uploads/seed/honors/past_gk-03.png', 'image/png'),
+  ('past_gk', 'Joseph Brennan', '2021–22', 2021::integer, NULL::integer, 'He grew the roster and kept meetings on time.', 'backend/uploads/seed/honors/past_gk-04.png', 'image/png'),
+  ('past_gk', 'Paul Griffin', '2020–21', 2020::integer, NULL::integer, 'He launched the council''s ultrasound initiative support.', 'backend/uploads/seed/honors/past_gk-05.png', 'image/png'),
+  ('past_gk', 'Anthony Marino', '2019–20', 2019::integer, NULL::integer, 'He guided the hall renovation to completion.', 'backend/uploads/seed/honors/past_gk-06.png', 'image/png'),
+  ('past_gk', 'Charles Nguyen', '2018–19', 2018::integer, NULL::integer, 'He strengthened the council''s tie to the parish school.', 'backend/uploads/seed/honors/past_gk-07.png', 'image/png'),
+  ('past_gk', 'Frank Kowalski', '2017–18', 2017::integer, NULL::integer, 'He led through the year the blood drive doubled.', 'backend/uploads/seed/honors/past_gk-08.png', 'image/png'),
+  ('past_gk', 'Stephen Walsh', '2016–17', 2016::integer, NULL::integer, 'He installed a full slate of program directors.', 'backend/uploads/seed/honors/past_gk-09.png', 'image/png'),
+  ('past_gk', 'Patrick Donnelly', '2015–16', 2015::integer, NULL::integer, 'He hosted the district''s exemplification.', 'backend/uploads/seed/honors/past_gk-10.png', 'image/png'),
+  ('past_gk', 'Daniel Okonkwo', '2014–15', 2014::integer, NULL::integer, 'He kept charity hours at the front of every meeting.', 'backend/uploads/seed/honors/past_gk-11.png', 'image/png'),
+  ('past_gk', 'Michael Ruiz', '2013–14', 2013::integer, NULL::integer, 'He opened meetings with a steady formation program.', 'backend/uploads/seed/honors/past_gk-12.png', 'image/png'),
+  ('past_gk', 'Andrew Park', '2012–13', 2012::integer, NULL::integer, 'He left the scholarship fund larger than he found it.', 'backend/uploads/seed/honors/past_gk-13.png', 'image/png'),
+  ('past_gk', 'Christopher Walsh', '2011–12', 2011::integer, NULL::integer, 'He organized the council''s first Special Olympics team.', 'backend/uploads/seed/honors/past_gk-14.png', 'image/png'),
+  ('past_gk', 'Timothy Brooks', '2010–11', 2010::integer, NULL::integer, 'He renewed the food-pantry partnership.', 'backend/uploads/seed/honors/past_gk-15.png', 'image/png'),
+  ('past_gk', 'Brian Callahan', '2009–10', 2009::integer, NULL::integer, 'He led the widows'' luncheon into an annual event.', 'backend/uploads/seed/honors/past_gk-16.png', 'image/png'),
+  ('past_gk', 'Steven Alvarez', '2008–09', 2008::integer, NULL::integer, 'He finished the year with every officer chair filled.', 'backend/uploads/seed/honors/past_gk-17.png', 'image/png'),
+  ('past_gk', 'Kevin Moretti', '2007–08', 2007::integer, NULL::integer, 'He carried Coats for Kids through a cold winter.', 'backend/uploads/seed/honors/past_gk-18.png', 'image/png'),
+  ('past_gk', 'Ryan Thompson', '2006–07', 2006::integer, NULL::integer, 'He set the council''s visit schedule for homebound knights.', 'backend/uploads/seed/honors/past_gk-19.png', 'image/png'),
+  ('past_gk', 'Matthew Carter', '2005–06', 2005::integer, NULL::integer, 'He began the council''s corporate communion tradition.', 'backend/uploads/seed/honors/past_gk-20.png', 'image/png');
+
+INSERT INTO honors (category, name, period, sort_year, sort_month, note, photo_path, photo_type)
+SELECT s.category, s.name, s.period, s.sort_year, s.sort_month, s.note, s.photo_path, s.photo_type
+FROM honor_seed_rows s
+WHERE NOT EXISTS (
+  SELECT 1 FROM honors h
+  WHERE h.category = s.category AND h.name = s.name AND h.period = s.period
+);
+
+INSERT INTO council_events (title, event_date, event_time, location, description, sort_order)
+SELECT v.title, v.event_date, v.event_time, v.location, v.description, v.sort_order
+FROM (
+  VALUES
+  ('Online officers meeting', DATE '2026-10-13', '7:00 p.m.', NULL, 'Brothers meet online to review the month''s business before the council meeting.', 1),
+  ('Council rosary', DATE '2026-10-14', '6:40 p.m.', 'Parish hall', 'The council prays the rosary together in the parish hall before the business meeting.', 2),
+  ('Council business meeting', DATE '2026-10-14', '7:00 p.m.', 'Parish hall', 'Officers report, motions are heard, and brothers plan the next charity work.', 3),
+  ('Red Cross blood drive', DATE '2026-10-24', '9:00 a.m. to 3:00 p.m.', '5953 Bowman Roberts Rd', 'Give blood at the council hall. Appointments and walk-ins are both welcome.', 4),
+  ('Coats for Kids distribution', DATE '2026-11-14', '8:00 a.m.', 'Parish', 'Sorted coats are handed out to families at the parish from the morning shift.', 5)
+) AS v(title, event_date, event_time, location, description, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM council_events);
+
+CREATE TABLE IF NOT EXISTS documents (
+  id SERIAL PRIMARY KEY,
+  library TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  file_path TEXT NOT NULL,
+  original_name TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  uploaded_by TEXT,
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT documents_library_chk CHECK (
+    library IN ('treasurer', 'financial_secretary')
+  )
+);
+
+CREATE INDEX IF NOT EXISTS documents_library_idx
+  ON documents (library, uploaded_at DESC, id DESC);
+
+INSERT INTO documents (
+  library, title, description, file_path, original_name, content_type, uploaded_by, uploaded_at
+)
+SELECT v.library, v.title, v.description, v.file_path, v.original_name, v.content_type, v.uploaded_by, v.uploaded_at
+FROM (
+  VALUES
+  ('treasurer', 'September 2026 statement', 'Receipts and disbursements for September.', 'backend/uploads/treasurer/seed-september-2026.pdf', 'september-2026-statement.pdf', 'application/pdf', '1000000', TIMESTAMPTZ '2026-10-02T17:00:00+00:00'),
+  ('treasurer', 'August 2026 statement', 'Receipts and disbursements for August.', 'backend/uploads/treasurer/seed-august-2026.pdf', 'august-2026-statement.pdf', 'application/pdf', '1000000', TIMESTAMPTZ '2026-09-04T17:00:00+00:00'),
+  ('financial_secretary', 'September 2026 membership report', 'New members, transfers, and suspensions.', 'backend/uploads/financial-secretary/seed-membership-september-2026.pdf', 'september-2026-membership-report.pdf', 'application/pdf', '1000000', TIMESTAMPTZ '2026-10-03T17:00:00+00:00'),
+  ('financial_secretary', 'Dues notes, September 2026', 'Brothers with dues still open this month.', 'backend/uploads/financial-secretary/seed-dues-notes-september-2026.pdf', 'dues-notes-september-2026.pdf', 'application/pdf', '1000000', TIMESTAMPTZ '2026-09-15T17:00:00+00:00')
+) AS v(library, title, description, file_path, original_name, content_type, uploaded_by, uploaded_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM documents d
+  WHERE d.library = v.library AND d.title = v.title
+);
+
+-- Member-only announcements. body is sanitized HTML.
+CREATE TABLE IF NOT EXISTS announcements (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL,
+  created_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS announcements_created_idx
+  ON announcements (created_at DESC, id DESC);
+
+INSERT INTO announcements (title, summary, body, created_by, created_at, updated_at)
+SELECT v.title, v.summary, v.body, v.created_by, v.created_at, v.updated_at
+FROM (
+  VALUES
+  (
+    'Exemplification practice',
+    'Practice details stay with the council.',
+    '<p>Exemplification practice stays with the council. Come ready to review the degree and the evening duties.</p><ul><li>Parish hall</li><li>Brothers only</li></ul>',
+    '1000000',
+    TIMESTAMPTZ '2026-10-08T17:00:00+00:00',
+    TIMESTAMPTZ '2026-10-08T17:00:00+00:00'
+  ),
+  (
+    'Business meeting reminder',
+    'Officers report on Wednesday.',
+    '<p>Officers report at the business meeting. Brothers plan the next charity work in the parish hall.</p>',
+    '1000000',
+    TIMESTAMPTZ '2026-09-20T17:00:00+00:00',
+    TIMESTAMPTZ '2026-09-20T17:00:00+00:00'
+  )
+) AS v(title, summary, body, created_by, created_at, updated_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM announcements a
+  WHERE a.title = v.title
+);
+
+-- Member-only prayer requests. title and body are plain text.
+-- member_id is a membership id with no foreign key, so example rows can be stored before members exist.
+CREATE TABLE IF NOT EXISTS prayer_requests (
+  id SERIAL PRIMARY KEY,
+  member_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS prayer_requests_created_idx
+  ON prayer_requests (created_at DESC, id DESC);
+
+INSERT INTO prayer_requests (member_id, title, body, created_at, updated_at)
+SELECT v.member_id, v.title, v.body, v.created_at, v.updated_at
+FROM (
+  VALUES
+  (
+    '1000000',
+    'For the sick',
+    'Pray for the brothers who are ill and for their families.',
+    TIMESTAMPTZ '2026-10-12T17:00:00+00:00',
+    TIMESTAMPTZ '2026-10-12T17:00:00+00:00'
+  ),
+  (
+    '1000001',
+    '',
+    'Pray for our council and for the families we serve.',
+    TIMESTAMPTZ '2026-09-28T17:00:00+00:00',
+    TIMESTAMPTZ '2026-09-28T17:00:00+00:00'
+  )
+) AS v(member_id, title, body, created_at, updated_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM prayer_requests p
+  WHERE p.member_id = v.member_id AND p.body = v.body
+);
+
+-- Member nominations for Knight and Family awards. Names and reasons are plain text.
+-- member_id is the voter. nominee_member_id is set for knight awards and is not a foreign key.
+CREATE TABLE IF NOT EXISTS nominations (
+  id SERIAL PRIMARY KEY,
+  member_id TEXT NOT NULL,
+  category TEXT NOT NULL,
+  nominee_member_id TEXT,
+  nominee_name TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  period TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT nominations_category_chk CHECK (
+    category IN ('knight_month', 'family_month', 'knight_year', 'family_year')
+  ),
+  CONSTRAINT nominations_one_per_period UNIQUE (member_id, category, period)
+);
+
+CREATE INDEX IF NOT EXISTS nominations_period_idx
+  ON nominations (period, category);
+
+INSERT INTO nominations (
+  member_id, category, nominee_member_id, nominee_name, reason, period, created_at
+)
+SELECT v.member_id, v.category, v.nominee_member_id, v.nominee_name, v.reason, v.period, v.created_at
+FROM (
+  VALUES
+  (
+    '1000000',
+    'knight_month',
+    '1000135',
+    'Walter Shaw',
+    'He keeps the council charity work moving.',
+    '2026-10',
+    TIMESTAMPTZ '2026-10-12T17:00:00+00:00'
+  ),
+  (
+    '1000001',
+    'family_month',
+    NULL,
+    'The Nguyen Family',
+    'They welcome new brothers and their families.',
+    '2026-10',
+    TIMESTAMPTZ '2026-10-05T17:00:00+00:00'
+  )
+) AS v(member_id, category, nominee_member_id, nominee_name, reason, period, created_at)
+WHERE NOT EXISTS (
+  SELECT 1 FROM nominations n
+  WHERE n.member_id = v.member_id AND n.category = v.category AND n.period = v.period
+);
+
+-- Mail sent by the Cloudflare role. The body and token are not stored.
+CREATE TABLE IF NOT EXISTS sent_mail (
+  id BIGSERIAL PRIMARY KEY,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sender_id TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  recipient_count INTEGER NOT NULL,
+  skipped_count INTEGER NOT NULL,
+  recipient_ids TEXT NOT NULL DEFAULT '',
+  success BOOLEAN NOT NULL,
+  error_code TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS sent_mail_sent_idx
+  ON sent_mail (sent_at DESC);
+
+-- Necessary and optional site events. Writes must not block page requests.
+CREATE TABLE IF NOT EXISTS audit_events (
+  id BIGSERIAL PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  membership_id TEXT,
+  ip TEXT,
+  user_agent TEXT,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  CONSTRAINT audit_events_tier_chk CHECK (tier IN ('necessary', 'accept'))
+);
+
+CREATE INDEX IF NOT EXISTS audit_events_type_idx
+  ON audit_events (event_type, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS audit_events_member_idx
+  ON audit_events (membership_id, created_at DESC);
+
+-- Accepted or declined optional tracking. The browser also stores this choice.
+CREATE TABLE IF NOT EXISTS consent_choices (
+  id BIGSERIAL PRIMARY KEY,
+  membership_id TEXT,
+  choice TEXT NOT NULL,
+  version TEXT NOT NULL,
+  chosen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ip TEXT,
+  user_agent TEXT,
+  CONSTRAINT consent_choices_choice_chk CHECK (choice IN ('accepted', 'declined'))
+);
+
+CREATE INDEX IF NOT EXISTS consent_choices_member_idx
+  ON consent_choices (membership_id, chosen_at DESC);
+
+CREATE INDEX IF NOT EXISTS audit_events_created_idx
+  ON audit_events (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS consent_choices_chosen_idx
+  ON consent_choices (chosen_at DESC);
 
 COMMIT;
