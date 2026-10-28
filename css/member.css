@@ -921,12 +921,32 @@ body.page-member .on-navy {
   color: var(--ink-soft);
 }
 
+.settings-view .mail-greeting {
+  margin: 0.15rem 0 0.35rem;
+  color: var(--navy);
+}
+
 .settings-view .mail-signature {
   margin: 0.2rem 0 0.8rem;
   padding-top: 0.65rem;
   border-top: 1px solid var(--gold);
   color: var(--navy);
   font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.settings-view .mail-logo {
+  display: block;
+  width: 10.5rem;
+  max-width: 48%;
+  height: auto;
+  margin-top: 0.55rem;
+}
+
+.settings-view .mail-disclaimer {
+  margin: 0.15rem 0 0.8rem;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
   line-height: 1.45;
 }
 

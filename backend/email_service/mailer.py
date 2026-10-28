@@ -1,12 +1,13 @@
 """Outbound mail for the Cloudflare role.
 
-Sends through Cloudflare Email Sending, one personal address at a time, so
-members are not listed together. The token and recipient addresses are never
-logged. From is the configured council address on the routing domain.
+Sends through Cloudflare Email Sending, one member at a time, so each
+greeting uses that member's name. The token and recipient addresses are
+never logged. From is the configured council address on the routing domain.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import re
@@ -17,6 +18,7 @@ from urllib.parse import quote
 
 from content.announcements import html_text, sanitize_html
 from config import (
+    ROOT,
     cloudflare_account_id,
     cloudflare_email_token,
     cloudflare_routing_domain,
@@ -35,6 +37,20 @@ _EMAIL = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
 _PLACEHOLDER_DOMAINS = frozenset({"example.com", "example.net", "example.org", "council10930.example"})
 _LABELS = {abbrev: name for name, abbrev in TITLE_CHOICES}
 _LOCAL_PARTS = frozenset(part.casefold() for part in ROLE_LOCAL_PARTS.values())
+DISCLAIMER = (
+    "You received this message as you are a member of Knights of Columbus "
+    "Father Emil Gerlich of Fort Worth Council # 10930 in Fort Worth, TX. "
+    "If you have questions, comments, or concerns please contact the current "
+    "Grand Knight or Financial Secretary."
+)
+_LOGO_CID = "kofc-logo"
+_LOGO_PATHS = (
+    ROOT / "frontend" / "src" / "assets" / "email" / "logo.png",
+    ROOT / "logo_email_example.png",
+)
+_MAX_LOGO = 1_500_000
+_logo_loaded = False
+_logo_cached = b""
 
 
 class MailError(Exception):
@@ -89,31 +105,38 @@ def send_message(
     chosen = _choose(officers, directors, all_members, member_ids)
     if not chosen:
         raise MailError("Choose who should receive this message.")
-    groups: dict[str, dict] = {}
+    recipients: list[dict] = []
     skipped = 0
+    seen: set[str] = set()
     for row in chosen:
-        email = _usable_email(row.get("email"))
         memberid = str(row.get("memberid") or "")
-        if not email or not memberid:
+        if not memberid or memberid in seen:
+            if not memberid:
+                skipped += 1
+            continue
+        seen.add(memberid)
+        email = _usable_email(row.get("email"))
+        if not email:
             skipped += 1
             continue
-        bucket = groups.setdefault(email.casefold(), {"email": email, "ids": []})
-        if memberid not in bucket["ids"]:
-            bucket["ids"].append(memberid)
-    if len(groups) > MAX_RECIPIENTS:
+        recipients.append(
+            {
+                "email": email,
+                "id": memberid,
+                "name": str(row.get("display_name") or "").strip(),
+            }
+        )
+    if len(recipients) > MAX_RECIPIENTS:
         raise MailError("A message can go to 50 people. Narrow the list.")
-    signature_html, signature_text = _signature(sender)
-    html = html_body + signature_html
-    text = html_text(html_body) + "\n\n" + signature_text
     sent_ids: list[str] = []
     error = ""
     code = ""
-    if groups:
+    if recipients:
         problem = _config_error()
         if problem:
             error = problem
         else:
-            sent_ids, error, code = _deliver(list(groups.values()), cleaned_subject, html, text)
+            sent_ids, error, code = _deliver(recipients, cleaned_subject, html_body, sender)
     success = not error
     try:
         store.record_sent_mail(
@@ -175,7 +198,42 @@ def _choose(officers: bool, directors: bool, all_members: bool, member_ids: list
     return [row for row in rows if str(row.get("memberid") or "") in wanted]
 
 
-def _signature(sender: dict) -> tuple[str, str]:
+def _logo_bytes() -> bytes:
+    global _logo_loaded, _logo_cached
+    if _logo_loaded:
+        return _logo_cached
+    _logo_loaded = True
+    _logo_cached = b""
+    for path in _LOGO_PATHS:
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        if not data.startswith(b"\x89PNG"):
+            continue
+        if len(data) > _MAX_LOGO:
+            log.warning("Council email logo was not attached.")
+            return b""
+        _logo_cached = data
+        return data
+    log.warning("Council email logo was not attached.")
+    return b""
+
+
+def _logo_attachment() -> dict | None:
+    data = _logo_bytes()
+    if not data:
+        return None
+    return {
+        "content": base64.b64encode(data).decode("ascii"),
+        "content_id": _LOGO_CID,
+        "disposition": "inline",
+        "filename": "kofc-logo.png",
+        "type": "image/png",
+    }
+
+
+def _signature(sender: dict, *, with_logo: bool) -> tuple[str, str]:
     name = str(sender.get("display_name") or "").strip() or "Member"
     title = sender.get("title")
     label = _LABELS.get(title, "") if isinstance(title, str) else ""
@@ -185,12 +243,33 @@ def _signature(sender: dict) -> tuple[str, str]:
         lines.append(label)
     lines.extend(["Council 10930", domain])
     html_lines = "<br>".join(escape(line) for line in lines)
+    logo = ""
+    if with_logo:
+        logo = (
+            '<img src="cid:kofc-logo" alt="Knights of Columbus" width="168" '
+            'style="width:168px;max-width:48%;height:auto;border:0;display:block;margin:0.55em 0 0">'
+        )
     html = (
-        '<p style="margin-top:1.25em;padding-top:0.7em;border-top:1px solid #c9a227">'
+        '<div style="margin-top:1.25em;padding-top:0.7em;border-top:1px solid #c9a227">'
         + html_lines
-        + "</p>"
+        + logo
+        + "</div>"
     )
     return html, "--\n" + "\n".join(lines)
+
+
+def _message(name: str, html_body: str, signature_html: str, signature_text: str) -> tuple[str, str]:
+    who = re.sub(r"[\r\n\x00]+", " ", str(name or ""))
+    who = re.sub(r"\s+", " ", who).strip() or "Member"
+    greeting = f"Dear Brother Knight {who}"
+    html = (
+        f'<p style="margin:0 0 1em">{escape(greeting)}</p>'
+        + html_body
+        + signature_html
+        + f'<p style="margin:1.1em 0 0;font-size:12px;line-height:1.45;color:#5c564c">{escape(DISCLAIMER)}</p>'
+    )
+    text = greeting + "\n\n" + html_text(html_body) + "\n\n" + signature_text + "\n\n" + DISCLAIMER
+    return html, text
 
 
 def _from_address() -> str:
@@ -235,7 +314,13 @@ def _parse(raw: bytes):
         return None
 
 
-def _post_one(email: str, subject: str, html: str, text: str) -> tuple[bool, str, str, bool]:
+def _post_one(
+    email: str,
+    subject: str,
+    html: str,
+    text: str,
+    attachment: dict | None = None,
+) -> tuple[bool, str, str, bool]:
     """Return ok, message, error code, and whether later recipients should stop."""
     token = cloudflare_email_token()
     path = f"/accounts/{quote(cloudflare_account_id(), safe='')}/email/sending/send"
@@ -246,6 +331,8 @@ def _post_one(email: str, subject: str, html: str, text: str) -> tuple[bool, str
         "html": html,
         "text": text,
     }
+    if attachment:
+        payload["attachments"] = [attachment]
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(API + path, data=data, method="POST")
     request.add_header("Authorization", "Bearer " + token)
@@ -301,14 +388,17 @@ def _accepted(result, email: str) -> bool:
     return False
 
 
-def _deliver(groups: list[dict], subject: str, html: str, text: str) -> tuple[list[str], str, str]:
+def _deliver(recipients: list[dict], subject: str, html_body: str, sender: dict) -> tuple[list[str], str, str]:
     sent: list[str] = []
     error = ""
     code = ""
-    for group in groups:
-        ok, message, item_code, stop = _post_one(group["email"], subject, html, text)
+    attachment = _logo_attachment()
+    signature_html, signature_text = _signature(sender, with_logo=attachment is not None)
+    for person in recipients:
+        html, text = _message(person["name"], html_body, signature_html, signature_text)
+        ok, message, item_code, stop = _post_one(person["email"], subject, html, text, attachment)
         if ok:
-            sent.extend(group["ids"])
+            sent.append(person["id"])
             continue
         if not error:
             error = message

@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { fetchEmailAudience, fetchSentMail, sendCouncilEmail } from "../api";
 import { OFFICER_TITLES } from "../titles";
+import logoUrl from "../../../logo_email_example.png";
+
+const DISCLAIMER =
+  "You received this message as you are a member of Knights of Columbus Father Emil Gerlich of Fort Worth Council # 10930 in Fort Worth, TX. If you have questions, comments, or concerns please contact the current Grand Knight or Financial Secretary.";
 
 function titleName(abbrev) {
   const found = OFFICER_TITLES.find((row) => row[1] === abbrev);
@@ -74,6 +78,16 @@ export default function EmailCompose() {
     const label = titleName(user?.title);
     return [name, label, "Council 10930", domain].filter(Boolean);
   }, [user?.display_name, user?.title, domain]);
+
+  const greetingName = useMemo(() => {
+    const ids = new Set(picked);
+    if (allMembers) members.forEach((member) => ids.add(member.memberid));
+    if (officers) officerIds.forEach((id) => ids.add(id));
+    if (directors) directorIds.forEach((id) => ids.add(id));
+    if (ids.size !== 1) return "";
+    const only = members.find((member) => ids.has(member.memberid));
+    return String(only?.display_name || "").trim() || "Member";
+  }, [picked, allMembers, officers, directors, members, officerIds, directorIds]);
 
   const selectedCount = useMemo(() => {
     const ids = new Set(picked);
@@ -164,7 +178,7 @@ export default function EmailCompose() {
       <div className="section-head">
         <div className="eyebrow left-only">Cloudflare</div>
         <h2 id="emailHeading">Email</h2>
-        <p>Messages leave from the council address. The signature is the member who is signed in.</p>
+        <p>Messages leave from the council address. Each member is greeted by name. The signature is the member who is signed in.</p>
       </div>
       {loading ? <p>Loading email…</p> : null}
       {loading ? null : (
@@ -256,6 +270,9 @@ export default function EmailCompose() {
                 </button>
               </div>
             ) : null}
+            <p className="mail-greeting">
+              {greetingName ? `Dear Brother Knight ${greetingName}` : "Dear Brother Knight {each member's name}"}
+            </p>
             <div
               ref={editorRef}
               className="mail-body"
@@ -269,7 +286,9 @@ export default function EmailCompose() {
               {signature.map((line, index) => (
                 <div key={`${index}-${line}`}>{line}</div>
               ))}
+              <img className="mail-logo" src={logoUrl} alt="Knights of Columbus" />
             </div>
+            <p className="mail-disclaimer">{DISCLAIMER}</p>
             <div className="signin-actions">
               <button type="button" className="btn" disabled={busy} onClick={onSend}>
                 {busy ? "Sending…" : "Send"}
