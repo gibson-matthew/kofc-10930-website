@@ -90,6 +90,11 @@ app.add_middleware(
 api = APIRouter(prefix="/api")
 
 
+@api.get("/health")
+def health() -> dict:
+    return {"ok": True}
+
+
 class LoginIn(BaseModel):
     memberid: str = Field(min_length=1, max_length=32)
     password: str = Field(min_length=1, max_length=128)
