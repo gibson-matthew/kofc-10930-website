@@ -38,8 +38,8 @@ COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
 COPY backend/ /app/backend/
+# Static /images, including images/logo_email_example.png for outbound mail.
 COPY images/ /app/images/
-COPY logo_email_example.png /app/logo_email_example.png
 COPY --from=frontend /src/frontend/dist /app/frontend/dist
 COPY docker/nginx.conf /app/docker/nginx.conf
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh

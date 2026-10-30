@@ -45,8 +45,7 @@ DISCLAIMER = (
 )
 _LOGO_CID = "kofc-logo"
 _LOGO_PATHS = (
-    ROOT / "frontend" / "src" / "assets" / "email" / "logo.png",
-    ROOT / "logo_email_example.png",
+    ROOT / "images" / "logo_email_example.png",
 )
 _MAX_LOGO = 1_500_000
 _logo_loaded = False

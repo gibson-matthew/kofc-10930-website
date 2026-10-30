@@ -59,7 +59,7 @@ spec:
             - until pg_isready -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER"; do sleep 2; done
       containers:
         - name: app
-          image: ghcr.io/example/kofc-10930-website:latest
+          image: ghcr.io/your-github-username/kofc-10930-website:latest
           imagePullPolicy: Always
           ports:
             - name: http
