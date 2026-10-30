@@ -1,0 +1,41 @@
+Council 10930 image pipeline
+
+Push to main
+  GitHub Actions (.github/workflows/publish.yml) checks out the repo on the free ubuntu-latest runner.
+  It logs in to GHCR with the built-in GITHUB_TOKEN. No paid plan and no extra token are required for the push.
+  It builds the root Dockerfile and pushes two tags:
+    ghcr.io/<owner>/<repo>:latest
+    ghcr.io/<owner>/<repo>:<git sha>
+  The owner and repo are lowercased. VITE_API_BASE is empty, so the browser calls same-origin /api.
+  Secrets are not build args and are not copied into the image. .env is excluded.
+
+GHCR
+  The package is private when the GitHub repo is private.
+  The simplest free pull is to set that package to Public after the first push.
+  A private package needs a k3s imagePullSecret (read:packages). setup.txt has that command.
+  This workflow does not hold a kubeconfig and does not restart the cluster.
+
+k3s pull and restart
+  The Deployment uses imagePullPolicy: Always and the :latest tag.
+  A running pod does not pull a new :latest copy until it is recreated.
+  On the k3s node, after a green Actions run:
+
+    kubectl rollout restart deployment/koc10930 -n koc10930
+
+  Watch it:
+
+    kubectl rollout status deployment/koc10930 -n koc10930
+
+Where secrets live
+  App settings: Secret koc10930-app and ConfigMap koc10930-config in namespace koc10930.
+  The API reads those environment variables from backend/config.py. Nothing in the image overrides them.
+  Certificate token: Secret koc10930-cloudflare-dns, key api-token.
+  That token is only for cert-manager DNS-01. It is not the email routing token and not the sending token.
+  Routing and sending tokens, when you have them, go in koc10930-app as CLOUDFLARE_API_TOKEN and CLOUDFLARE_EMAIL_TOKEN.
+  Do not commit real values, .env, or a kubeconfig.
+
+HTTPS
+  Cloudflare SSL/TLS mode must be Full (strict).
+  cert-manager uses the Cloudflare token to create a Let's Encrypt certificate for the site hostname.
+  Traefik serves that certificate on port 443. Port 80 only redirects to HTTPS.
+  The app is not published on a plain HTTP path.

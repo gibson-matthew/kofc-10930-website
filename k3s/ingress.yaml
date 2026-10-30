@@ -1,0 +1,59 @@
+# Replace council.example.com with the public hostname.
+# Port 443 serves the site. Port 80 only redirects to HTTPS.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+  namespace: koc10930
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: koc10930
+  namespace: koc10930
+  annotations:
+    cert-manager.io/issuer: letsencrypt-cloudflare
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - council.example.com
+      secretName: koc10930-tls
+  rules:
+    - host: council.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: koc10930
+                port:
+                  number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: koc10930-http
+  namespace: koc10930
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: koc10930-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: council.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: koc10930
+                port:
+                  number: 8080

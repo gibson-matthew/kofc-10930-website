@@ -1,0 +1,19 @@
+# Let's Encrypt DNS-01 through Cloudflare. Replace the email.
+# The token lives in Secret koc10930-cloudflare-dns, key api-token.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: letsencrypt-cloudflare
+  namespace: koc10930
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: replace-me@example.com
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: koc10930-cloudflare-dns
+              key: api-token

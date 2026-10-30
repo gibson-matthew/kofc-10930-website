@@ -1,0 +1,16 @@
+# Non-secret settings. Replace council.example.com with the public site hostname.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: koc10930-config
+  namespace: koc10930
+data:
+  COOKIE_SECURE: "true"
+  COOKIE_SAMESITE: "lax"
+  CORS_ORIGINS: "https://council.example.com"
+  CORS_ORIGIN_REGEX: "off"
+  UPLOAD_DIR: "/data/uploads"
+  REDIS_MAXMEMORY: "off"
+  REDIS_MAXMEMORY_POLICY: "allkeys-lru"
+  MAIL_ENABLED: "false"
+  CLOUDFLARE_ROUTING_DOMAIN: "mistymountains.dev"
