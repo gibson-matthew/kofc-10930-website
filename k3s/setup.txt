@@ -1,0 +1,192 @@
+Get k3s serving this site on HTTPS
+
+Run these commands on the k3s machine, from a copy of this repo, so paths like k3s/namespace.yaml exist. kubectl is /usr/local/bin/kubectl. k3s keeps its kubeconfig at /etc/rancher/k3s/k3s.yaml, which a normal user cannot read, so the commands below use sudo.
+
+The public hostname in the files is council.example.com. That name is a placeholder. Pick the real hostname (the name people will type, such as www.your-domain.example) and use it everywhere that file says council.example.com:
+  k3s/ingress.yaml — both Ingress host lines and the TLS host
+  k3s/configmap.yaml — CORS_ORIGINS, including the https:// prefix
+The image address and the issuer email are spelled out again in the steps that apply k3s/app.yaml and k3s/issuer.yaml. Do those edits before those apply commands.
+
+1. Install k3s
+
+k3s is the Kubernetes cluster and it includes Traefik, which is the HTTPS front door. Install it on the server that will hold the site:
+
+    curl -sfL https://get.k3s.io | sh -
+    sudo kubectl get nodes
+
+The node should say Ready. Traefik listens on ports 80 and 443 on that machine. Open both ports to the internet. Port 443 is the site. Port 80 only redirects browsers to HTTPS. If you use ufw:
+
+    sudo ufw allow 80/tcp
+    sudo ufw allow 443/tcp
+
+2. Install cert-manager
+
+Cloudflare Full (strict) checks that this server presents a certificate a public authority signed. cert-manager gets that certificate from Let's Encrypt and renews it. The Cloudflare token is how Let's Encrypt proves you control the DNS name. Install cert-manager once per cluster:
+
+    sudo kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.21.3/cert-manager.yaml
+    sudo kubectl wait --namespace cert-manager --for=condition=Available deployment --all --timeout=180s
+
+Wait until the command prints that the deployments are ready. The Issuer in step 7 needs these CRDs to exist.
+
+3. Publish the image, then set the image line
+
+Commit your work and push the main branch to GitHub. Open the repo's Actions tab and wait until "Publish image" is green. That first push creates the GHCR package. The last log line prints the real image, both as :latest and as the git SHA. Copy the :latest value.
+
+GHCR image
+
+The image address is ghcr.io/<github-user-or-org>/<repo-name>:<tag>. Replace any "example" placeholder with the GitHub username or org that owns this repo. The repo name is the repository name, lowercase. One concrete stand-in is ghcr.io/your-github-username/council-10930:latest. Substitute the real user or org and the real repo name. GHCR names are lowercase, so type the owner in lowercase even if the GitHub profile uses capitals. The package is created on the first successful Actions push to main. This workflow publishes two tags: latest, and the full git SHA. Put latest in the manifest. To pin one build, replace latest with that SHA from the Actions log, then apply k3s/app.yaml again.
+
+On the server, edit k3s/app.yaml so the container image matches that address. The line in the manifest is:
+
+    image: ghcr.io/your-github-username/kofc-10930-website:latest
+
+your-github-username is the stand-in owner. kofc-10930-website is this repository's name. Do not leave your-github-username or example in the file you apply. Leave the tag as latest unless you are pinning a SHA.
+
+A package built from a private GitHub repo is private. k3s cannot pull a private package with no credentials. The free path is to make the package public: GitHub, your profile or the organization, Packages, the kofc-10930-website container, Package settings, Change visibility, Public. Do this before the app pod starts, or the pull fails.
+
+To keep the package private instead, create a GitHub personal access token with the read:packages permission and store it only on the cluster:
+
+    sudo kubectl create secret docker-registry ghcr \
+      -n koc10930 \
+      --docker-server=ghcr.io \
+      --docker-username=YOUR_GITHUB_USERNAME \
+      --docker-password='THE_TOKEN'
+
+The namespace must already exist (step 4) before this command. Then uncomment the imagePullSecrets block in k3s/app.yaml. Do not commit the token.
+
+4. Create the namespace
+
+A namespace keeps this site's pods and secrets apart from anything else on the cluster. k3s/namespace.yaml creates the name koc10930. Later commands use -n koc10930, and the other manifests already name that namespace, so this file has to exist first:
+
+    sudo kubectl apply -f k3s/namespace.yaml
+    sudo kubectl get namespace koc10930
+
+5. Create the app Secret from the env keys
+
+The API reads its settings from environment variables. The Deployment loads Secret koc10930-app and ConfigMap koc10930-config into the container. Edit k3s/secret.yaml on the server, not in git.
+
+Replace both copies of change-me with one password you choose. POSTGRES_PASSWORD is the database password. DATABASE_URL must use that same password. The host name postgres is the Service created later. Leave it:
+
+    DATABASE_URL: "postgresql://koc10930:THE_PASSWORD@postgres:5432/koc10930"
+    POSTGRES_PASSWORD: "THE_PASSWORD"
+
+Replace JWT_SECRET. Sign-in cookies are signed with it, so every pod must share one value. On the server, print a new value and paste it into the file. Do not commit the output:
+
+    python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+
+Leave these empty until you want email routing or sending. Empty means those features stay off. Sign-in still works:
+
+    CLOUDFLARE_API_TOKEN
+    CLOUDFLARE_EMAIL_TOKEN
+    CLOUDFLARE_ACCOUNT_ID
+    CLOUDFLARE_ZONE_ID
+    MAIL_FROM
+
+REDIS_URL is already redis://redis:6379/0, which is the Redis Service in this namespace. POSTGRES_USER, POSTGRES_HOST, POSTGRES_PORT, and POSTGRES_DB match that database. Leave them unless the database is not the one in k3s/postgres.yaml.
+
+Apply the Secret and the ConfigMap. The ConfigMap holds the HTTPS cookie flag, the public site origin, and the upload path. Edit CORS_ORIGINS to your real https origin before this apply:
+
+    sudo kubectl apply -f k3s/secret.yaml
+    sudo kubectl apply -f k3s/configmap.yaml
+
+6. Create the Cloudflare certificate Secret
+
+This is a different token from CLOUDFLARE_API_TOKEN. cert-manager uses it only to add a short-lived DNS record while Let's Encrypt issues the certificate.
+
+In the Cloudflare dashboard: My Profile, API Tokens, Create Token, Create Custom Token. Name it something like k3s-dns. Permissions: Zone, DNS, Edit; and Zone, Zone, Read. Zone Resources: Include, Specific zone, the zone that contains the site hostname. Leave the token with no expiry. Create it and copy the value once. It is shown only at creation.
+
+On the server, store it in the cluster. Paste the token in the quotes. Do not commit the command:
+
+    sudo kubectl create secret generic koc10930-cloudflare-dns \
+      -n koc10930 \
+      --from-literal=api-token='PASTE_THE_TOKEN_HERE'
+
+Confirm the key exists without printing the token:
+
+    sudo kubectl get secret koc10930-cloudflare-dns -n koc10930
+
+Do not apply k3s/cloudflare-dns-secret.yaml after this. That file is an empty placeholder. Applying it replaces the real token with an empty one, and certificate renewal stops.
+
+7. Apply the rest of the manifests, in this order
+
+Postgres and Redis first, so the database is up before the site. The app Deployment waits until Postgres accepts connections, then starts. The Issuer must exist before the Ingress, because the Ingress asks that Issuer for a certificate.
+
+Before applying k3s/app.yaml, the image line must already be the GHCR address from step 3, and the Actions job "Publish image" must be green. The workflow runs only on a push to main. Merging a pull request creates that push. Opening or updating the pull request does not publish an image. A failed job does not create a tag, so the app pod cannot pull :latest. Open the repo Actions tab, open the run for that push to main, and confirm "Publish image" succeeded. The last log line prints ghcr.io/<github-user-or-org>/<repo-name>:latest and the same name with the full git SHA. The package page (profile or organization, Packages, container named with the repo) must list the latest tag before you apply the app. GHCR names are lowercase. One concrete stand-in is ghcr.io/your-github-username/kofc-10930-website:latest. Substitute the real user or org. Use latest in k3s/app.yaml unless you replace that tag with the SHA from the log. Do not leave your-github-username in the file you apply.
+
+Before applying k3s/issuer.yaml, set spec.acme.email. In k3s/issuer.yaml the field is spec.acme.email. Put an inbox you monitor, a personal address or a council admin address. This is the Let's Encrypt contact for certificate expiry notices. It is not a member's role address, and it is not grandknight@mistymountains.dev unless that is the inbox you want those notices sent to. The placeholder is you@example.com. Replace it before you apply the file. This issuer is Let's Encrypt, so that email field is the one that matters.
+
+    sudo kubectl apply -f k3s/postgres.yaml
+    sudo kubectl apply -f k3s/redis.yaml
+    sudo kubectl apply -f k3s/app.yaml
+    sudo kubectl apply -f k3s/issuer.yaml
+    sudo kubectl apply -f k3s/ingress.yaml
+
+See that the database pods are running:
+
+    sudo kubectl get pods -n koc10930
+
+postgres and redis should become Running and Ready. The app pod may stay ContainerCreating until the image pull finishes. If it says ImagePullBackOff, read the events before changing anything else:
+
+    sudo kubectl describe pod -n koc10930 -l app=koc10930
+
+"not found" or "manifest unknown" means GHCR has no such tag. "Publish image" failed or has not finished, so :latest was never pushed. A green run is required. Push the fix to main, wait until that run succeeds, then:
+
+    sudo kubectl rollout restart deployment/koc10930 -n koc10930
+
+"unauthorized" or "denied" means the tag exists and the package is private. A package from a private GitHub repo is private, and k3s cannot pull it with no credentials. The free path is Package settings, Change visibility, Public. To keep it private, create a personal access token with read:packages and store it only on the cluster. The namespace from step 4 must already exist. Do not commit the token:
+
+    sudo kubectl create secret docker-registry ghcr \
+      -n koc10930 \
+      --docker-server=ghcr.io \
+      --docker-username=YOUR_GITHUB_USERNAME \
+      --docker-password='THE_TOKEN'
+
+Uncomment the imagePullSecrets block in k3s/app.yaml (the name is ghcr) and apply k3s/app.yaml again. A wrong image name also shows up as "not found". The owner and the repo name on that line must be lowercase and must match the Actions log.
+
+8. Point the domain at the node
+
+Cloudflare has to send visitors to this server. The address is the server's public IP, not a private 10.x or 192.168.x address. On the server:
+
+    curl -4 ifconfig.me
+
+If that prints a private address, use the public address of the cloud host or router, and forward ports 80 and 443 to the k3s machine.
+
+In the Cloudflare dashboard, open the site's zone, DNS, Add record. Type A for IPv4, or AAAA for IPv6. Name is the hostname you put in the Ingress (council.example.com was the placeholder). IPv4 address is the public IP from the command above. Proxy status must be Proxied (orange cloud). A grey-cloud (DNS only) record does not get Cloudflare's Strict check, and it exposes the node directly. Save.
+
+The hostname in DNS, in k3s/ingress.yaml, and in CORS_ORIGINS must be the same name.
+
+9. Set Cloudflare SSL to Full (strict)
+
+Cloudflare dashboard, the same zone, SSL/TLS, Overview. Set the encryption mode to Full (strict). Strict means Cloudflare opens HTTPS to your server and requires a certificate it can trust. Let's Encrypt is trusted. A self-signed origin certificate would fail this mode.
+
+The Ingress asks cert-manager for that certificate. Watch it until Ready is True:
+
+    sudo kubectl describe certificate koc10930-tls -n koc10930
+
+The first issue can take a few minutes. If it stays False, read the events at the bottom of that output. The usual causes are an empty api-token, a token that cannot edit DNS for this zone, or a hostname that is not in that zone. Fix the Secret or the hostname, then delete the Certificate so cert-manager requests it again:
+
+    sudo kubectl delete certificate koc10930-tls -n koc10930
+    sudo kubectl apply -f k3s/ingress.yaml
+
+10. Confirm HTTPS
+
+From any machine:
+
+    curl -fsS https://council.example.com/api/health
+
+Use your real hostname. A working site returns {"ok":true}. Then open https://council.example.com in a browser. You should see the public council page. It stays read-only. Sign-in is at https://council.example.com/login.
+
+http://council.example.com should jump to https and should not show the site on port 80. If curl to https fails with a certificate error, the Certificate is not Ready yet, or Cloudflare is not on Full (strict).
+
+After each later push to main, the new :latest image is on GHCR but the running pod does not pull it by itself. On the server:
+
+    sudo kubectl rollout restart deployment/koc10930 -n koc10930
+    sudo kubectl rollout status deployment/koc10930 -n koc10930
+
+Runtime environment the container expects
+
+  From Secret koc10930-app: DATABASE_URL, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, JWT_SECRET, REDIS_URL, CLOUDFLARE_API_TOKEN, CLOUDFLARE_EMAIL_TOKEN, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ZONE_ID, MAIL_FROM, MAIL_OFFICER_TO.
+  From ConfigMap koc10930-config: COOKIE_SECURE, COOKIE_SAMESITE, CORS_ORIGINS, CORS_ORIGIN_REGEX, UPLOAD_DIR, REDIS_MAXMEMORY, REDIS_MAXMEMORY_POLICY, MAIL_ENABLED, CLOUDFLARE_ROUTING_DOMAIN.
+  Build arg, not a runtime variable: VITE_API_BASE. The workflow leaves it empty so the browser calls same-origin /api.
+
+  MAIL_ENABLED stays false until sending is configured. Empty routing and sending tokens leave those features off. Sign-in, edits, and the cache still use Postgres and Redis.

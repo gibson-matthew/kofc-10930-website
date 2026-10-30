@@ -2,3 +2,5 @@
 .env.*
 !.env.example
 .local/
+/cicd.txt
+/setup.txt

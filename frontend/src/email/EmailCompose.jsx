@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { fetchEmailAudience, fetchSentMail, sendCouncilEmail } from "../api";
 import { OFFICER_TITLES } from "../titles";
-import logoUrl from "../../../logo_email_example.png";
+
+const logoUrl = "/images/logo_email_example.png";
 
 const DISCLAIMER =
   "You received this message as you are a member of Knights of Columbus Father Emil Gerlich of Fort Worth Council # 10930 in Fort Worth, TX. If you have questions, comments, or concerns please contact the current Grand Knight or Financial Secretary.";
